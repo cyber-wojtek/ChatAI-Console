@@ -7,10 +7,9 @@ A self-hosted web chat interface for [Claude](https://claude.ai), powered by the
 - **Multi-Account** — Add, switch, and manage multiple Claude accounts. Accounts are persisted in a local JSON store.
 - **Real-Time Streaming** — Server-Sent Events deliver tokens as they're generated, with inline thinking block rendering.
 - **All Claude Models** — Sonnet 4-6, Opus 4-6, Haiku 4-5, Sonnet 3-7, Opus 4-5, and Sonnet 3-5.
-- **Extended Thinking** — Toggle chain-of-thought with configurable budget. Thinking blocks render as collapsible sections.
-- **File Uploads** — Attach images, PDFs, and documents (up to 100 MB). Upload metadata tracked locally.
+- **Extended Thinking** — Toggle chain-of-thought. Thinking blocks render as collapsible sections.
+- **File Uploads** — Attach  files up to 100 MB. Upload metadata tracked locally.
 - **Conversation Management** — Create, rename, pin, search, branch, and delete conversations.
-- **Conversation Branching** — Edit any previous message to fork the conversation; navigate branches from the toolbar.
 - **Artifacts & Canvas** — Split-pane canvas preview for code, HTML, SVG, and Mermaid diagram artifacts.
 - **In-Chat Search** — Search within the current conversation with match navigation.
 - **Usage & Quota Tracking** — Per-account usage snapshots, message history, and visual quota bars in the sidebar.
@@ -23,8 +22,10 @@ A self-hosted web chat interface for [Claude](https://claude.ai), powered by the
 
 ```sh
 git clone <repo-url>
+git clone <Claude-API url>
 cd ChatAI-Console
-pip install flask claude_webapi
+pip install flask
+pip install ../Claude-API/
 python app.py
 ```
 
@@ -37,7 +38,7 @@ You need a session key and organization ID from [claude.ai](https://claude.ai):
 1. Log in to claude.ai
 2. Open DevTools (`F12`) → **Application** → **Cookies**
 3. Copy the `sessionKey` value
-4. For the org ID, check the **Network** tab — find any API request URL containing `/organizations/<uuid>`
+4. For the org ID, check the **Network** tab — find any API request URL containing `/organizations/<uuid>` or use `lastActiveOrg` cookie value.
 
 Add credentials through the UI (sidebar → account switcher → ＋ Add Account) or via the API:
 
@@ -149,7 +150,7 @@ The backend bridges sync Flask handlers to the async `claude_webapi` client via 
 | Package | Purpose |
 |---|---|
 | [Flask](https://flask.palletsprojects.com/) | Web framework |
-| [claude_webapi](../claude_webapi/) | Reverse-engineered async Claude.ai client |
+| [claude_webapi](https://github.com/cyber-wojtek/Claude-API/) | Reverse-engineered async Claude.ai client |
 | [marked.js](https://marked.js.org/) | Markdown rendering (frontend) |
 | [highlight.js](https://highlightjs.org/) | Syntax highlighting (frontend) |
 
