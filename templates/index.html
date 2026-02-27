@@ -474,12 +474,6 @@ a:hover { text-decoration:underline; }
   border:1px solid rgba(168,85,247,0.30); color:var(--accent);
   box-shadow:0 0 12px rgba(168,85,247,0.10);
 }
-.msg-avatar.assistant.gemini {
-  background:linear-gradient(135deg,rgba(74,222,128,0.18),rgba(56,189,248,0.12));
-  border:1px solid rgba(74,222,128,0.30); color:#4ade80;
-  box-shadow:0 0 12px rgba(74,222,128,0.10);
-}
-.msg-sender.assistant.gemini { color:#4ade80; opacity:.85; }
 .msg-sender { font-size:11px; font-weight:600; letter-spacing:.03em; }
 .msg-sender.human     { color:var(--text-3); }
 .msg-sender.assistant { color:var(--violet); opacity:.85; }
@@ -987,34 +981,6 @@ a:hover { text-decoration:underline; }
 .acct-search-inp:focus { border-color:rgba(168,85,247,0.35); background:var(--bg-4); }
 .acct-search-inp::placeholder { color:var(--text-4); }
 
-/* ── Gemini image blocks ── */
-.gemini-images { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
-.gemini-img-wrap {
-  position:relative; border-radius:var(--r-l); overflow:hidden;
-  border:1px solid var(--border); background:var(--bg-3);
-  max-width:320px; flex-shrink:0;
-}
-.gemini-img-wrap img {
-  display:block; max-width:100%; height:auto; cursor:pointer;
-  transition:opacity .2s var(--ease);
-}
-.gemini-img-wrap img:hover { opacity:.88; }
-.gemini-img-caption {
-  font-size:10px; color:var(--text-3); padding:4px 8px 5px;
-  background:var(--bg-2); border-top:1px solid var(--border-s);
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-}
-.gemini-img-badge {
-  position:absolute; top:6px; right:6px; font-size:9px; font-weight:600;
-  padding:2px 6px; border-radius:4px; font-family:var(--font-mono);
-  background:rgba(6,6,14,.75); color:var(--teal); border:1px solid var(--teal-mid);
-  backdrop-filter:blur(4px);
-}
-.gemini-img-err {
-  padding:12px 14px; font-size:11px; color:var(--text-3);
-  display:flex; align-items:center; gap:6px;
-}
-
 
 #toasts { 
   position:fixed; top:14px; right:14px; z-index:999; 
@@ -1345,12 +1311,6 @@ a:hover { text-decoration:underline; }
             <option value="claude-opus-4-5">opus-4-5</option>
             <option value="claude-3-5-sonnet-20241022">sonnet-3-5</option>
             </optgroup>
-            <optgroup label="Gemini" id="geminiModels" style="display:none">
-            <option value="unspecified">gemini (default)</option>
-            <option value="gemini-3.0-pro">gemini-3.0-pro</option>
-            <option value="gemini-3.0-flash">gemini-3.0-flash</option>
-            <option value="gemini-3.0-flash-thinking">gemini-3.0-flash-thinking</option>
-            </optgroup>
           </select>
 
           <button class="tb-toggle" id="thinkBtn" onclick="cycleThink()" title="Toggle extended thinking">
@@ -1491,43 +1451,18 @@ a:hover { text-decoration:underline; }
       <input class="form-inp" type="text" id="acctNameInp" placeholder="e.g. Personal, Work…">
     </div>
     <div class="form-row">
-      <label class="form-lbl">Provider</label>
-      <select class="form-inp" id="acctProviderSel" onchange="onProviderChange()" style="cursor:pointer">
-        <option value="claude">Claude (claude.ai)</option>
-        <option value="gemini">Gemini (gemini.google.com)</option>
-      </select>
+      <label class="form-lbl">Session Key</label>
+      <input class="form-inp" type="password" id="skInp" placeholder="Paste your sessionKey cookie…">
+      <div class="form-hint">From claude.ai cookies → <code>sessionKey</code></div>
     </div>
-    <!-- Claude fields -->
-    <div id="claudeFields">
-      <div class="form-row">
-        <label class="form-lbl">Session Key</label>
-        <input class="form-inp" type="password" id="skInp" placeholder="Paste your sessionKey cookie…">
-        <div class="form-hint">From claude.ai cookies → <code>sessionKey</code></div>
-      </div>
-      <div class="form-row">
-        <label class="form-lbl">Organization ID</label>
-        <input class="form-inp" type="text" id="orgInp" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-        <div class="form-hint">UUID found in API URLs after <code>/organizations/</code></div>
-      </div>
+    <div class="form-row">
+      <label class="form-lbl">Organization ID</label>
+      <input class="form-inp" type="text" id="orgInp" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+      <div class="form-hint">UUID found in API URLs after <code>/organizations/</code></div>
     </div>
-    <!-- Gemini fields -->
-    <div id="geminiFields" style="display:none">
-      <div class="form-row">
-        <label class="form-lbl">__Secure-1PSID</label>
-        <input class="form-inp" type="password" id="psidInp" placeholder="Paste your __Secure-1PSID cookie…">
-        <div class="form-hint">From gemini.google.com cookies → <code>__Secure-1PSID</code></div>
-      </div>
-      <div class="form-row">
-        <label class="form-lbl">__Secure-1PSIDTS <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
-        <input class="form-inp" type="password" id="psidtsInp" placeholder="Paste your __Secure-1PSIDTS cookie…">
-        <div class="form-hint">From gemini.google.com cookies → <code>__Secure-1PSIDTS</code></div>
-      </div>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
-      <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer">
-        <input type="checkbox" id="acctActivateChk" checked style="accent-color:var(--accent)">
-        Switch to this account after saving
-      </label>
+    <div class="toggle-row" style="margin-top:8px">
+      <label class="toggle-lbl" for="acctActivateChk" style="cursor:pointer">Set as active account</label>
+      <input type="checkbox" id="acctActivateChk" checked>
     </div>
     <hr class="form-divider">
     <div class="section-title">Extended Thinking</div>
@@ -1614,7 +1549,7 @@ async function init() {
       <button class="code-copy" onclick="copyCode('${id}',this)">⎘ Copy</button>
     </div><code id="${id}" class="hljs language-${esc(validLang)}">${highlighted}</code></pre>`;
   };
-  renderer.link = function(hrefOrToken, title, text) {
+  renderer.link = async function(hrefOrToken, title, text) {
     let href, linkTitle, linkText;
     if (hrefOrToken && typeof hrefOrToken === 'object') {
       href      = hrefOrToken.href  || '';
@@ -1625,41 +1560,13 @@ async function init() {
       linkTitle = title || '';
       linkText  = text  || href;
     }
-    // Render googleusercontent image URLs as inline images instead of links
-    if (/googleusercontent\.com\/(image_collection\/image_retrieval|generated_image|image)\//i.test(href)) {
-      const eUrl = href.replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-      const eAlt = (linkTitle || linkText || 'Gemini image').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      return `<div class="gemini-img-wrap" style="display:inline-block;margin:6px 0">
-        <img src="${geminiImgSrc(eUrl)}" alt="${eAlt}" loading="lazy"
-          onclick="openInCanvas('${eUrl.replace(/'/g,"&#39;")}','${eAlt.replace(/'/g,"&#39;")}','image/jpeg')"
-          onerror="this.closest('.gemini-img-wrap').innerHTML='<div class=\\'gemini-img-err\\'>🖼 Image unavailable</div>'">
-        ${eAlt && eAlt !== href ? `<div class="gemini-img-caption">${eAlt}</div>` : ''}
-      </div>`;
-    }
     const eHref = href.replace(/"/g,'&quot;');
     const titleAttr = linkTitle ? ` title="${linkTitle.replace(/"/g,'&quot;')}"` : '';
     return `<a href="${eHref}"${titleAttr} target="_blank" rel="noopener noreferrer">${linkText}</a>`;
   };
-  marked.use({ renderer, breaks: true, gfm: true,
-    walkTokens(token) {
-      // Convert bare googleusercontent image URLs (type=text containing the URL) to image tokens
-      if (token.type === 'paragraph' || token.type === 'text') {
-        const GIMG = /https?:\/\/[a-z0-9\-]+\.googleusercontent\.com\/(?:image_collection\/image_retrieval|generated_image|image)\/[^\s\]\)\'"<>]+/gi;
-        if (token.raw && GIMG.test(token.raw)) {
-          // Force re-lex the paragraph so our link renderer can catch the URLs
-          token.type = 'html';
-          token.raw  = token.raw;
-          const eRaw = token.raw.replace(GIMG, url => {
-            const eUrl = url.replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-            return `<div class="gemini-img-wrap" style="display:inline-block;margin:6px 0"><img src="${geminiImgSrc(eUrl)}" alt="Gemini image" loading="lazy" onclick="openInCanvas('${eUrl}','Gemini image','image/jpeg')" onerror="this.closest('.gemini-img-wrap').innerHTML='<div class=\\'gemini-img-err\\'>🖼 Image unavailable</div>'"></div>`;
-          });
-          token.text = eRaw;
-        }
-      }
-    }
-  });
 
   await refreshAccountState();
+
   try {
     const prefs = await apiFetch('/api/preferences');
     if (prefs.theme) document.documentElement.setAttribute('data-theme', prefs.theme);
@@ -1765,7 +1672,17 @@ async function loadAllConvs() {
   if (!S.configured) { S.allConvs = []; return; }
   try {
     const data = await apiFetch('/api/conversations');
-    S.allConvs = Array.isArray(data) ? data : [];
+    const arr = Array.isArray(data) ? data : [];
+    S.allConvs = arr.map(c => {
+      if (c.uuid) return c;
+      return {
+        uuid:       c.conv_uuid || c.id || '',
+        name:       c.display_name || '',
+        created_at: c.pinned_at || '',
+        updated_at: c.pinned_at || '',
+        ...c
+      };
+    });
     for (const c of S.allConvs) if (c.uuid) S.convs[c.uuid] = c;
   } catch { S.allConvs = []; }
 }
@@ -1839,14 +1756,9 @@ function setStatus(ok, orgId) {
   const org  = document.getElementById('acctOrg');
   if (ok) {
     const active = S.accounts.find(a => a.active);
-    const provider = active?.provider || 'claude';
     dot.classList.add('ok');
     name.textContent = S.activeAccount || 'default';
-    if (provider === 'gemini') {
-      org.textContent = '✦ Gemini';
-    } else {
-      org.textContent = (orgId || '').slice(0, 8) + '…';
-    }
+    org.textContent = (orgId || '').slice(0, 8) + '…';
   } else {
     dot.classList.remove('ok');
     name.textContent = 'Not configured';
@@ -1933,36 +1845,21 @@ async function refreshAccountState() {
   renderAccountMenu();
   renderAccountList();
 
-  // Switch model selector optgroups based on active provider
-  const provider = active?.provider || 'claude';
-  const claudeGrp = document.getElementById('claudeModels');
-  const geminiGrp = document.getElementById('geminiModels');
-  const sel       = document.getElementById('modelSel');
-  if (provider === 'gemini') {
-    if (claudeGrp) claudeGrp.style.display = 'none';
-    if (geminiGrp) geminiGrp.style.display = '';
-    if (sel && !sel.value.startsWith('gemini') && sel.value !== 'unspecified') {
-      sel.value = 'unspecified';
-    }
-    // Hide thinking toggle (Claude-only feature)
-    const thinkBtn = document.getElementById('thinkBtn');
-    if (thinkBtn) thinkBtn.style.display = 'none';
-  } else {
-    if (claudeGrp) claudeGrp.style.display = '';
-    if (geminiGrp) geminiGrp.style.display = 'none';
-    if (sel && (sel.value === 'unspecified' || sel.value.startsWith('gemini'))) {
-      sel.value = 'claude-sonnet-4-6';
-    }
-    const thinkBtn = document.getElementById('thinkBtn');
-    if (thinkBtn) thinkBtn.style.display = '';
+  // Ensure Claude model is selected
+  const sel = document.getElementById('modelSel');
+  if (sel && !sel.value.startsWith('claude')) {
+    sel.value = 'claude-sonnet-4-6';
   }
 
-  if (active && provider === 'claude') fetchQuota();
-  else document.getElementById('quotaWrap').style.display = 'none';
+  // Show thinking toggle for Claude
+  const thinkBtn = document.getElementById('thinkBtn');
+  if (thinkBtn) thinkBtn.style.display = '';
 
-  // Update textarea placeholder to reflect active provider
+  fetchQuota();
+
+  // Update textarea placeholder
   const msgTa = document.getElementById('msgTa');
-  if (msgTa) msgTa.placeholder = (provider === 'gemini') ? 'Message Gemini…' : 'Message Claude…';
+  if (msgTa) msgTa.placeholder = 'Message Claude…';
 }
 
 async function fetchQuota() {
@@ -2044,11 +1941,8 @@ function renderAccountMenu(filter = '') {
     return;
   }
   for (const acct of visible) {
-    const provider = acct.provider || 'claude';
-    const badge = provider === 'gemini'
-      ? '<span class="ami-badge" style="color:#4ade80">G</span>'
-      : '<span class="ami-badge" style="color:var(--accent)">C</span>';
-    const subtitle = provider === 'gemini' ? 'Gemini' : (acct.organization_id||'').slice(0,8)+'…';
+    const badge = '<span class="ami-badge" style="color:var(--accent)">C</span>';
+    const subtitle = (acct.organization_id||'').slice(0,8)+'…';
     const el = document.createElement('div');
     el.className = `acct-menu-item ${acct.active ? 'active' : ''}`;
     el.innerHTML = `
@@ -2085,13 +1979,8 @@ function renderAccountList(filter = '') {
     return;
   }
   for (const acct of visible) {
-    const provider = acct.provider || 'claude';
-    const provBadge = provider === 'gemini'
-      ? '<span style="font-size:10px;padding:1px 5px;background:rgba(74,222,128,.12);color:#4ade80;border-radius:4px;font-weight:600;flex-shrink:0">Gemini</span>'
-      : '<span style="font-size:10px;padding:1px 5px;background:var(--accent-dim);color:var(--accent);border-radius:4px;font-weight:600;flex-shrink:0">Claude</span>';
-    const subtitle = provider === 'gemini'
-      ? 'Gemini · ' + (acct.secure_1psid||'').slice(0,10)+'…'
-      : (acct.organization_id||'').slice(0,8)+'…';
+    const provBadge = '<span style="font-size:10px;padding:1px 5px;background:var(--accent-dim);color:var(--accent);border-radius:4px;font-weight:600;flex-shrink:0">Claude</span>';
+    const subtitle = (acct.organization_id||'').slice(0,8)+'…';
     const el = document.createElement('div');
     el.className = `acct-list-item ${acct.active ? 'active' : ''}`;
     el.innerHTML = `
@@ -2126,9 +2015,8 @@ async function switchAccount(name) {
 }
 
 async function saveAccount() {
-  const name     = document.getElementById('acctNameInp').value.trim();
-  const provider = document.getElementById('acctProviderSel').value;
-  const act      = document.getElementById('acctActivateChk').checked;
+  const name = document.getElementById('acctNameInp').value.trim();
+  const act  = document.getElementById('acctActivateChk').checked;
   if (!name) { toast('Account name is required', 'err'); return; }
 
   // Detect if we're editing (Save Changes) vs adding
@@ -2140,19 +2028,11 @@ async function saveAccount() {
     return;
   }
 
-  let body;
-  if (provider === 'gemini') {
-    const psid   = document.getElementById('psidInp').value.trim();
-    const psidts = document.getElementById('psidtsInp').value.trim();
-    if (!psid) { toast('__Secure-1PSID is required', 'err'); return; }
-    body = { name, provider: 'gemini', secure_1psid: psid, secure_1psidts: psidts, activate: act };
-  } else {
-    const sk  = document.getElementById('skInp').value.trim();
-    const org = document.getElementById('orgInp').value.trim();
-    if (!sk)  { toast('Session key is required', 'err'); return; }
-    if (!org) { toast('Organization ID is required', 'err'); return; }
-    body = { name, provider: 'claude', session_key: sk, organization_id: org, activate: act };
-  }
+  const sk  = document.getElementById('skInp').value.trim();
+  const org = document.getElementById('orgInp').value.trim();
+  if (!sk)  { toast('Session key is required', 'err'); return; }
+  if (!org) { toast('Organization ID is required', 'err'); return; }
+  const body = { name, provider: 'claude', session_key: sk, organization_id: org, activate: act };
 
   const r = await apiFetch('/api/accounts', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -2173,21 +2053,12 @@ async function saveAccount() {
   toast('Account saved', 'ok');
 }
 
-function onProviderChange() {
-  const p = document.getElementById('acctProviderSel').value;
-  document.getElementById('claudeFields').style.display = p === 'gemini' ? 'none' : '';
-  document.getElementById('geminiFields').style.display = p === 'gemini' ? '' : 'none';
-}
+
 
 function _resetAcctForm() {
   document.getElementById('acctNameInp').value      = '';
   document.getElementById('skInp').value            = '';
   document.getElementById('orgInp').value           = '';
-  document.getElementById('psidInp').value          = '';
-  document.getElementById('psidtsInp').value        = '';
-  document.getElementById('acctProviderSel').value  = 'claude';
-  document.getElementById('claudeFields').style.display = '';
-  document.getElementById('geminiFields').style.display = 'none';
   document.getElementById('acctFormTitle').textContent  = 'Add Account';
   document.getElementById('acctSaveBtn').textContent    = 'Add Account';
   document.getElementById('acctCancelEditBtn').style.display = 'none';
@@ -2196,20 +2067,9 @@ function _resetAcctForm() {
 function editAccount(name) {
   const acct = S.accounts.find(a => a.name === name);
   if (!acct) return;
-  const provider = acct.provider || 'claude';
-  document.getElementById('acctNameInp').value     = acct.name;
-  document.getElementById('acctProviderSel').value = provider;
-  if (provider === 'gemini') {
-    document.getElementById('psidInp').value    = acct.secure_1psid   || '';
-    document.getElementById('psidtsInp').value  = acct.secure_1psidts || '';
-    document.getElementById('claudeFields').style.display = 'none';
-    document.getElementById('geminiFields').style.display = '';
-  } else {
-    document.getElementById('orgInp').value = acct.organization_id || '';
-    document.getElementById('skInp').value  = acct.session_key     || '';
-    document.getElementById('claudeFields').style.display = '';
-    document.getElementById('geminiFields').style.display = 'none';
-  }
+  document.getElementById('acctNameInp').value = acct.name;
+  document.getElementById('orgInp').value = acct.organization_id || '';
+  document.getElementById('skInp').value  = acct.session_key     || '';
   document.getElementById('acctFormTitle').textContent       = 'Edit Account';
   document.getElementById('acctSaveBtn').textContent         = 'Save Changes';
   document.getElementById('acctCancelEditBtn').style.display = '';
@@ -2426,17 +2286,8 @@ function syncToolbar() {
 async function cycleThink() {
   if (!S.convId) return;
   S.thinking = !S.thinking;
-  updateThinkBtn();
-  const mode = S.thinking ? 'extended' : null;
-  await apiFetch(`/api/conversations/${S.convId}`, {
-    method:'PUT', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ settings: { paprika_mode: mode } })
-  });
-  if (S.convs[S.convId]) {
-    if (!S.convs[S.convId].settings) S.convs[S.convId].settings = {};
-    S.convs[S.convId].settings.paprika_mode = mode;
-  }
   toast(`Extended thinking ${S.thinking ? 'enabled' : 'disabled'}`, S.thinking ? 'ok' : 'info');
+  updateThinkBtn();
 }
 
 function updateThinkBtn() {
@@ -2506,11 +2357,10 @@ function buildMsgEl(msg) {
   el.className = `msg ${msg.sender}`;
   el.dataset.uuid = msg.uuid;
 
-  const isGemini = (S.accounts.find(a => a.active)?.provider === 'gemini');
-  const sender = msg.sender === 'human' ? 'You' : (isGemini ? 'Gemini' : 'Claude');
-  const avatar = msg.sender === 'human' ? 'Y' : (isGemini ? 'G' : 'C');
-  const avatarClass = msg.sender === 'human' ? 'human' : (isGemini ? 'assistant gemini' : 'assistant');
-  const senderClass = msg.sender === 'human' ? 'human' : (isGemini ? 'assistant gemini' : 'assistant');
+  const sender = msg.sender === 'human' ? 'You' : 'Claude';
+  const avatar = msg.sender === 'human' ? 'Y' : 'C';
+  const avatarClass = msg.sender === 'human' ? 'human' : 'assistant';
+  const senderClass = msg.sender === 'human' ? 'human' : 'assistant';
   const ts     = fmtTime(msg.created_at);
 
   let filesHtml = '';
@@ -2578,18 +2428,6 @@ function buildMsgEl(msg) {
 /* ═══════════════════════════════════════════
    BLOCK RENDERER
 ═══════════════════════════════════════════ */
-// Data URIs are too large to embed in onclick attributes — store them here
-// keyed by a short ID and reference via geminiDataUri(id)
-const _geminiDataUriStore = new Map();
-let   _geminiDataUriSeq   = 0;
-function _storeDataUri(uri) {
-  const id = 'gdu' + (++_geminiDataUriSeq);
-  _geminiDataUriStore.set(id, uri);
-  return id;
-}
-function geminiDataUri(id) {
-  return _geminiDataUriStore.get(id) || '';
-}
 
 function renderBlock(block, streaming = false) {
   switch (block.type) {
@@ -2657,33 +2495,6 @@ function renderBlock(block, streaming = false) {
           </div>
           <div class="tool-body" id="${trId}">${esc(txt)}</div>
         </div>`;
-    }
-
-    case 'gemini_images_group': {
-      const imgs = (block.images || []).map(img => renderBlock(img, streaming)).join('');
-      return `<div class="gemini-images">${imgs}</div>`;
-    }
-
-    case 'gemini_image': {
-      const url   = block.url   || '';
-      const alt   = block.alt   || block.title || 'Image';
-      const kind  = block.kind  || 'WebImage';
-      const badge = kind === 'GeneratedImage' ? 'AI GEN' : 'WEB';
-      const eAlt  = esc(alt);
-      if (!url) return '';
-      // For data URIs: store in map to avoid embedding hundreds-of-KB in onclick attrs
-      const isData  = url.startsWith('data:');
-      const srcUrl  = isData ? url : geminiImgSrc(url.replace(/'/g,"&#39;"));
-      const clickId = isData ? _storeDataUri(url) : '';
-      const onclick = isData
-        ? `onclick="openInCanvas(geminiDataUri('${clickId}'),'${eAlt}','image/jpeg')"`
-        : `onclick="openInCanvas('${url.replace(/'/g,"&#39;")}','${eAlt}','image/jpeg')"`;
-      return `<div class="gemini-img-wrap">
-        <span class="gemini-img-badge">${badge}</span>
-        <img src="${srcUrl}" alt="${eAlt}" ${onclick}
-          onerror="this.closest('.gemini-img-wrap').innerHTML='<div class=\\'gemini-img-err\\'>🖼 Image unavailable: ${eAlt}</div>'">
-        ${alt ? `<div class="gemini-img-caption">${eAlt}</div>` : ''}
-      </div>`;
     }
 
     default: return '';
@@ -3586,28 +3397,6 @@ function handleStreamEv(ev, asstMsg, bodyElFn) {
       }
       return;
     }
-    case 'gemini_text_replace': {
-      // Replace block 0 text with the cleaned version (image URLs stripped)
-      const cleanText = ev.text || '';
-      const existing = asstMsg.content.find((b, i) => i === 0 && b.type === 'text');
-      if (existing) {
-        existing.text = cleanText;
-      } else if (streamBlocks[0]) {
-        streamBlocks[0].text = cleanText;
-      }
-      updateStreamDisplay(asstMsg, bodyElFn);
-      return;
-    }
-    case 'gemini_images': {
-      if (ev.images?.length) {
-        // Wrap all images in a container block
-        const imgBlocks = ev.images.map(img => ({ type: 'gemini_image', ...img }));
-        // Store as a single container so they render together
-        asstMsg.content.push({ type: 'gemini_images_group', images: imgBlocks });
-        updateStreamDisplay(asstMsg, bodyElFn);
-      }
-      return;
-    }
     case 'ping':
       return;
   }
@@ -3687,15 +3476,6 @@ function toast(msg, type = 'info') {
   el.innerHTML = `<span style="opacity:.5">${ico}</span><span>${esc(msg)}</span>`;
   box.appendChild(el);
   setTimeout(() => el.remove(), 3500);
-}
-
-function geminiImgSrc(url) {
-  // data: URIs are already embedded — no proxy needed (and the proxy would reject them)
-  if (url.startsWith('data:')) return url;
-  // data: URIs are already embedded — sending them through the proxy would
-  // break them (proxy checks for googleusercontent.com and rejects anything else)
-  if (url.startsWith('data:')) return url;
-  return `/api/gemini/image_proxy?url=${encodeURIComponent(url)}&account=${encodeURIComponent(S.account)}`;
 }
 
 /* ═══════════════════════════════════════════

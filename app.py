@@ -1,6 +1,6 @@
 """
 Claude Console — Web UI Backend  v4
-Powered by claude_webapi + gemini_webapi.
+Powered by claude_webapi.
 
 Run:  python app.py
 Open: http://localhost:5000
@@ -28,8 +28,6 @@ from claude_webapi.constants import CLAUDE_BASE_URL
 from claude_webapi.exceptions import (
     APIError, AuthenticationError, QuotaExceededError,
 )
-
-from gemini_webapi import GeminiClient
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Logging
@@ -113,7 +111,11 @@ def _run(coro):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _make_claude_client(acct: dict) -> ClaudeClient:
-    client = ClaudeClient(acct["session_key"], acct["organization_id"])
+    sk  = acct.get("session_key", "")
+    org = acct.get("organization_id", "")
+    if not sk or not org:
+        raise ValueError(f"Account '{acct.get('name', '?')}' is missing session_key or organization_id")
+    client = ClaudeClient(sk, org)
     _run(client.init(timeout=60, auto_close=True, close_delay=120))
     return client
 
@@ -177,224 +179,6 @@ def _sync_stream_claude(acct: dict, conv_id: str, payload: dict):
         if isinstance(item, Exception):
             raise item
         yield item
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Gemini client + streaming  (emits Claude-compatible SSE)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _sse(obj: dict) -> bytes:
-    return f"data: {json.dumps(obj)}\n\n".encode()
-
-
-def _sync_stream_gemini(acct: dict, conv_id: str, prompt: str, model_str: str | None):
-    import queue as _queue
-
-    account_name = acct["name"]
-    psid         = acct.get("secure_1psid", "")
-    psidts       = acct.get("secure_1psidts", "")
-    q: "_queue.Queue" = _queue.Queue()
-
-    async def producer():
-        client = None
-        try:
-            client = GeminiClient(psid, psidts, proxy=None)
-            await client.init(timeout=30, auto_close=True, close_delay=120,
-                              auto_refresh=True)
-
-            metadata    = _get_gemini_chat_metadata(account_name, conv_id)
-            chat_kwargs: dict = {}
-            if metadata:
-                chat_kwargs["metadata"] = metadata
-            # Map model string to Gemini model; ignore Claude-specific strings
-            if model_str and not model_str.startswith("claude-"):
-                chat_kwargs["model"] = model_str
-
-            chat = client.start_chat(**chat_kwargs)
-
-            q.put(_sse({"type": "message_start",
-                        "message": {"uuid": conv_id}}))
-            q.put(_sse({"type": "content_block_start", "index": 0,
-                        "content_block": {"type": "text", "text": ""}}))
-
-            import re as _re
-            # Pattern matches googleusercontent image URLs Gemini embeds in text
-            _IMG_URL_RE = _re.compile(
-                r'https?://[a-z0-9\-]+\.googleusercontent\.com'
-                r'/(?:image_collection/image_retrieval|generated_image|image)'
-                r'/[^\s\]\)\'"<>]+',
-                _re.IGNORECASE
-            )
-
-            full_text: list[str] = []
-            last_chunk = None
-            async for chunk in chat.send_message_stream(prompt):
-                last_chunk = chunk
-                delta = chunk.text_delta or ""
-                if delta:
-                    full_text.append(delta)
-                    q.put(_sse({"type": "content_block_delta", "index": 0,
-                                "delta": {"type": "text_delta", "text": delta}}))
-
-            q.put(_sse({"type": "content_block_stop", "index": 0}))
-
-            # ── Collect images ──────────────────────────────────────────────
-            import base64
-            import mimetypes
-            import tempfile
-
-            images_data: list[dict] = []
-
-            if last_chunk is not None:
-                for i, img in enumerate(getattr(last_chunk, "images", None) or []):
-                    url  = getattr(img, "url", "") or ""
-                    if not url:
-                        continue
-                    data_uri = url  # fallback
-                    try:
-                        tmp_dir  = Path(tempfile.mkdtemp())
-                        fname    = f"gemini_img_{i}.png"
-                        tmp_file = tmp_dir / fname
-                        await img.save(path=str(tmp_dir), filename=fname, verbose=False)
-                        if tmp_file.exists():
-                            raw      = tmp_file.read_bytes()
-                            ct, _    = mimetypes.guess_type(fname)
-                            ct       = ct or "image/jpeg"
-                            tmp_file.unlink(missing_ok=True)
-                            try: tmp_dir.rmdir()
-                            except Exception: pass
-                            b64      = base64.b64encode(raw).decode()
-                            data_uri = f"data:{ct};base64,{b64}"
-                    except Exception:
-                        pass
-                    images_data.append({
-                        "url":   data_uri,
-                        "alt":   getattr(img, "alt",   "") or "",
-                        "title": getattr(img, "title", "") or "",
-                        "kind":  type(img).__name__,
-                    })
-
-            # Strip any raw image URLs left in the streamed text
-            raw_text  = "".join(full_text)
-            clean_text = _IMG_URL_RE.sub("", raw_text).strip()
-            import re as _re2
-            clean_text = _re2.sub(r'\n{3,}', '\n\n', clean_text)
-
-            if images_data:
-                if clean_text != raw_text:
-                    q.put(_sse({"type": "gemini_text_replace", "text": clean_text}))
-                q.put(_sse({"type": "gemini_images", "images": images_data}))
-
-            # Persist state
-            _save_gemini_chat_metadata(account_name, conv_id, chat.metadata)
-            _save_gemini_messages(account_name, conv_id, prompt,
-                                  clean_text if images_data else raw_text)
-            q.put(_sse({"type": "message_delta",
-                        "delta": {"stop_reason": "end_turn"}}))
-            q.put(_sse({"type": "message_stop"}))
-
-        except Exception as exc:
-            log.exception("Gemini stream error for conv %s", conv_id[:8])
-            q.put(_sse({"type": "error",
-                        "error": {"type": "api_error", "message": str(exc)}}))
-        finally:
-            if client:
-                try:
-                    await client.close()
-                except Exception:
-                    pass
-            q.put(None)
-
-    asyncio.run_coroutine_threadsafe(producer(), _loop)
-
-    while True:
-        item = q.get()
-        if item is None:
-            break
-        if isinstance(item, Exception):
-            raise item
-        yield item
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Gemini local conversation helpers
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _get_gemini_chat_metadata(account_name: str, conv_uuid: str):
-    data = store.read()
-    for a in data["accounts"]:
-        if a["name"] == account_name:
-            for c in a.get("pinned_conversations", []):
-                if c["conv_uuid"] == conv_uuid:
-                    return c.get("gemini_metadata")
-    return None
-
-
-def _save_gemini_chat_metadata(account_name: str, conv_uuid: str, metadata):
-    def fn(data):
-        for a in data["accounts"]:
-            if a["name"] == account_name:
-                for c in a.get("pinned_conversations", []):
-                    if c["conv_uuid"] == conv_uuid:
-                        c["gemini_metadata"] = metadata
-                        return
-    store.mutate(fn)
-
-
-def _save_gemini_messages(account_name: str, conv_uuid: str,
-                           human_text: str, assistant_text: str):
-    def fn(data):
-        for a in data["accounts"]:
-            if a["name"] == account_name:
-                for c in a.get("pinned_conversations", []):
-                    if c["conv_uuid"] == conv_uuid:
-                        msgs      = c.setdefault("messages", [])
-                        prev_leaf = c.get("current_leaf_message_uuid")
-                        h_uuid    = str(uuid_lib.uuid4())
-                        a_uuid    = str(uuid_lib.uuid4())
-                        msgs.append({
-                            "uuid":                 h_uuid,
-                            "sender":               "human",
-                            "content":              [{"type": "text",
-                                                      "text": human_text}],
-                            "created_at":           _now(),
-                            "parent_message_uuid":  prev_leaf,
-                        })
-                        msgs.append({
-                            "uuid":                a_uuid,
-                            "sender":              "assistant",
-                            "content":             [{"type": "text",
-                                                     "text": assistant_text}],
-                            "created_at":          _now(),
-                            "parent_message_uuid": h_uuid,
-                        })
-                        c["current_leaf_message_uuid"] = a_uuid
-                        return
-    store.mutate(fn)
-
-
-def _build_gemini_conv_object(acct_name: str, conv_uuid: str) -> dict:
-    data = store.read()
-    for a in data["accounts"]:
-        if a["name"] == acct_name:
-            for c in a.get("pinned_conversations", []):
-                if c["conv_uuid"] == conv_uuid:
-                    msgs = c.get("messages", [])
-                    leaf = c.get("current_leaf_message_uuid",
-                                 msgs[-1]["uuid"] if msgs else None)
-                    return {
-                        "uuid":                      conv_uuid,
-                        "name":                      c.get("display_name", ""),
-                        "created_at":                c.get("pinned_at", _now()),
-                        "updated_at":                c.get("pinned_at", _now()),
-                        "chat_messages":             msgs,
-                        "current_leaf_message_uuid": leaf,
-                    }
-    return {
-        "uuid": conv_uuid, "name": "", "created_at": _now(),
-        "updated_at": _now(), "chat_messages": [],
-        "current_leaf_message_uuid": None,
-    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -488,20 +272,14 @@ def _get_account_by_name(name: str) -> dict | None:
 
 
 def _account_to_public(a: dict) -> dict:
-    provider = a.get("provider", "claude")
     pub: dict = {
-        "name":       a["name"],
-        "provider":   provider,
-        "active":     bool(a.get("is_active")),
-        "created_at": a.get("created_at", ""),
+        "name":            a["name"],
+        "provider":        "claude",
+        "active":          bool(a.get("is_active")),
+        "created_at":      a.get("created_at", ""),
+        "session_key":     a.get("session_key", ""),
+        "organization_id": a.get("organization_id", ""),
     }
-    if provider == "gemini":
-        pub["secure_1psid"]   = a.get("secure_1psid", "")
-        pub["secure_1psidts"] = a.get("secure_1psidts", "")
-        pub["organization_id"] = "gemini"   # keeps the front-end subtitle happy
-    else:
-        pub["session_key"]     = a.get("session_key", "")
-        pub["organization_id"] = a.get("organization_id", "")
     return pub
 
 
@@ -608,6 +386,9 @@ def require_account(fn):
         acct = _get_active_account()
         if not acct:
             return jsonify({"error": "No active account configured"}), 401
+        if not acct.get("session_key") or not acct.get("organization_id"):
+            return jsonify({"error": "Active account is missing Claude credentials (session_key / organization_id). "
+                            "Please switch to a valid Claude account or re-add this one."}), 401
         return fn(acct, *args, **kwargs)
     return wrapper
 
@@ -672,71 +453,38 @@ def list_accounts():
 
 @app.route("/api/accounts", methods=["POST"])
 def add_account():
-    req      = request.json or {}
-    name     = (req.get("name") or "").strip()
-    provider = (req.get("provider") or "claude").strip().lower()
+    req  = request.json or {}
+    name = (req.get("name") or "").strip()
+    sk   = (req.get("session_key")     or "").strip()
+    org  = (req.get("organization_id") or "").strip()
 
     if not name:
         return jsonify({"error": "name is required"}), 400
-
-    # Reject if name exists AND it belongs to a DIFFERENT provider
-    data_check = store.read()
-    existing_check = next((a for a in data_check["accounts"] if a["name"] == name), None)
-    if existing_check and existing_check.get("provider", "claude") != provider:
-        return jsonify({
-            "error": f'An account named "{name}" already exists for a different provider '
-                     f'({existing_check.get("provider","claude")}). Please choose a unique name.'
-        }), 409
+    if not sk:
+        return jsonify({"error": "session_key is required"}), 400
+    if not org:
+        return jsonify({"error": "organization_id is required"}), 400
 
     active_name = None
 
-    if provider == "gemini":
-        psid   = (req.get("secure_1psid")   or "").strip()
-        psidts = (req.get("secure_1psidts") or "").strip()
-        if not psid:
-            return jsonify({"error": "secure_1psid is required for Gemini accounts"}), 400
-
-        def fn(data):
-            nonlocal active_name
-            existing = next((a for a in data["accounts"] if a["name"] == name), None)
-            if existing:
-                existing.update({"provider": "gemini",
-                                 "secure_1psid": psid,
-                                 "secure_1psidts": psidts})
-            else:
-                data["accounts"].append(
-                    _new_account(name, "gemini",
-                                 secure_1psid=psid, secure_1psidts=psidts))
-            if req.get("activate") or len(data["accounts"]) == 1:
-                _set_active_in_data(data, name)
-            active_name = next(
-                (a["name"] for a in data["accounts"] if a.get("is_active")), None)
-    else:
-        sk  = (req.get("session_key")     or "").strip()
-        org = (req.get("organization_id") or "").strip()
-        if not sk:
-            return jsonify({"error": "session_key is required for Claude accounts"}), 400
-        if not org:
-            return jsonify({"error": "organization_id is required for Claude accounts"}), 400
-
-        def fn(data):
-            nonlocal active_name
-            existing = next((a for a in data["accounts"] if a["name"] == name), None)
-            if existing:
-                existing.update({"provider": "claude",
-                                 "session_key": sk,
-                                 "organization_id": org})
-            else:
-                data["accounts"].append(
-                    _new_account(name, "claude",
-                                 session_key=sk, organization_id=org))
-            if req.get("activate") or len(data["accounts"]) == 1:
-                _set_active_in_data(data, name)
-            active_name = next(
-                (a["name"] for a in data["accounts"] if a.get("is_active")), None)
+    def fn(data):
+        nonlocal active_name
+        existing = next((a for a in data["accounts"] if a["name"] == name), None)
+        if existing:
+            existing.update({"provider": "claude",
+                             "session_key": sk,
+                             "organization_id": org})
+        else:
+            data["accounts"].append(
+                _new_account(name, "claude",
+                             session_key=sk, organization_id=org))
+        if req.get("activate") or len(data["accounts"]) == 1:
+            _set_active_in_data(data, name)
+        active_name = next(
+            (a["name"] for a in data["accounts"] if a.get("is_active")), None)
 
     store.mutate(fn)
-    log.info("Account saved: %s provider=%s active=%s", name, provider, active_name == name)
+    log.info("Account saved: %s provider=claude active=%s", name, active_name == name)
     return jsonify({"success": True, "name": name,
                     "active": active_name == name}), 201
 
@@ -780,7 +528,7 @@ def get_config():
         "session_key_set": bool(acct and acct.get("session_key")),
         "organization_id": acct.get("organization_id", "") if acct else "",
         "active_account":  acct["name"] if acct else None,
-        "provider":        acct.get("provider", "claude") if acct else None,
+        "provider":        "claude",
         "configured":      bool(acct),
     })
 
@@ -842,8 +590,6 @@ def set_preferences(acct):
 @require_account
 @api_error_handler
 def list_conversations(acct):
-    if acct.get("provider", "claude") == "gemini":
-        return _local_conv_list_response(acct)
     client = _make_claude_client(acct)
     try:
         convs = _run(client.list_conversations())
@@ -856,36 +602,25 @@ def list_conversations(acct):
 @require_account
 @api_error_handler
 def create_conversation(acct):
-    provider = acct.get("provider", "claude")
-    conv_id  = str(uuid_lib.uuid4())
+    conv_id = str(uuid_lib.uuid4())
 
-    if provider == "gemini":
-        def fn(data):
-            for a in data["accounts"]:
-                if a["name"] == acct["name"]:
-                    convs = a.setdefault("pinned_conversations", [])
-                    if not any(c["conv_uuid"] == conv_id for c in convs):
-                        convs.append({"conv_uuid": conv_id, "display_name": "",
-                                      "pinned_at": _now(), "messages": []})
-                    break
-        store.mutate(fn)
-    else:
-        client = _make_claude_client(acct)
-        try:
-            _run(client._ensure_conversation(conv_id))
-        finally:
-            _run(client.close())
-        def fn(data):
-            for a in data["accounts"]:
-                if a["name"] == acct["name"]:
-                    convs = a.setdefault("pinned_conversations", [])
-                    if not any(c["conv_uuid"] == conv_id for c in convs):
-                        convs.append({"conv_uuid": conv_id, "display_name": "",
-                                      "pinned_at": _now()})
-                    break
-        store.mutate(fn)
+    client = _make_claude_client(acct)
+    try:
+        _run(client._ensure_conversation(conv_id))
+    finally:
+        _run(client.close())
+    
+    def fn(data):
+        for a in data["accounts"]:
+            if a["name"] == acct["name"]:
+                convs = a.setdefault("pinned_conversations", [])
+                if not any(c["conv_uuid"] == conv_id for c in convs):
+                    convs.append({"conv_uuid": conv_id, "display_name": "",
+                                  "pinned_at": _now()})
+                break
+    store.mutate(fn)
 
-    log.info("Created conversation %s (provider=%s)", conv_id[:8], provider)
+    log.info("Created conversation %s", conv_id[:8])
     return jsonify({"success": True, "id": conv_id, "uuid": conv_id}), 201
 
 
@@ -893,8 +628,6 @@ def create_conversation(acct):
 @require_account
 @api_error_handler
 def get_conversation(acct, conv_id):
-    if acct.get("provider", "claude") == "gemini":
-        return jsonify(_build_gemini_conv_object(acct["name"], conv_id)), 200
     client = _make_claude_client(acct)
     try:
         data = _run(client.get_conversation(conv_id))
@@ -907,15 +640,13 @@ def get_conversation(acct, conv_id):
 @require_account
 @api_error_handler
 def update_conversation(acct, conv_id):
-    payload  = request.json or {}
-    provider = acct.get("provider", "claude")
+    payload = request.json or {}
 
-    if provider != "gemini":
-        client = _make_claude_client(acct)
-        try:
-            _run(client.update_conversation_settings(conv_id, payload))
-        finally:
-            _run(client.close())
+    client = _make_claude_client(acct)
+    try:
+        _run(client.update_conversation_settings(conv_id, payload))
+    finally:
+        _run(client.close())
 
     if (display_name := payload.get("name")) is not None:
         def fn(data):
@@ -934,9 +665,7 @@ def update_conversation(acct, conv_id):
 @require_account
 @api_error_handler
 def stop_response(acct, conv_id):
-    if acct.get("provider", "claude") == "gemini":
-        return jsonify({"success": False, "reason": "not_supported_for_gemini"})
-    _run(_make_claude_client(acct).stop_conversation_response(conv_id))
+    _run(_make_claude_client(acct).stop_response(conv_id))
     return jsonify({"success": True})
 
 
@@ -946,24 +675,7 @@ def stop_response(acct, conv_id):
 @require_account
 @api_error_handler
 def send_message(acct, conv_id):
-    data     = request.json or {}
-    provider = acct.get("provider", "claude")
-
-    if provider == "gemini":
-        prompt    = data.get("prompt", "")
-        model_str = data.get("model", "")
-        _log_message_send(acct["name"], conv_id, model_str or "gemini", len(prompt))
-
-        def generate():
-            for chunk in _sync_stream_gemini(acct, conv_id, prompt, model_str):
-                yield chunk
-
-        return Response(stream_with_context(generate()),
-                        content_type="text/event-stream",
-                        headers={"Cache-Control": "no-cache",
-                                 "X-Accel-Buffering": "no"})
-
-    # Claude
+    data = request.json or {}
     payload = build_claude_payload(data)
     _log_message_send(acct["name"], conv_id, payload["model"],
                       len(payload.get("prompt", "")))
@@ -978,7 +690,7 @@ def send_message(acct, conv_id):
                              "X-Accel-Buffering": "no"})
 
 
-# ── File handling (Claude only) ───────────────────────────────────────────────
+# ── File handling ─────────────────────────────────────────────────────────────
 
 @app.route("/api/conversations/<conv_id>/upload", methods=["POST"])
 @require_account
@@ -992,6 +704,7 @@ def upload_file(acct, conv_id):
     mime       = f.content_type or "application/octet-stream"
     fname      = f.filename or "upload"
 
+    # Upload via Claude API
     import tempfile
     with tempfile.NamedTemporaryFile(delete=False, suffix=Path(fname).suffix) as tmp:
         tmp.write(file_bytes)
@@ -1018,9 +731,6 @@ def upload_file(acct, conv_id):
 @require_account
 @api_error_handler
 def download_file(acct, conv_id):
-    if acct.get("provider", "claude") == "gemini":
-        return jsonify({"error": "File download is not supported for Gemini accounts"}), 400
-
     file_path = request.args.get("path", "")
     if not file_path:
         return jsonify({"error": "Missing 'path' query parameter"}), 400
@@ -1057,10 +767,9 @@ def download_file(acct, conv_id):
 @app.route("/api/usage", methods=["GET"])
 @require_account
 def get_usage(acct):
-    provider = acct.get("provider", "claude")
-    now_dt   = datetime.now(timezone.utc)
-    cut_24h  = (now_dt - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
-    cut_1h   = (now_dt - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+    now_dt  = datetime.now(timezone.utc)
+    cut_24h = (now_dt - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+    cut_1h  = (now_dt - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
 
     data    = store.read()
     msg_log = next(
@@ -1075,23 +784,20 @@ def get_usage(acct):
         by_model[k] = by_model.get(k, 0) + 1
     by_model = dict(sorted(by_model.items(), key=lambda x: -x[1]))
 
+    snap = _get_latest_quota(acct["name"])
     result = {
-        "provider":    provider,
-        "quota":       None,
+        "provider":    "claude",
+        "quota":       snap,
         "local_stats": {
             "messages_24h": len(msgs_24h),
             "messages_1h":  len(msgs_1h),
             "by_model":     by_model,
         },
     }
-
-    if provider == "claude":
-        snap = _get_latest_quota(acct["name"])
-        result["quota"] = snap
-        if snap and "windows" in snap:
-            result["windows"] = snap["windows"]
-            if "remaining" in snap:
-                result["remaining"] = snap["remaining"]
+    if snap and "windows" in snap:
+        result["windows"] = snap["windows"]
+        if "remaining" in snap:
+            result["remaining"] = snap["remaining"]
 
     return jsonify(result)
 
@@ -1120,27 +826,6 @@ def usage_messages(acct):
             msgs = a.get("message_log", [])
             return jsonify(list(reversed(msgs[-limit:])))
     return jsonify([])
-
-
-@app.route("/api/gemini/image_proxy")
-@require_account
-def gemini_image_proxy(acct):
-    url = request.args.get("url", "").strip()
-    if not url or "googleusercontent.com" not in url:
-        return jsonify({"error": "invalid url"}), 400
-
-    cookies = {
-        "__Secure-1PSID":   acct.get("secure_1psid", ""),
-        "__Secure-1PSIDTS": acct.get("secure_1psidts", ""),
-    }
-    try:
-        r = http_client.get(url, cookies=cookies, timeout=15,
-                            headers={"User-Agent": "Mozilla/5.0"})
-        return Response(r.content, status=200,
-                        headers={"Content-Type": r.headers.get("Content-Type", "image/jpeg"),
-                                 "Cache-Control": "private, max-age=3600"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
 
 
 # ── Local conversation index ──────────────────────────────────────────────────
@@ -1183,12 +868,9 @@ def local_conv_pin(acct):
                         existing["display_name"] = display_name
                     existing["pinned_at"] = _now()
                 else:
-                    entry: dict = {"conv_uuid": conv_uuid,
-                                   "display_name": display_name,
-                                   "pinned_at": _now()}
-                    if acct.get("provider") == "gemini":
-                        entry["messages"] = []
-                    convs.append(entry)
+                    convs.append({"conv_uuid": conv_uuid,
+                                  "display_name": display_name,
+                                  "pinned_at": _now()})
                 break
 
     store.mutate(fn)
@@ -1249,8 +931,6 @@ def list_uploads(acct, conv_uuid):
 @require_account
 @api_error_handler
 def update_settings(acct):
-    if acct.get("provider", "claude") == "gemini":
-        return jsonify({"error": "Settings API not available for Gemini accounts"}), 400
     payload = request.json or {}
     client  = _make_claude_client(acct)
     try:
@@ -1266,7 +946,7 @@ def update_settings(acct):
 
 if __name__ == "__main__":
     print()
-    print("  ✦  Claude Console  v4  (Claude + Gemini)  ✦")
+    print("  ✦  Claude Console  v4  ✦")
     print(f"  Store:  {STORE_PATH}")
     print("  URL:    http://localhost:5000")
     print()
