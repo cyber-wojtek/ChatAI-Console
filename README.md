@@ -1,10 +1,10 @@
-# ✦ Claude Console
+# ✦ ChatAI Console
 
-A self-hosted web chat interface for [Claude](https://claude.ai), powered by the reverse-engineered `claude_webapi` library. Multi-account management, real-time streaming, file uploads, conversation branching, usage tracking, and a Galaxy-themed UI — all in a single Flask app.
+A self-hosted web chat interface for [Claude](https://claude.ai) and [MiniApps.ai](https://miniapps.ai), powered by the reverse-engineered `claude_webapi` and `miniapps_api` libraries. Multi-account management, real-time streaming, file uploads, conversation branching, usage tracking, and a Galaxy-themed UI — all in a single Flask app.
 
 ## Features
 
-- **Multi-Account** — Add, switch, and manage multiple Claude accounts. Accounts are persisted in a local JSON store.
+- **Multi-Account** — Add, switch, and manage Claude or MiniApps accounts. Accounts are persisted in a local JSON store.
 - **Real-Time Streaming** — Server-Sent Events deliver tokens as they're generated, with inline thinking block rendering.
 - **All Claude Models** — Sonnet 4-6, Opus 4-6, Haiku 4-5, Sonnet 3-7, Opus 4-5, and Sonnet 3-5.
 - **Extended Thinking** — Toggle chain-of-thought with configurable budget. Thinking blocks render as collapsible sections.
@@ -25,6 +25,7 @@ A self-hosted web chat interface for [Claude](https://claude.ai), powered by the
 git clone <repo-url>
 cd ChatAI-Console
 pip install flask claude_webapi
+pip install -e ../MiniappsAI-API
 python app.py
 ```
 
@@ -32,25 +33,39 @@ Open **http://localhost:5000**, add an account, and start chatting.
 
 ## Authentication
 
-You need a session key and organization ID from [claude.ai](https://claude.ai):
+Accounts are added via the sidebar → account switcher → **＋ Add Account**.
 
+### Claude
+
+Two options:
+
+**Option A — Session key (manual)**
 1. Log in to claude.ai
 2. Open DevTools (`F12`) → **Application** → **Cookies**
-3. Copy the `sessionKey` value
-4. For the org ID, check the **Network** tab — find any API request URL containing `/organizations/<uuid>`
+3. Copy the `sessionKey` value and paste it into the session key field
+4. Organization ID is optional — discovered automatically if omitted
 
-Add credentials through the UI (sidebar → account switcher → ＋ Add Account) or via the API:
+**Option B — Google sign-in (via browser extension)**
+1. Install the [ChatAI Console OAuth Bridge](../ChatAI-Console-Extension/) extension
+2. Enable the bridge from the extension popup
+3. Click **Sign in with Google for Claude** in the account form
+4. Complete Google sign-in in the popup — the auth code is filled in automatically
 
-```sh
-curl -X POST http://localhost:5000/api/accounts \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "My Account",
-    "provider": "claude",
-    "session_key": "sk-ant-...",
-    "organization_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-  }'
-```
+### MiniApps
+
+Two options:
+
+**Option A — Google ID token (manual)**
+Paste a Google ID token (`eyJ…`) into the ID token field.
+
+**Option B — Google sign-in (via browser extension)**
+1. Install the [ChatAI Console OAuth Bridge](../ChatAI-Console-Extension/) extension
+2. Enable the bridge from the extension popup
+3. Click **Sign in with Google for MiniApps** in the account form
+4. A miniapps.ai tab opens — complete the Google sign-in prompt there
+5. The ID token is filled in automatically and the tab closes
+
+For first-time MiniApps account creation, also provide a setup username and password.
 
 ### Auto-Seeding Accounts
 
@@ -58,7 +73,8 @@ Create a `keys.py` in the project root to auto-load accounts on startup:
 
 ```python
 CLAUDE_ACCOUNTS = [
-    ("Account Name", "org-uuid", "sk-ant-..."),
+    ("Account Name", "sk-ant-..."),
+    ("Account Name With Org", "org-uuid", "sk-ant-..."),
 ]
 ```
 
@@ -89,6 +105,37 @@ CLAUDE_ACCOUNTS = [
 | `POST` | `/api/accounts` | Add account |
 | `DELETE` | `/api/accounts/<name>` | Delete account |
 | `POST` | `/api/accounts/<name>/activate` | Set active account |
+
+```sh
+# Add Claude account with session key
+curl -X POST http://localhost:5000/api/accounts \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "My Claude",
+    "provider": "claude",
+    "session_key": "sk-ant-...",
+    "organization_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  }'
+
+# Add Claude account via Google auth code (from OAuth flow)
+curl -X POST http://localhost:5000/api/accounts \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "My Claude",
+    "provider": "claude",
+    "claude_code": "4/0A..."
+  }'
+
+# Add MiniApps account
+curl -X POST http://localhost:5000/api/accounts \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "MiniApps",
+    "provider": "miniapps",
+    "miniapps_id_token": "eyJ...",
+    "tool_slug": "claude-37"
+  }'
+```
 
 ### Conversations
 
@@ -130,6 +177,19 @@ CLAUDE_ACCOUNTS = [
 | `GET` | `/api/preferences` | Get preferences |
 | `PATCH` | `/api/preferences` | Update preferences |
 
+### OAuth (used by the browser extension)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/oauth/claude/begin` | Start Claude Google OAuth session |
+| `GET` | `/api/oauth/claude/owns-state?state=` | Check if a state token belongs to Console |
+| `POST` | `/api/oauth/claude/ext-callback` | Receive auth code from extension |
+| `GET` | `/api/oauth/claude/status?state=` | Poll for completed Claude OAuth |
+| `GET` | `/api/oauth/miniapps/begin` | Start MiniApps Google OAuth session |
+| `GET` | `/api/oauth/miniapps/ext-pending` | Polled by extension to find waiting sessions |
+| `POST` | `/api/oauth/miniapps/ext-callback` | Receive ID token from extension |
+| `GET` | `/api/oauth/miniapps/status?state=` | Poll for completed MiniApps OAuth |
+
 ## Architecture
 
 ```
@@ -149,9 +209,14 @@ The backend bridges sync Flask handlers to the async `claude_webapi` client via 
 | Package | Purpose |
 |---|---|
 | [Flask](https://flask.palletsprojects.com/) | Web framework |
-| [claude_webapi](../claude_webapi/) | Reverse-engineered async Claude.ai client |
+| [Claude-API](https://github.com/cyber-wojtek/Claude-API/) | Reverse-engineered async Claude.ai client |
+| [MiniappsAI-API](https://github.com/cyber-wojtek/MiniappsAI-API/) | Reverse-engineered MiniApps.ai client |
 | [marked.js](https://marked.js.org/) | Markdown rendering (frontend) |
 | [highlight.js](https://highlightjs.org/) | Syntax highlighting (frontend) |
+
+## Related
+
+- [ChatAI Console OAuth Bridge](../ChatAI-Console-Extension/) — Browser extension for Google sign-in
 
 ## License
 

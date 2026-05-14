@@ -945,6 +945,25 @@ a:hover { text-decoration:underline; }
 }
 .btn-danger:hover { background:rgba(239,68,68,.14); }
 
+.btn-google {
+  display:flex; align-items:center; justify-content:center; gap:10px;
+  width:100%; padding:10px 16px;
+  background:#fff; border:1px solid #dadce0; border-radius:var(--r);
+  color:#3c4043; font-size:13px; font-weight:500;
+  transition:all .2s var(--ease); cursor:pointer;
+  box-shadow:0 1px 3px rgba(0,0,0,.12);
+}
+.btn-google:hover { background:#f8f9fa; box-shadow:0 2px 8px rgba(0,0,0,.18); }
+.btn-google:disabled { opacity:.5; cursor:not-allowed; }
+.btn-google svg { flex-shrink:0; }
+.miniapps-auth-status {
+  display:flex; align-items:center; gap:8px; padding:8px 10px;
+  background:var(--bg-3); border:1px solid var(--border); border-radius:var(--r);
+  font-size:11.5px; color:var(--text-2); margin-top:6px;
+}
+.miniapps-auth-status.ok { border-color:rgba(74,222,128,0.25); background:var(--green-dim); color:var(--green); }
+.miniapps-auth-status.err { border-color:rgba(248,113,113,0.25); background:var(--red-dim); color:var(--red); }
+
 .acct-list-item {
   display:flex; align-items:center; gap:10px; padding:10px 12px;
   background:var(--bg-3); border:1px solid var(--border);
@@ -1451,14 +1470,64 @@ a:hover { text-decoration:underline; }
       <input class="form-inp" type="text" id="acctNameInp" placeholder="e.g. Personal, Work…">
     </div>
     <div class="form-row">
-      <label class="form-lbl">Session Key</label>
+      <label class="form-lbl">Provider</label>
+      <select class="form-inp" id="providerSel" onchange="toggleProviderFields()">
+        <option value="claude">Claude</option>
+        <option value="miniapps">MiniApps</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label class="form-lbl">Claude Session Key</label>
       <input class="form-inp" type="password" id="skInp" placeholder="Paste your sessionKey cookie…">
       <div class="form-hint">From claude.ai cookies → <code>sessionKey</code></div>
     </div>
     <div class="form-row">
       <label class="form-lbl">Organization ID</label>
-      <input class="form-inp" type="text" id="orgInp" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-      <div class="form-hint">UUID found in API URLs after <code>/organizations/</code></div>
+      <input class="form-inp" type="text" id="orgInp" placeholder="Optional: auto-discover if left blank">
+      <div class="form-hint">Leave blank to let Claude-API discover the organization automatically.</div>
+    </div>
+    <div class="form-row" id="claudeAuthRow">
+      <label class="form-lbl">Claude Google Sign-In</label>
+      <button type="button" class="btn-google" id="claudeGoogleBtn" onclick="claudeGoogleSignIn()">
+        <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+          <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285F4"/>
+          <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
+          <path d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z" fill="#FBBC05"/>
+          <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 6.293C4.672 4.166 6.656 3.58 9 3.58z" fill="#EA4335"/>
+        </svg>
+        Sign in with Google for Claude
+      </button>
+      <div class="miniapps-auth-status" id="claudeAuthStatus" style="display:none"></div>
+      <input class="form-inp" type="text" id="claudeCodeInp" placeholder="Or paste a Google auth code manually…" style="margin-top:6px">
+      <div class="form-hint">Click "Sign in with Google" to authenticate automatically, or paste a Google auth code manually. Used instead of a session key.</div>
+    </div>
+    <div class="form-row" id="miniappsAuthRow">
+      <label class="form-lbl">MiniApps Google Sign-In</label>
+      <button type="button" class="btn-google" id="miniappsGoogleBtn" onclick="miniappsGoogleSignIn()">
+        <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+          <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285F4"/>
+          <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
+          <path d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z" fill="#FBBC05"/>
+          <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 6.293C4.672 4.166 6.656 3.58 9 3.58z" fill="#EA4335"/>
+        </svg>
+        Sign in with Google
+      </button>
+      <div class="miniapps-auth-status" id="miniappsAuthStatus" style="display:none"></div>
+      <textarea class="form-inp" id="miniappsIdTokenInp" rows="2" placeholder="Or paste a Google ID token manually…" style="margin-top:6px"></textarea>
+      <div class="form-hint">Click "Sign in with Google" to authenticate automatically, or paste an ID token manually.</div>
+    </div>
+    <div class="form-row">
+      <label class="form-lbl">MiniApps Setup Username</label>
+      <input class="form-inp" type="text" id="miniappsSetupUserInp" placeholder="Optional: only for first-time MiniApps setup">
+    </div>
+    <div class="form-row">
+      <label class="form-lbl">MiniApps Setup Password</label>
+      <input class="form-inp" type="password" id="miniappsSetupPassInp" placeholder="Optional: only for first-time MiniApps setup">
+    </div>
+    <div class="form-row">
+      <label class="form-lbl">MiniApps Tool Slug</label>
+      <input class="form-inp" type="text" id="toolSlugInp" placeholder="claude-37">
+      <div class="form-hint">Used as the chat tool for MiniApps accounts.</div>
     </div>
     <div class="toggle-row" style="margin-top:8px">
       <label class="toggle-lbl" for="acctActivateChk" style="cursor:pointer">Set as active account</label>
@@ -1758,12 +1827,29 @@ function setStatus(ok, orgId) {
     const active = S.accounts.find(a => a.active);
     dot.classList.add('ok');
     name.textContent = S.activeAccount || 'default';
-    org.textContent = (orgId || '').slice(0, 8) + '…';
+    org.textContent = orgId ? (orgId.slice(0, 8) + '…') : 'auto';
   } else {
     dot.classList.remove('ok');
     name.textContent = 'Not configured';
     org.textContent  = '';
   }
+}
+
+function toggleProviderFields() {
+  const provider = document.getElementById('providerSel')?.value || 'claude';
+  const claudeRows = [
+    document.getElementById('skInp')?.closest('.form-row'),
+    document.getElementById('orgInp')?.closest('.form-row'),
+    document.getElementById('claudeAuthRow'),
+  ];
+  const miniappsRows = [
+    document.getElementById('miniappsAuthRow'),
+    document.getElementById('miniappsSetupUserInp')?.closest('.form-row'),
+    document.getElementById('miniappsSetupPassInp')?.closest('.form-row'),
+    document.getElementById('toolSlugInp')?.closest('.form-row'),
+  ];
+  claudeRows.forEach(el => { if (el) el.style.display = provider === 'claude' ? '' : 'none'; });
+  miniappsRows.forEach(el => { if (el) el.style.display = provider === 'miniapps' ? '' : 'none'; });
 }
 
 /* ═══════════════════════════════════════════
@@ -1841,25 +1927,26 @@ async function refreshAccountState() {
   S.activeAccount = data.active || null;
   S.configured    = S.accounts.some(a => a.active);
   const active = S.accounts.find(a => a.active);
+  const provider = (active?.provider || 'claude').toLowerCase();
   setStatus(!!active, active?.organization_id);
   renderAccountMenu();
   renderAccountList();
 
   // Ensure Claude model is selected
   const sel = document.getElementById('modelSel');
-  if (sel && !sel.value.startsWith('claude')) {
+  if (sel && provider === 'claude' && !sel.value.startsWith('claude')) {
     sel.value = 'claude-sonnet-4-6';
   }
 
-  // Show thinking toggle for Claude
+  // Show thinking toggle only for Claude accounts
   const thinkBtn = document.getElementById('thinkBtn');
-  if (thinkBtn) thinkBtn.style.display = '';
+  if (thinkBtn) thinkBtn.style.display = provider === 'claude' ? '' : 'none';
 
   fetchQuota();
 
   // Update textarea placeholder
   const msgTa = document.getElementById('msgTa');
-  if (msgTa) msgTa.placeholder = 'Message Claude…';
+  if (msgTa) msgTa.placeholder = provider === 'miniapps' ? 'Message MiniApps…' : 'Message Claude…';
 }
 
 async function fetchQuota() {
@@ -1941,8 +2028,9 @@ function renderAccountMenu(filter = '') {
     return;
   }
   for (const acct of visible) {
-    const badge = '<span class="ami-badge" style="color:var(--accent)">C</span>';
-    const subtitle = (acct.organization_id||'').slice(0,8)+'…';
+    const prov = (acct.provider || 'claude').toLowerCase();
+    const badge = `<span class="ami-badge" style="color:var(--accent)">${prov === 'miniapps' ? 'M' : 'C'}</span>`;
+    const subtitle = acct.organization_id ? (acct.organization_id.slice(0,8)+'…') : 'auto';
     const el = document.createElement('div');
     el.className = `acct-menu-item ${acct.active ? 'active' : ''}`;
     el.innerHTML = `
@@ -1979,8 +2067,9 @@ function renderAccountList(filter = '') {
     return;
   }
   for (const acct of visible) {
-    const provBadge = '<span style="font-size:10px;padding:1px 5px;background:var(--accent-dim);color:var(--accent);border-radius:4px;font-weight:600;flex-shrink:0">Claude</span>';
-    const subtitle = (acct.organization_id||'').slice(0,8)+'…';
+    const prov = (acct.provider || 'claude').toLowerCase();
+    const provBadge = `<span style="font-size:10px;padding:1px 5px;background:var(--accent-dim);color:var(--accent);border-radius:4px;font-weight:600;flex-shrink:0">${prov === 'miniapps' ? 'MiniApps' : 'Claude'}</span>`;
+    const subtitle = acct.organization_id ? (acct.organization_id.slice(0,8)+'…') : 'auto';
     const el = document.createElement('div');
     el.className = `acct-list-item ${acct.active ? 'active' : ''}`;
     el.innerHTML = `
@@ -2017,6 +2106,7 @@ async function switchAccount(name) {
 async function saveAccount() {
   const name = document.getElementById('acctNameInp').value.trim();
   const act  = document.getElementById('acctActivateChk').checked;
+  const provider = document.getElementById('providerSel').value || 'claude';
   if (!name) { toast('Account name is required', 'err'); return; }
 
   // Detect if we're editing (Save Changes) vs adding
@@ -2030,9 +2120,25 @@ async function saveAccount() {
 
   const sk  = document.getElementById('skInp').value.trim();
   const org = document.getElementById('orgInp').value.trim();
-  if (!sk)  { toast('Session key is required', 'err'); return; }
-  if (!org) { toast('Organization ID is required', 'err'); return; }
-  const body = { name, provider: 'claude', session_key: sk, organization_id: org, activate: act };
+  const claudeCode = document.getElementById('claudeCodeInp').value.trim();
+  const miniappsIdToken = document.getElementById('miniappsIdTokenInp').value.trim();
+  const miniappsSetupUser = document.getElementById('miniappsSetupUserInp').value.trim();
+  const miniappsSetupPass = document.getElementById('miniappsSetupPassInp').value;
+  const toolSlug = document.getElementById('toolSlugInp').value.trim();
+
+  const body = { name, provider, activate: act };
+  if (provider === 'claude') {
+    if (!isEditing && !sk && !claudeCode)  { toast('Sign in with Google or paste a session key / auth code', 'err'); return; }
+    if (sk) body.session_key = sk;
+    if (org) body.organization_id = org;
+    if (claudeCode) body.claude_code = claudeCode;
+  } else {
+    if (!isEditing && !miniappsIdToken) { toast('Sign in with Google or paste an ID token first', 'err'); return; }
+    if (miniappsIdToken) body.miniapps_id_token = miniappsIdToken;
+    if (miniappsSetupUser) body.setup_username = miniappsSetupUser;
+    if (miniappsSetupPass) body.setup_password = miniappsSetupPass;
+    body.tool_slug = toolSlug || 'claude-37';
+  }
 
   const r = await apiFetch('/api/accounts', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -2053,27 +2159,160 @@ async function saveAccount() {
   toast('Account saved', 'ok');
 }
 
+/* ── MiniApps Google OAuth ───────────────────────────────────────────────── */
 
+function _miniappsSetAuthStatus(msg, type) {
+  const el = document.getElementById('miniappsAuthStatus');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'miniapps-auth-status' + (type ? ' ' + type : '');
+  el.style.display = msg ? '' : 'none';
+}
+
+function _miniappsResetAuthStatus() {
+  const el = document.getElementById('miniappsAuthStatus');
+  if (el) { el.style.display = 'none'; el.className = 'miniapps-auth-status'; el.textContent = ''; }
+  const btn = document.getElementById('miniappsGoogleBtn');
+  if (btn) btn.disabled = false;
+}
+
+async function miniappsGoogleSignIn() {
+  const btn = document.getElementById('miniappsGoogleBtn');
+  if (btn) btn.disabled = true;
+  _miniappsSetAuthStatus('Starting sign-in session…', '');
+
+  let r;
+  try { r = await apiFetch('/api/oauth/miniapps/begin'); } catch(e) { r = null; }
+  if (!r?.state) {
+    _miniappsSetAuthStatus('Failed to start session — check server logs', 'err');
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  // Open miniapps.ai so the extension content script can trigger GIS there
+  const tab = window.open('https://miniapps.ai/', 'miniapps_gis', 'width=600,height=700,left=200,top=80');
+  _miniappsSetAuthStatus(
+    tab
+      ? 'Google sign-in prompt opening on miniapps.ai — complete it there…'
+      : 'Visit miniapps.ai and complete the Google sign-in prompt…',
+    ''
+  );
+
+  const iv = setInterval(async () => {
+    let s;
+    try { s = await apiFetch(`/api/oauth/miniapps/status?state=${encodeURIComponent(r.state)}`); } catch { return; }
+    if (!s?.done) return;
+    clearInterval(iv);
+    if (tab && !tab.closed) tab.close();
+    if (s.id_token) {
+      document.getElementById('miniappsIdTokenInp').value = s.id_token;
+      _miniappsSetAuthStatus(`✓ Signed in${s.email ? ' as ' + s.email : ''} — ready`, 'ok');
+    } else {
+      _miniappsSetAuthStatus('Sign-in failed: ' + (s.error || 'unknown error'), 'err');
+    }
+    if (btn) btn.disabled = false;
+  }, 1200);
+
+  // Safety timeout after 2 minutes
+  setTimeout(() => {
+    clearInterval(iv);
+    if (tab && !tab.closed) tab.close();
+    if (btn) btn.disabled = false;
+    _miniappsSetAuthStatus('Timed out — try again', 'err');
+  }, 120_000);
+}
+
+/* ── Claude Google OAuth (auth code flow) ───────────────────────────────── */
+
+function _claudeSetAuthStatus(msg, type) {
+  const el = document.getElementById('claudeAuthStatus');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'miniapps-auth-status' + (type ? ' ' + type : '');
+  el.style.display = msg ? '' : 'none';
+}
+
+function _claudeResetAuthStatus() {
+  const el = document.getElementById('claudeAuthStatus');
+  if (el) { el.style.display = 'none'; el.className = 'miniapps-auth-status'; el.textContent = ''; }
+  const btn = document.getElementById('claudeGoogleBtn');
+  if (btn) btn.disabled = false;
+}
+
+async function claudeGoogleSignIn() {
+  const btn = document.getElementById('claudeGoogleBtn');
+  if (btn) btn.disabled = true;
+  _claudeSetAuthStatus('Opening Google sign-in…', '');
+
+  let r;
+  try { r = await apiFetch('/api/oauth/claude/begin'); } catch(e) { r = null; }
+  if (!r?.auth_url) {
+    _claudeSetAuthStatus('Failed to start OAuth — check server logs', 'err');
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  const popup = window.open(r.auth_url, 'claude_oauth', 'width=520,height=660,left=200,top=80');
+  if (!popup) {
+    _claudeSetAuthStatus('Popup blocked — allow popups for this page', 'err');
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  const iv = setInterval(async () => {
+    let s;
+    try { s = await apiFetch(`/api/oauth/claude/status?state=${encodeURIComponent(r.state)}`); } catch { return; }
+    if (!s?.done) return;
+    clearInterval(iv);
+    if (!popup.closed) popup.close();
+    if (s.code) {
+      document.getElementById('claudeCodeInp').value = s.code;
+      _claudeSetAuthStatus('✓ Auth code received — ready to save account', 'ok');
+    } else {
+      _claudeSetAuthStatus('Sign-in failed: ' + (s.error || 'unknown error'), 'err');
+    }
+    if (btn) btn.disabled = false;
+  }, 1000);
+
+  // Safety timeout after 5 minutes
+  setTimeout(() => {
+    clearInterval(iv);
+    if (!popup.closed) popup.close();
+    if (btn) btn.disabled = false;
+  }, 300_000);
+}
 
 function _resetAcctForm() {
   document.getElementById('acctNameInp').value      = '';
   document.getElementById('skInp').value            = '';
   document.getElementById('orgInp').value           = '';
+  document.getElementById('claudeCodeInp').value    = '';
+  document.getElementById('miniappsIdTokenInp').value = '';
+  document.getElementById('miniappsSetupUserInp').value = '';
+  document.getElementById('miniappsSetupPassInp').value = '';
+  document.getElementById('toolSlugInp').value      = 'claude-37';
+  document.getElementById('providerSel').value     = 'claude';
   document.getElementById('acctFormTitle').textContent  = 'Add Account';
   document.getElementById('acctSaveBtn').textContent    = 'Add Account';
   document.getElementById('acctCancelEditBtn').style.display = 'none';
+  _miniappsResetAuthStatus();
+  _claudeResetAuthStatus();
+  toggleProviderFields();
 }
 
 function editAccount(name) {
   const acct = S.accounts.find(a => a.name === name);
   if (!acct) return;
   document.getElementById('acctNameInp').value = acct.name;
+  document.getElementById('providerSel').value = acct.provider || 'claude';
   document.getElementById('orgInp').value = acct.organization_id || '';
   document.getElementById('skInp').value  = acct.session_key     || '';
+  document.getElementById('toolSlugInp').value = acct.tool_slug || 'claude-37';
   document.getElementById('acctFormTitle').textContent       = 'Edit Account';
   document.getElementById('acctSaveBtn').textContent         = 'Save Changes';
   document.getElementById('acctCancelEditBtn').style.display = '';
   document.getElementById('acctNameInp').focus();
+  toggleProviderFields();
 }
 
 function cancelAcctEdit() {
@@ -2098,6 +2337,7 @@ function openSettings() {
   const inp = document.getElementById('acctSearchInp');
   if (inp) inp.value = '';
   renderAccountList();
+  toggleProviderFields();
   openOverlay('settingsOverlay');
 }
 
