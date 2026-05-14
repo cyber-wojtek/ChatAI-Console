@@ -7,10 +7,9 @@ A self-hosted web chat interface for [Claude](https://claude.ai) and [MiniApps.a
 - **Multi-Account** — Add, switch, and manage Claude or MiniApps accounts. Accounts are persisted in a local JSON store.
 - **Real-Time Streaming** — Server-Sent Events deliver tokens as they're generated, with inline thinking block rendering.
 - **All Claude Models** — Sonnet 4-6, Opus 4-6, Haiku 4-5, Sonnet 3-7, Opus 4-5, and Sonnet 3-5.
-- **Extended Thinking** — Toggle chain-of-thought with configurable budget. Thinking blocks render as collapsible sections.
-- **File Uploads** — Attach images, PDFs, and documents (up to 100 MB). Upload metadata tracked locally.
+- **Extended Thinking** — Toggle chain-of-thought. Thinking blocks render as collapsible sections.
+- **File Uploads** — Attach  files up to 100 MB. Upload metadata tracked locally.
 - **Conversation Management** — Create, rename, pin, search, branch, and delete conversations.
-- **Conversation Branching** — Edit any previous message to fork the conversation; navigate branches from the toolbar.
 - **Artifacts & Canvas** — Split-pane canvas preview for code, HTML, SVG, and Mermaid diagram artifacts.
 - **In-Chat Search** — Search within the current conversation with match navigation.
 - **Usage & Quota Tracking** — Per-account usage snapshots, message history, and visual quota bars in the sidebar.
@@ -23,6 +22,7 @@ A self-hosted web chat interface for [Claude](https://claude.ai) and [MiniApps.a
 
 ```sh
 git clone <repo-url>
+git clone <Claude-API url>
 cd ChatAI-Console
 pip install flask claude_webapi
 pip install -e ../MiniappsAI-API
