@@ -22,10 +22,8 @@ A self-hosted web chat interface for [Claude](https://claude.ai) and [MiniApps.a
 
 ```sh
 git clone <repo-url>
-git clone <Claude-API url>
 cd ChatAI-Console
-pip install flask claude_webapi
-pip install -e ../MiniappsAI-API
+pip install flask claude_webapi miniapps_api
 python app.py
 ```
 

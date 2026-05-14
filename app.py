@@ -39,7 +39,7 @@ if str(MINIAPPS_ROOT) not in sys.path:
     sys.path.insert(0, str(MINIAPPS_ROOT))
 
 try:
-    from miniapps_api import MiniAppsClient
+    from miniapps_webapi import MiniAppsClient
 except ImportError:
     MiniAppsClient = None
 
