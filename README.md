@@ -21,9 +21,9 @@ A self-hosted web chat interface for [Claude](https://claude.ai) and [MiniApps.a
 **Requirements:** Python 3.10+
 
 ```sh
-git clone <repo-url>
+git clone https://github.com/cyber-wojtek/ChatAI-Console.git
 cd ChatAI-Console
-pip install flask claude_webapi miniapps_api
+pip install flask claude_webapi
 python app.py
 ```
 
@@ -44,26 +44,10 @@ Two options:
 4. Organization ID is optional — discovered automatically if omitted
 
 **Option B — Google sign-in (via browser extension)**
-1. Install the [ChatAI Console OAuth Bridge](../ChatAI-Console-Extension/) extension
+1. Install the [ChatAI Console OAuth Bridge](https://github.com/cyber-wojtek/ChatAI-Console-Extension.git) extension
 2. Enable the bridge from the extension popup
 3. Click **Sign in with Google for Claude** in the account form
 4. Complete Google sign-in in the popup — the auth code is filled in automatically
-
-### MiniApps
-
-Two options:
-
-**Option A — Google ID token (manual)**
-Paste a Google ID token (`eyJ…`) into the ID token field.
-
-**Option B — Google sign-in (via browser extension)**
-1. Install the [ChatAI Console OAuth Bridge](../ChatAI-Console-Extension/) extension
-2. Enable the bridge from the extension popup
-3. Click **Sign in with Google for MiniApps** in the account form
-4. A miniapps.ai tab opens — complete the Google sign-in prompt there
-5. The ID token is filled in automatically and the tab closes
-
-For first-time MiniApps account creation, also provide a setup username and password.
 
 ### Auto-Seeding Accounts
 
@@ -180,7 +164,7 @@ curl -X POST http://localhost:5000/api/accounts \
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/oauth/claude/begin` | Start Claude Google OAuth session |
-| `GET` | `/api/oauth/claude/owns-state?state=` | Check if a state token belongs to Console |
+| `GET` | `/api/oauth/claude/ext-pending` | Polled by extension to find waiting Claude sessions |
 | `POST` | `/api/oauth/claude/ext-callback` | Receive auth code from extension |
 | `GET` | `/api/oauth/claude/status?state=` | Poll for completed Claude OAuth |
 | `GET` | `/api/oauth/miniapps/begin` | Start MiniApps Google OAuth session |

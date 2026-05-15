@@ -9,14 +9,12 @@ Data: ./data/accounts.json
 
 import asyncio
 import base64
-import hashlib
 import json
 import logging
 import os
 import secrets
 import sys
 import threading
-import urllib.parse
 import uuid as uuid_lib
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -34,15 +32,6 @@ from claude_webapi.exceptions import (
     APIError, AuthenticationError, QuotaExceededError,
 )
 
-MINIAPPS_ROOT = Path(__file__).resolve().parent.parent / "MiniappsAI-API"
-if str(MINIAPPS_ROOT) not in sys.path:
-    sys.path.insert(0, str(MINIAPPS_ROOT))
-
-try:
-    from miniapps_webapi import MiniAppsClient
-except ImportError:
-    MiniAppsClient = None
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Logging
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -55,8 +44,9 @@ logging.basicConfig(
 log = logging.getLogger("claude-console")
 
 CLAUDE_PROVIDER = "claude"
-MINIAPPS_PROVIDER = "miniapps"
-DEFAULT_MINIAPPS_TOOL_SLUG = "claude-37"
+CHATWITHAI_PROVIDER = "chatwithai"
+CHATWITHAI_API_BASE = "https://api.chatwithai.app"
+CHATWITHAI_DEFAULT_MODEL = "claude-sonnet-4-6"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # JSON Store
@@ -137,52 +127,6 @@ def _make_claude_client(acct: dict) -> ClaudeClient:
     _run(client.init(timeout=60, auto_close=True, close_delay=120))
     return client
 
-
-def _make_miniapps_client(acct: dict):
-    if MiniAppsClient is None:
-        raise RuntimeError(
-            "MiniAppsAI-API is not available. Install the sibling package or add it to PYTHONPATH."
-        )
-    cookie_file = _account_cookie_file(acct)
-    client = MiniAppsClient(cookie_file=str(cookie_file) if cookie_file else None)
-    if acct.get("miniapps_last_auth_hash"):
-        client.last_auth_hash = acct.get("miniapps_last_auth_hash")
-    if acct.get("miniapps_last_conversation_id"):
-        client.last_conversation_id = acct.get("miniapps_last_conversation_id")
-    return client
-
-
-def _normalize_miniapps_message(msg: dict) -> dict:
-    elements = msg.get("elements") or []
-    text = msg.get("text") or " ".join(
-        e.get("text", "") for e in elements if isinstance(e, dict) and e.get("type") == "text"
-    ).strip()
-    sender = "assistant" if msg.get("origin") == "assistant" else "human"
-    return {
-        "uuid": msg.get("uuid") or msg.get("id") or str(uuid_lib.uuid4()),
-        "sender": sender,
-        "content": [{"type": "text", "text": text}] if text else [],
-        "text": text,
-        "parent_message_uuid": msg.get("parentMessageId") or msg.get("parent_message_uuid") or "00000000-0000-4000-8000-000000000000",
-        "created_at": msg.get("createdAt") or msg.get("created_at") or _now(),
-        "index": msg.get("index", 0),
-        "files_v2": msg.get("files_v2", []),
-    }
-
-
-def _miniapps_conversation_to_console(conv: dict) -> dict:
-    messages = conv.get("messages") or conv.get("chat_messages") or []
-    return {
-        "uuid": conv.get("uuid") or conv.get("id") or conv.get("conversationId") or conv.get("conversation_id") or str(uuid_lib.uuid4()),
-        "name": conv.get("name") or conv.get("title") or conv.get("display_name") or "",
-        "created_at": conv.get("createdAt") or conv.get("created_at") or _now(),
-        "updated_at": conv.get("updatedAt") or conv.get("updated_at") or conv.get("createdAt") or conv.get("created_at") or _now(),
-        "chat_messages": [_normalize_miniapps_message(m) for m in messages],
-        "current_leaf_message_uuid": (messages[-1].get("uuid") if messages else None),
-        "remote_conversation_id": conv.get("uuid") or conv.get("id") or conv.get("conversationId") or conv.get("conversation_id"),
-    }
-
-
 def _get_remote_conversation_id(acct: dict, local_conv_id: str) -> str | None:
     data = store.read()
     for a in data["accounts"]:
@@ -208,11 +152,52 @@ def _set_remote_conversation_id(acct: dict, local_conv_id: str, remote_conv_id: 
     store.mutate(fn)
 
 
-def _provider_client(acct: dict):
-    provider = _provider_name(acct)
-    if provider == MINIAPPS_PROVIDER:
-        return provider, _make_miniapps_client(acct)
-    return CLAUDE_PROVIDER, _make_claude_client(acct)
+
+def _chatwithai_headers() -> dict:
+    return {
+        "Accept": "text/event-stream",
+        "Content-Type": "application/json",
+        "Origin": "https://chatwithai.app",
+        "Referer": "https://chatwithai.app/chat/index",
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/135.0.0.0 Safari/537.36"
+        ),
+        "X-Device-Id": str(uuid_lib.uuid4()),
+    }
+
+
+_CHATWITHAI_MODEL_CACHE: dict = {"fetched_at": 0.0, "models": []}
+
+
+def _chatwithai_fetch_models() -> list[dict]:
+    now_ts = datetime.now(timezone.utc).timestamp()
+    if _CHATWITHAI_MODEL_CACHE["models"] and now_ts - _CHATWITHAI_MODEL_CACHE["fetched_at"] < 900:
+        return _CHATWITHAI_MODEL_CACHE["models"]
+    url = f"{CHATWITHAI_API_BASE}/api/v1/chatwithai/chats/models"
+    resp = http_client.get(url, headers=_chatwithai_headers(), timeout=20)
+    if resp.status_code != 200:
+        return _CHATWITHAI_MODEL_CACHE["models"]
+    payload = resp.json()
+    models: list[dict] = []
+    for vendor in payload.get("data", []) or []:
+        for m in vendor.get("models", []) or []:
+            mid = m.get("id") or m.get("slug")
+            if not mid:
+                continue
+            models.append({
+                "id": mid,
+                "display_name": m.get("display_name") or mid,
+                "vendor": vendor.get("display_name", ""),
+                "vendor_slug": vendor.get("slug", ""),
+                "category": m.get("category") or "text",
+                "context_size": m.get("context_size"),
+                "description": m.get("description", ""),
+            })
+    _CHATWITHAI_MODEL_CACHE["models"] = models
+    _CHATWITHAI_MODEL_CACHE["fetched_at"] = now_ts
+    return models
 
 
 def _sync_stream_claude(acct: dict, conv_id: str, payload: dict):
@@ -231,6 +216,7 @@ def _sync_stream_claude(acct: dict, conv_id: str, payload: dict):
                 url, data=body,
                 headers={"Accept": "text/event-stream",
                          "Content-Length": str(len(body))},
+                timeout=3600
             ) as resp:
                 if resp.status != 200:
                     text = await resp.text()
@@ -275,51 +261,125 @@ def _sync_stream_claude(acct: dict, conv_id: str, payload: dict):
             raise item
         yield item
 
+def _sync_stream_chatwithai(prompt: str, model: str, *, assistant_uuid: str):
+    url = f"{CHATWITHAI_API_BASE}/api/v1/chatwithai/chats/anonymous/events"
+    payload = {
+        "message": prompt,
+        "chat_id": None,
+        "message_context": "default",
+        "model": model,
+    }
 
-def _sync_stream_miniapps(acct: dict, conv_id: str, prompt: str, tool_slug: str):
-    import queue as _queue
+    text_accum: list[str] = []
+    started = False
+    message_uuid = assistant_uuid
 
-    client = _make_miniapps_client(acct)
-    q: "_queue.Queue" = _queue.Queue()
-    remote_conv_id = _get_remote_conversation_id(acct, conv_id)
+    def emit(obj: dict):
+        return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")
 
-    def producer():
-        assistant_uuid = str(uuid_lib.uuid4())
-        try:
-            q.put({"type": "message_start", "message": {"uuid": assistant_uuid}})
-            q.put({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}})
+    def start_if_needed():
+        nonlocal started
+        if started:
+            return None
+        started = True
+        return [
+            emit({"type": "message_start", "message": {"uuid": message_uuid}}),
+            emit({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+        ]
 
-            def on_token(fragment: str):
-                if fragment:
-                    q.put({
+    resp = http_client.post(
+        url,
+        json=payload,
+        headers=_chatwithai_headers(),
+        stream=True,
+        timeout=60,
+    )
+    if resp.status_code != 200:
+        err = {"type": "error", "error": {"type": "api_error", "message": f"HTTP {resp.status_code}"}}
+        yield emit(err)
+        return
+
+    # Use iter_content with decode_unicode=False to preserve raw bytes
+    buffer = b""
+    for chunk in resp.iter_content(chunk_size=1024, decode_unicode=False):
+        if not chunk:
+            continue
+        
+        buffer += chunk
+        lines = buffer.split(b'\n')
+        buffer = lines[-1]  # Keep incomplete line in buffer
+        
+        for line_bytes in lines[:-1]:
+            try:
+                line = line_bytes.decode('utf-8', errors='replace').strip()
+            except UnicodeDecodeError:
+                continue
+                
+            if not line.startswith("data:"):
+                continue
+            data_str = line[5:].strip()
+            if not data_str:
+                continue
+            try:
+                evt = json.loads(data_str)
+            except json.JSONDecodeError:
+                continue
+
+            evt_type = evt.get("event_type")
+            evt_data = evt.get("data") or {}
+
+            if evt_type == "message_created":
+                message_uuid = evt_data.get("id") or message_uuid
+                start_events = start_if_needed()
+                if start_events:
+                    for ev in start_events:
+                        yield ev
+                continue
+
+            if evt_type == "ai_response_chunk":
+                if not started:
+                    start_events = start_if_needed()
+                    if start_events:
+                        for ev in start_events:
+                            yield ev
+                chunk_text = evt_data.get("chunk") or ""
+                if chunk_text:
+                    text_accum.append(chunk_text)
+                    yield emit({
                         "type": "content_block_delta",
                         "index": 0,
-                        "delta": {"type": "text_delta", "text": fragment},
+                        "delta": {"type": "text_delta", "text": chunk_text},
                     })
 
-            response_text = client.chat_stream(tool_slug, prompt, conversation_id=remote_conv_id, on_token=on_token)
-            if client.last_conversation_id:
-                _set_remote_conversation_id(acct, conv_id, client.last_conversation_id)
-            q.put({"type": "content_block_stop", "index": 0})
-            q.put({"type": "message_delta", "delta": {"stop_reason": "end_turn"}})
-            q.put({"type": "message_stop"})
-            if response_text and not q.empty():
-                pass
-        except Exception as exc:
-            q.put({"type": "error", "error": {"type": "api_error", "message": str(exc)}})
-        finally:
-            q.put(None)
-            client.disconnect_socket()
+    # Process any remaining data in buffer
+    if buffer:
+        try:
+            line = buffer.decode('utf-8', errors='replace').strip()
+            if line.startswith("data:"):
+                data_str = line[5:].strip()
+                if data_str:
+                    try:
+                        evt = json.loads(data_str)
+                        evt_type = evt.get("event_type")
+                        if evt_type == "ai_response_chunk":
+                            chunk_text = evt.get("data", {}).get("chunk") or ""
+                            if chunk_text:
+                                text_accum.append(chunk_text)
+                                yield emit({
+                                    "type": "content_block_delta",
+                                    "index": 0,
+                                    "delta": {"type": "text_delta", "text": chunk_text},
+                                })
+                    except json.JSONDecodeError:
+                        pass
+        except UnicodeDecodeError:
+            pass
 
-    threading.Thread(target=producer, daemon=True).start()
+    if started:
+        yield emit({"type": "content_block_stop", "index": 0})
+        yield emit({"type": "message_delta", "delta": {"stop_reason": "end_turn"}})
+        yield emit({"type": "message_stop"})
 
-    while True:
-        item = q.get()
-        if item is None:
-            break
-        if isinstance(item, Exception):
-            raise item
-        yield f"data: {json.dumps(item)}\n\n".encode("utf-8")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -390,15 +450,11 @@ def _new_account(name: str, provider: str, **creds) -> dict:
 def _provider_name(acct: dict) -> str:
     return (acct.get("provider") or CLAUDE_PROVIDER).strip().lower()
 
-
-def _miniapps_cookie_path(name: str) -> Path:
-    safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in name)
-    return STORE_PATH.parent / f"{safe}.miniapps.cookies"
-
-
 def _normalize_provider(provider: str | None) -> str:
     prov = (provider or CLAUDE_PROVIDER).strip().lower()
-    return MINIAPPS_PROVIDER if prov == MINIAPPS_PROVIDER else CLAUDE_PROVIDER
+    if prov in (CHATWITHAI_PROVIDER):
+        return prov
+    return CLAUDE_PROVIDER
 
 
 def _set_active_in_data(data, name):
@@ -426,6 +482,119 @@ def _get_account_by_name(name: str) -> dict | None:
     return next((a for a in data["accounts"] if a["name"] == name), None)
 
 
+def _get_local_conv_entry(acct_name: str, conv_id: str) -> dict | None:
+    """Get a local conversation entry for ChatWithAI provider"""
+    data = store.read()
+    for acct in data.get("accounts", []):
+        if acct["name"] == acct_name:
+            # Check pinned conversations
+            for conv in acct.get("pinned_conversations", []):
+                if conv.get("conv_uuid") == conv_id:
+                    return conv
+            # Also check if there's a conversations list (for compatibility)
+            for conv in acct.get("conversations", []):
+                if conv.get("conv_uuid") == conv_id:
+                    return conv
+    return None
+
+
+
+def _upsert_local_conv(acct_name: str, conv_id: str, updates: dict | None = None) -> dict:
+    updates = updates or {}
+
+    def fn(data):
+        for a in data["accounts"]:
+            if a["name"] != acct_name:
+                continue
+            convs = a.setdefault("pinned_conversations", [])
+            existing = next((c for c in convs if c.get("conv_uuid") == conv_id), None)
+            if not existing:
+                existing = {
+                    "conv_uuid": conv_id,
+                    "display_name": "",
+                    "created_at": _now(),
+                    "updated_at": _now(),
+                    "pinned_at": _now(),
+                    "chat_messages": [],
+                    "current_leaf_message_uuid": "00000000-0000-4000-8000-000000000000",
+                    "provider": CHATWITHAI_PROVIDER,
+                    "metadata": {}
+                }
+                convs.append(existing)
+            
+            # Apply updates
+            existing.update(updates)
+            if "updated_at" not in updates:
+                existing["updated_at"] = _now()
+            existing["pinned_at"] = existing.get("updated_at", _now())
+            break
+
+    store.mutate(fn)
+    return _get_local_conv_entry(acct_name, conv_id) or {}
+
+
+def _append_local_messages(
+    acct_name: str,
+    conv_id: str,
+    human_msg: dict,
+    asst_msg: dict,
+    *,
+    display_name: str | None = None,
+):
+    def fn(data):
+        for a in data["accounts"]:
+            if a["name"] != acct_name:
+                continue
+            convs = a.setdefault("pinned_conversations", [])
+            conv = next((c for c in convs if c.get("conv_uuid") == conv_id), None)
+            if not conv:
+                conv = {
+                    "conv_uuid": conv_id,
+                    "display_name": display_name or "",
+                    "created_at": _now(),
+                    "updated_at": _now(),
+                    "pinned_at": _now(),
+                    "chat_messages": [],
+                    "current_leaf_message_uuid": "00000000-0000-4000-8000-000000000000",
+                    "settings": {},
+                    "provider": CHATWITHAI_PROVIDER,
+                }
+                convs.append(conv)
+            
+            msgs = conv.setdefault("chat_messages", [])
+            
+            # Ensure proper UUID chain
+            if not human_msg.get("parent_message_uuid"):
+                if msgs:
+                    human_msg["parent_message_uuid"] = msgs[-1]["uuid"]
+                else:
+                    human_msg["parent_message_uuid"] = "00000000-0000-4000-8000-000000000000"
+            
+            asst_msg["parent_message_uuid"] = human_msg["uuid"]
+            
+            # Add content structure if missing
+            if "content" not in human_msg and "text" in human_msg:
+                human_msg["content"] = [{"type": "text", "text": human_msg["text"]}]
+            if "content" not in asst_msg and "text" in asst_msg:
+                asst_msg["content"] = [{"type": "text", "text": asst_msg["text"]}]
+            
+            # Set indices
+            human_msg["index"] = len(msgs)
+            asst_msg["index"] = len(msgs) + 1
+            
+            msgs.append(human_msg)
+            msgs.append(asst_msg)
+            conv["current_leaf_message_uuid"] = asst_msg.get("uuid")
+            if display_name and not conv.get("display_name"):
+                conv["display_name"] = display_name
+            conv["updated_at"] = _now()
+            conv["pinned_at"] = conv["updated_at"]
+            break
+
+    store.mutate(fn)
+
+
+
 def _account_to_public(a: dict) -> dict:
     provider = _provider_name(a)
     pub: dict = {
@@ -435,17 +604,8 @@ def _account_to_public(a: dict) -> dict:
         "created_at":      a.get("created_at", ""),
         "session_key":     a.get("session_key", "") if provider == CLAUDE_PROVIDER else "",
         "organization_id": a.get("organization_id", "") if provider == CLAUDE_PROVIDER else "",
-        "tool_slug":       a.get("tool_slug", DEFAULT_MINIAPPS_TOOL_SLUG) if provider == MINIAPPS_PROVIDER else "",
     }
     return pub
-
-
-def _account_cookie_file(acct: dict) -> Path | None:
-    if _provider_name(acct) != MINIAPPS_PROVIDER:
-        return None
-    cookie_file = acct.get("cookie_file")
-    return Path(cookie_file) if cookie_file else _miniapps_cookie_path(acct["name"])
-
 
 def _seed_from_env():
     try:
@@ -551,6 +711,27 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 
 
+@app.after_request
+def _cors_for_extension(response):
+    """Allow browser-extension popups and content scripts to reach local endpoints."""
+    if request.path.startswith("/api/oauth/") or request.path == "/api/ping":
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
+
+@app.route("/api/oauth/<path:subpath>", methods=["OPTIONS"])
+def _oauth_preflight(subpath):
+    """Handle CORS preflight for all /api/oauth/* routes."""
+    return "", 204
+
+
+@app.route("/api/ping")
+def ping():
+    return jsonify({"ok": True})
+
+
 def require_account(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -559,8 +740,6 @@ def require_account(fn):
             return jsonify({"error": "No active account configured"}), 401
         if _provider_name(acct) == CLAUDE_PROVIDER and not acct.get("session_key"):
             return jsonify({"error": "Active account is missing a session_key. Please switch to a valid Claude account or re-add this one."}), 401
-        if _provider_name(acct) == MINIAPPS_PROVIDER and not acct.get("cookie_file"):
-            return jsonify({"error": "Active MiniApps account is missing cookie state. Please re-add this account."}), 401
         return fn(acct, *args, **kwargs)
     return wrapper
 
@@ -601,28 +780,20 @@ def health():
     })
 
 
-# ── Google OAuth popup flow ────────────────────────────────────────────────────
-# Bypasses GIS origin check by using standard OAuth endpoints directly.
-# Backend generates PKCE + state, opens popup, receives callback, frontend polls.
+# ═══════════════════════════════════════════════════════════════════════════════
+# Google OAuth
+# ═══════════════════════════════════════════════════════════════════════════════
+# Claude:    PKCE auth-code flow (v2). Extension intercepts claude.ai/oauth/callback
+#            and POSTs the code back. ext-pending (v1) also supported so the
+#            extension can poll before the popup opens.
+# MiniApps:  Extension-driven GIS flow (both versions identical).
 
-CLAUDE_GOOGLE_CLIENT_ID   = "1062961139910-l2m55cb9h51u5cuc9c56eb3fevouidh9.apps.googleusercontent.com"
-
-_GOOGLE_AUTH_URL   = "https://accounts.google.com/o/oauth2/v2/auth"
-
-# In-memory state store: state -> {done, code/id_token/error, email, verifier}
+# In-memory state store: state -> {done, code/id_token/error, provider, pending_ext}
 _oauth_states: dict = {}
 _oauth_lock = threading.Lock()
 
 
-def _pkce_pair() -> tuple[str, str]:
-    verifier  = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
-    challenge = base64.urlsafe_b64encode(
-        hashlib.sha256(verifier.encode()).digest()
-    ).rstrip(b"=").decode()
-    return verifier, challenge
-
-
-# ── Claude OAuth (auth code + PKCE) ──────────────────────────────────────────
+# ── Claude OAuth (extension-driven flow) ─────────────────────────────────────
 
 @app.route("/api/oauth/claude/owns-state")
 def oauth_claude_owns_state():
@@ -635,29 +806,35 @@ def oauth_claude_owns_state():
 
 @app.route("/api/oauth/claude/begin")
 def oauth_claude_begin():
-    verifier, challenge = _pkce_pair()
     state = secrets.token_hex(16)
     with _oauth_lock:
-        _oauth_states[state] = {"done": False, "verifier": verifier, "provider": "claude"}
-    # Use Claude's own registered redirect URI — our browser extension intercepts it
-    redirect_uri = "https://claude.ai/oauth/callback"
-    params = urllib.parse.urlencode({
-        "client_id":             CLAUDE_GOOGLE_CLIENT_ID,
-        "redirect_uri":          redirect_uri,
-        "response_type":         "code",
-        "scope":                 "openid profile email",
-        "access_type":           "offline",
-        "prompt":                "consent",
-        "state":                 state,
-        "code_challenge":        challenge,
-        "code_challenge_method": "S256",
-    })
-    return jsonify({"auth_url": f"{_GOOGLE_AUTH_URL}?{params}", "state": state})
+        _oauth_states[state] = {
+            "done":        False,
+            "provider":    "claude",
+            "pending_ext": True,
+        }
+    return jsonify({"state": state})
+
+
+@app.route("/api/oauth/claude/ext-pending")
+def oauth_claude_ext_pending():
+    """Content script polls this to learn whether a session is waiting for it.
+    Marks the state as claimed immediately to prevent two tabs racing."""
+    with _oauth_lock:
+        for state, entry in _oauth_states.items():
+            if (
+                entry.get("provider") == "claude"
+                and entry.get("pending_ext")
+                and not entry["done"]
+            ):
+                entry["pending_ext"] = False  # claimed — only one tab handles it
+                return jsonify({"state": state})
+    return jsonify({"state": None})
 
 
 @app.route("/api/oauth/claude/ext-callback", methods=["POST"])
 def oauth_claude_ext_callback():
-    """Receives the OAuth code relayed by the browser extension from claude.ai/oauth/callback."""
+    """Receives the OAuth code relayed by the browser extension."""
     data  = request.get_json(silent=True) or {}
     code  = data.get("code")
     state = data.get("state")
@@ -671,9 +848,9 @@ def oauth_claude_ext_callback():
     if entry["done"]:
         return jsonify({"ok": True})  # already recorded (double-delivery)
     if code:
-        entry.update({"code": code, "done": True})
+        entry.update({"code": code, "done": True, "pending_ext": False})
         return jsonify({"ok": True})
-    entry.update({"error": error or "no_code", "done": True})
+    entry.update({"error": error or "no_code", "done": True, "pending_ext": False})
     return jsonify({"ok": False, "error": error or "no_code"})
 
 
@@ -696,91 +873,13 @@ def oauth_claude_status():
     return jsonify(result)
 
 
-# ── MiniApps OAuth (extension-driven GIS flow) ───────────────────────────────
-# content_miniapps.js polls /ext-pending, triggers google.accounts.id.prompt()
-# on miniapps.ai's origin (so GIS accepts it), and POSTs the credential JWT back.
-
-@app.route("/api/oauth/miniapps/begin")
-def oauth_miniapps_begin():
-    # Extension-driven flow: register a pending state; the content script on
-    # miniapps.ai polls /ext-pending, triggers GIS there, and POSTs back here.
-    state = secrets.token_hex(16)
-    with _oauth_lock:
-        _oauth_states[state] = {"done": False, "provider": "miniapps", "pending_ext": True}
-    return jsonify({"state": state})
-
-
-@app.route("/api/oauth/miniapps/ext-pending")
-def oauth_miniapps_ext_pending():
-    """Content script polls this to learn whether a session is waiting for it.
-    Marks the state as claimed immediately to prevent two tabs racing."""
-    with _oauth_lock:
-        for state, entry in _oauth_states.items():
-            if entry.get("provider") == "miniapps" and entry.get("pending_ext") and not entry["done"]:
-                entry["pending_ext"] = False  # claimed — only one tab handles it
-                return jsonify({"state": state})
-    return jsonify({"state": None})
-
-
-@app.route("/api/oauth/miniapps/ext-callback", methods=["POST"])
-def oauth_miniapps_ext_callback():
-    """Receives the Google ID token credential relayed by the browser extension."""
-    data       = request.get_json(silent=True) or {}
-    state      = data.get("state", "")
-    credential = data.get("credential")  # raw id_token JWT from GIS
-    error      = data.get("error")
-    with _oauth_lock:
-        entry = _oauth_states.get(state)
-    if not entry:
-        return jsonify({"ok": False, "error": "unknown_state"}), 400
-    if entry["done"]:
-        return jsonify({"ok": True})
-    if credential:
-        try:
-            pad     = credential.split(".")[1] + "=="
-            payload = json.loads(base64.urlsafe_b64decode(pad))
-            email   = payload.get("email", "")
-        except Exception:
-            email = ""
-        entry.update({"id_token": credential, "email": email, "done": True, "pending_ext": False})
-        return jsonify({"ok": True})
-    entry.update({"error": error or "no_credential", "done": True, "pending_ext": False})
-    return jsonify({"ok": False, "error": error or "no_credential"})
-
-
-@app.route("/api/oauth/miniapps/status")
-def oauth_miniapps_status():
-    state = request.args.get("state", "")
-    with _oauth_lock:
-        entry = _oauth_states.get(state)
-    if not entry:
-        return jsonify({"error": "invalid_state"}), 400
-    if not entry["done"]:
-        return jsonify({"done": False})
-    result: dict = {"done": True}
-    if "id_token" in entry:
-        result["id_token"] = entry["id_token"]
-        result["email"]    = entry.get("email", "")
-    if "error" in entry:
-        result["error"] = entry["error"]
-        result["email"] = entry.get("email", "")
-    with _oauth_lock:
-        _oauth_states.pop(state, None)
-    return jsonify(result)
-
-
-@app.route("/api/miniapps/refresh", methods=["POST"])
-@require_account
-@api_error_handler
-def miniapps_refresh_session(acct):
-    if _provider_name(acct) != MINIAPPS_PROVIDER:
-        return jsonify({"error": "Only MiniApps accounts support this endpoint"}), 400
-    client = _make_miniapps_client(acct)
+@app.route("/api/chatwithai/models", methods=["GET"])
+def chatwithai_models():
     try:
-        result = client.refresh()
-        return jsonify({"success": True, "result": result})
-    finally:
-        client.disconnect_socket()
+        models = _chatwithai_fetch_models()
+    except Exception as exc:
+        return jsonify({"error": str(exc), "models": []}), 502
+    return jsonify({"models": models})
 
 
 # ── Pages ─────────────────────────────────────────────────────────────────────
@@ -800,7 +899,13 @@ def list_accounts():
     active  = next((a["name"] for a in accounts if a.get("is_active")), None)
     return jsonify({
         "accounts": [_account_to_public(a)
-                     for a in sorted(accounts, key=lambda x: x.get("created_at",""))],
+                     for a in sorted(
+                         accounts,
+                         key=lambda x: (
+                             0 if _normalize_provider(x.get("provider")) == CLAUDE_PROVIDER else 1,
+                             x.get("name", "").lower(),
+                         ),
+                     )],
         "active": active,
     })
 
@@ -812,10 +917,8 @@ def add_account():
     provider = _normalize_provider(req.get("provider"))
     sk   = (req.get("session_key")     or "").strip()
     org  = (req.get("organization_id") or "").strip()
-    tool_slug = (req.get("tool_slug") or DEFAULT_MINIAPPS_TOOL_SLUG).strip() or DEFAULT_MINIAPPS_TOOL_SLUG
     claude_code = (req.get("claude_code") or "").strip()
     arkose_session_token = (req.get("arkose_session_token") or "").strip() or None
-    miniapps_id_token = (req.get("miniapps_id_token") or "").strip()
     setup_username = (req.get("setup_username") or "").strip()
     setup_password = (req.get("setup_password") or "").strip()
 
@@ -824,9 +927,8 @@ def add_account():
 
     existing_account = _get_account_by_name(name)
 
-    boot_session_key = sk
-    boot_org = org
-    boot_cookie_file = None
+    boot_session_key    = sk
+    boot_org            = org
     boot_last_auth_hash = None
 
     if provider == CLAUDE_PROVIDER and not boot_session_key and not existing_account:
@@ -844,28 +946,6 @@ def add_account():
         else:
             return jsonify({"error": "session_key or claude_code is required"}), 400
 
-    if provider == MINIAPPS_PROVIDER and not miniapps_id_token and not existing_account:
-        return jsonify({"error": "miniapps_id_token is required"}), 400
-
-    if provider == MINIAPPS_PROVIDER and not existing_account:
-        if MiniAppsClient is None:
-            return jsonify({"error": "MiniAppsAI-API is not available in this workspace"}), 500
-        cookie_file = _miniapps_cookie_path(name)
-        mini_client = MiniAppsClient(cookie_file=str(cookie_file))
-        try:
-            mini_client.google_login(miniapps_id_token)
-            boot_last_auth_hash = mini_client.last_auth_hash
-            if setup_username and setup_password and mini_client.last_auth_hash:
-                mini_client.setup_user(setup_username, setup_password, mini_client.last_auth_hash)
-            try:
-                mini_client.me()
-            except Exception:
-                pass
-            boot_cookie_file = str(cookie_file)
-        finally:
-            mini_client.disconnect_socket()
-            mini_client._session.close()
-
     active_name = None
 
     def fn(data):
@@ -878,17 +958,11 @@ def add_account():
                     existing["session_key"] = boot_session_key
                 if boot_org:
                     existing["organization_id"] = boot_org
-                existing.pop("cookie_file", None)
                 existing.pop("tool_slug", None)
-                existing.pop("miniapps_last_auth_hash", None)
             else:
-                if tool_slug:
-                    existing["tool_slug"] = tool_slug
                 existing.pop("session_key", None)
                 existing.pop("organization_id", None)
-                existing["cookie_file"] = boot_cookie_file or str(_miniapps_cookie_path(name))
-                if boot_last_auth_hash:
-                    existing["miniapps_last_auth_hash"] = boot_last_auth_hash
+                existing.pop("tool_slug", None)
         else:
             creds = {}
             if provider == CLAUDE_PROVIDER:
@@ -896,10 +970,7 @@ def add_account():
                 if boot_org:
                     creds["organization_id"] = boot_org
             else:
-                creds["tool_slug"] = tool_slug
-                creds["cookie_file"] = boot_cookie_file or str(_miniapps_cookie_path(name))
-                if boot_last_auth_hash:
-                    creds["miniapps_last_auth_hash"] = boot_last_auth_hash
+                creds = {}
             data["accounts"].append(_new_account(name, provider, **creds))
         if req.get("activate") or len(data["accounts"]) == 1:
             _set_active_in_data(data, name)
@@ -931,13 +1002,6 @@ def delete_account(n):
             (a["name"] for a in data["accounts"] if a.get("is_active")), None)
 
     store.mutate(fn)
-    if _provider_name(acct) == MINIAPPS_PROVIDER:
-        cookie_file = _account_cookie_file(acct)
-        if cookie_file and cookie_file.exists():
-            try:
-                cookie_file.unlink()
-            except OSError:
-                pass
     return jsonify({"success": True, "active": active_name})
 
 
@@ -973,31 +1037,27 @@ def set_config():
     provider = _normalize_provider(data.get("provider") or (acct.get("provider") if acct else None))
     sk   = (data.get("session_key") or "").strip()
     org  = (data.get("organization_id") or "").strip()
-    tool_slug = (data.get("tool_slug") or DEFAULT_MINIAPPS_TOOL_SLUG).strip() or DEFAULT_MINIAPPS_TOOL_SLUG
 
     def fn(store_data):
         existing = next((a for a in store_data["accounts"] if a["name"] == name), None)
         if existing:
             existing["provider"] = provider
             if provider == CLAUDE_PROVIDER:
-                if sk:  existing["session_key"]     = sk
-                if org: existing["organization_id"] = org
-                existing.pop("cookie_file", None)
+                if sk:
+                    existing["session_key"] = sk
+                if org:
+                    existing["organization_id"] = org
                 existing.pop("tool_slug", None)
             else:
-                existing["tool_slug"] = tool_slug
-                existing["cookie_file"] = str(_account_cookie_file(existing) or _miniapps_cookie_path(name))
                 existing.pop("session_key", None)
                 existing.pop("organization_id", None)
+                existing.pop("tool_slug", None)
         else:
             creds = {}
             if provider == CLAUDE_PROVIDER:
                 creds["session_key"] = sk or ""
                 if org:
                     creds["organization_id"] = org
-            else:
-                creds["tool_slug"] = tool_slug
-                creds["cookie_file"] = str(_miniapps_cookie_path(name))
             store_data["accounts"].append(_new_account(name, provider, **creds))
         _set_active_in_data(store_data, name)
 
@@ -1039,23 +1099,22 @@ def set_preferences(acct):
 @api_error_handler
 def list_conversations(acct):
     provider = _provider_name(acct)
-    if provider == MINIAPPS_PROVIDER:
+    if provider == CHATWITHAI_PROVIDER:
         data = store.read()
         for a in data["accounts"]:
             if a["name"] == acct["name"]:
                 convs = sorted(
                     a.get("pinned_conversations", []),
-                    key=lambda c: c.get("pinned_at", ""),
+                    key=lambda c: c.get("updated_at", c.get("created_at", "")),
                     reverse=True,
                 )
                 return jsonify([
                     {
                         "uuid": c.get("conv_uuid"),
                         "name": c.get("display_name", ""),
-                        "created_at": c.get("pinned_at", ""),
-                        "updated_at": c.get("pinned_at", ""),
-                        "remote_conversation_id": c.get("remote_conversation_id"),
-                        "chat_messages": [],
+                        "created_at": c.get("created_at", ""),
+                        "updated_at": c.get("updated_at", ""),
+                        # Don't include full chat_messages in list view
                     }
                     for c in convs if c.get("conv_uuid")
                 ]), 200
@@ -1073,18 +1132,15 @@ def list_conversations(acct):
 @api_error_handler
 def create_conversation(acct):
     conv_id = str(uuid_lib.uuid4())
-
     provider = _provider_name(acct)
-    if provider == MINIAPPS_PROVIDER:
-        def fn(data):
-            for a in data["accounts"]:
-                if a["name"] == acct["name"]:
-                    convs = a.setdefault("pinned_conversations", [])
-                    if not any(c.get("conv_uuid") == conv_id for c in convs):
-                        convs.append({"conv_uuid": conv_id, "display_name": "", "pinned_at": _now()})
-                    break
-        store.mutate(fn)
-        log.info("Created MiniApps local conversation %s", conv_id[:8])
+    
+    if provider == CHATWITHAI_PROVIDER:
+        _upsert_local_conv(acct["name"], conv_id, {
+            "display_name": "",
+            "created_at": _now(),
+            "updated_at": _now(),
+        })
+        log.info("Created ChatWithAI local conversation %s", conv_id[:8])
         return jsonify({"success": True, "id": conv_id, "uuid": conv_id}), 201
 
     client = _make_claude_client(acct)
@@ -1092,7 +1148,7 @@ def create_conversation(acct):
         _run(client._ensure_conversation(conv_id))
     finally:
         _run(client.close())
-    
+
     def fn(data):
         for a in data["accounts"]:
             if a["name"] == acct["name"]:
@@ -1112,20 +1168,73 @@ def create_conversation(acct):
 @api_error_handler
 def get_conversation(acct, conv_id):
     provider = _provider_name(acct)
-    if provider == MINIAPPS_PROVIDER:
-        client = _make_miniapps_client(acct)
-        try:
-            remote_id = _get_remote_conversation_id(acct, conv_id) or conv_id
-            if remote_id == conv_id:
-                data = _get_account_by_name(acct["name"]) or {}
-                for c in data.get("pinned_conversations", []):
-                    if c.get("conv_uuid") == conv_id:
-                        return jsonify({"uuid": conv_id, "name": c.get("display_name", ""), "chat_messages": []}), 200
-            data = client.get_conversation(remote_id)
-            return jsonify(_miniapps_conversation_to_console(data)), 200
-        finally:
-            client.disconnect_socket()
 
+    if provider == CHATWITHAI_PROVIDER:
+        # Get the local conversation
+        conv = _get_local_conv_entry(acct["name"], conv_id)
+        
+        if not conv:
+            # Return empty conversation structure for new conversations
+            return jsonify({
+                "uuid": conv_id,
+                "name": "",
+                "created_at": _now(),
+                "updated_at": _now(),
+                "chat_messages": [],
+                "current_leaf_message_uuid": "00000000-0000-4000-8000-000000000000",
+                "settings": {}
+            }), 200
+        
+        # Ensure all messages have proper structure
+        messages = conv.get("chat_messages", [])
+        root_uuid = "00000000-0000-4000-8000-000000000000"
+        
+        # Fix message structure if needed
+        for i, msg in enumerate(messages):
+            # Ensure UUID exists
+            if "uuid" not in msg:
+                msg["uuid"] = str(uuid_lib.uuid4())
+            
+            # Ensure parent_message_uuid exists
+            if "parent_message_uuid" not in msg:
+                msg["parent_message_uuid"] = messages[i-1]["uuid"] if i > 0 else root_uuid
+            
+            # Ensure content structure exists
+            if "content" not in msg:
+                if "text" in msg:
+                    msg["content"] = [{"type": "text", "text": msg["text"]}]
+                else:
+                    msg["content"] = [{"type": "text", "text": ""}]
+            
+            # Ensure index exists
+            if "index" not in msg:
+                msg["index"] = i
+            
+            # Ensure sender exists
+            if "sender" not in msg:
+                msg["sender"] = "human" if i % 2 == 0 else "assistant"
+            
+            # Ensure created_at exists
+            if "created_at" not in msg:
+                msg["created_at"] = conv.get("created_at", _now())
+        
+        # Determine current leaf
+        current_leaf = conv.get("current_leaf_message_uuid")
+        if not current_leaf or current_leaf == root_uuid:
+            current_leaf = messages[-1]["uuid"] if messages else root_uuid
+        
+        # Return proper conversation structure
+        return jsonify({
+            "uuid": conv_id,
+            "name": conv.get("display_name", ""),
+            "created_at": conv.get("created_at", _now()),
+            "updated_at": conv.get("updated_at", _now()),
+            "chat_messages": messages,
+            "current_leaf_message_uuid": current_leaf,
+            "settings": conv.get("settings", {})
+        }), 200
+    
+    # Claude provider logic remains the same
     client = _make_claude_client(acct)
     try:
         data = _run(client.get_conversation(conv_id))
@@ -1139,6 +1248,16 @@ def get_conversation(acct, conv_id):
 @api_error_handler
 def update_conversation(acct, conv_id):
     payload = request.json or {}
+    provider = _provider_name(acct)
+    
+    if provider == CHATWITHAI_PROVIDER:
+        # For ChatWithAI, only update local storage
+        if (display_name := payload.get("name")) is not None:
+            _upsert_local_conv(acct["name"], conv_id, {
+                "display_name": display_name,
+                "updated_at": _now()
+            })
+        return jsonify({"success": True})
 
     client = _make_claude_client(acct)
     try:
@@ -1162,18 +1281,10 @@ def update_conversation(acct, conv_id):
 @app.route("/api/conversations/<conv_id>/stop", methods=["POST"])
 @require_account
 @api_error_handler
-def stop_response(acct, conv_id):
+def stop_response(acct, conv_id):  
     provider = _provider_name(acct)
-    if provider == MINIAPPS_PROVIDER:
-        client = _make_miniapps_client(acct)
-        try:
-            remote_id = _get_remote_conversation_id(acct, conv_id) or conv_id
-            if client.last_conversation_id and remote_id:
-                client.abort_chat(remote_id, uuid_lib.uuid4().hex)
-        finally:
-            client.disconnect_socket()
-        return jsonify({"success": True})
-
+    if provider == CHATWITHAI_PROVIDER:
+        return jsonify({"error": "Stop not supported for ChatWithAI"}), 400  
     _run(_make_claude_client(acct).stop_response(conv_id))
     return jsonify({"success": True})
 
@@ -1186,14 +1297,88 @@ def stop_response(acct, conv_id):
 def send_message(acct, conv_id):
     data = request.json or {}
     provider = _provider_name(acct)
-    if provider == MINIAPPS_PROVIDER:
-        tool_slug = (acct.get("tool_slug") or DEFAULT_MINIAPPS_TOOL_SLUG).strip() or DEFAULT_MINIAPPS_TOOL_SLUG
+
+    if provider == CHATWITHAI_PROVIDER:
         prompt = (data.get("prompt") or "").strip()
-        _log_message_send(acct["name"], conv_id, tool_slug, len(prompt))
+        model = (data.get("model") or CHATWITHAI_DEFAULT_MODEL).strip()
+        parent_uuid = data.get("parent_message_uuid", "00000000-0000-4000-8000-000000000000")
+        human_uuid = str(uuid_lib.uuid4())
+        asst_uuid = str(uuid_lib.uuid4())
+
+        # Get conversation and build history
+        conv_entry = _get_local_conv_entry(acct["name"], conv_id)
+        
+        # Build message chain based on parent_uuid
+        history = []
+        if conv_entry and parent_uuid != "00000000-0000-4000-8000-000000000000":
+            all_msgs = conv_entry.get("chat_messages", [])
+            msg_map = {m.get("uuid"): m for m in all_msgs if m.get("uuid")}
+            
+            # Build chain from parent backwards
+            current = parent_uuid
+            chain = []
+            while current and current != "00000000-0000-4000-8000-000000000000":
+                if current in msg_map:
+                    chain.insert(0, msg_map[current])
+                    current = msg_map[current].get("parent_message_uuid")
+                else:
+                    break
+            history = chain
+
+        # Build history text for API
+        if history:
+            history_text = "\n".join(
+                f"{'Human' if m.get('sender') == 'human' else 'Assistant'}: {m.get('text', '')}"
+                for m in history
+            )
+            full_prompt = f"{history_text}\nHuman: {prompt}"
+        else:
+            full_prompt = prompt
+
+        display_name = data.get("display_name") or (prompt[:30] if prompt else "")
+        _log_message_send(acct["name"], conv_id, model, len(prompt))
+
+        text_parts: list[str] = []
 
         def generate():
-            for chunk in _sync_stream_miniapps(acct, conv_id, prompt, tool_slug):
+            for chunk in _sync_stream_chatwithai(full_prompt, model, assistant_uuid=asst_uuid):
+                # Collect text deltas
+                try:
+                    line = chunk.decode("utf-8", errors="replace").strip()
+                    for part in line.splitlines():
+                        if not part.startswith("data:"):
+                            continue
+                        js = part[5:].strip()
+                        if not js:
+                            continue
+                        evt = json.loads(js)
+                        if evt.get("type") == "content_block_delta":
+                            text_parts.append(evt.get("delta", {}).get("text", ""))
+                except Exception:
+                    pass
                 yield chunk
+
+            # Persist messages with proper structure
+            full_response = "".join(text_parts)
+            human_msg = {
+                "uuid": human_uuid,
+                "sender": "human",
+                "text": prompt,
+                "content": [{"type": "text", "text": prompt}],
+                "parent_message_uuid": parent_uuid,
+                "created_at": _now(),
+            }
+            asst_msg = {
+                "uuid": asst_uuid,
+                "sender": "assistant",
+                "text": full_response,
+                "content": [{"type": "text", "text": full_response}],
+                "parent_message_uuid": human_uuid,
+                "model": model,
+                "created_at": _now(),
+            }
+            _append_local_messages(acct["name"], conv_id, human_msg, asst_msg,
+                                   display_name=display_name)
 
         return Response(stream_with_context(generate()),
                         content_type="text/event-stream",
@@ -1220,8 +1405,12 @@ def send_message(acct, conv_id):
 @require_account
 @api_error_handler
 def upload_file(acct, conv_id):
-    if _provider_name(acct) == MINIAPPS_PROVIDER:
-        return jsonify({"error": "File uploads are not supported for MiniApps accounts yet"}), 400
+    provider = _provider_name(acct)
+    
+    if provider == CHATWITHAI_PROVIDER:
+        # ChatWithAI doesn't support file uploads
+        return jsonify({"error": "File uploads not supported for ChatWithAI"}), 400
+    
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
 
@@ -1230,7 +1419,6 @@ def upload_file(acct, conv_id):
     mime       = f.content_type or "application/octet-stream"
     fname      = f.filename or "upload"
 
-    # Upload via Claude API
     import tempfile
     with tempfile.NamedTemporaryFile(delete=False, suffix=Path(fname).suffix) as tmp:
         tmp.write(file_bytes)
@@ -1257,8 +1445,6 @@ def upload_file(acct, conv_id):
 @require_account
 @api_error_handler
 def download_file(acct, conv_id):
-    if _provider_name(acct) == MINIAPPS_PROVIDER:
-        return jsonify({"error": "File downloads are not supported for MiniApps accounts yet"}), 400
     file_path = request.args.get("path", "")
     if not file_path:
         return jsonify({"error": "Missing 'path' query parameter"}), 400
@@ -1273,11 +1459,8 @@ def download_file(acct, conv_id):
         content = local.read_bytes()
 
     filename = file_path.split("/")[-1] or "download"
+    inline   = request.args.get("inline", "0") == "1"
 
-    # ?inline=1 -> serve for browser preview (no download prompt)
-    inline = request.args.get("inline", "0") == "1"
-
-    # Detect proper content-type from filename (fallback: octet-stream)
     import mimetypes
     mime_type, _ = mimetypes.guess_type(filename)
     if not mime_type:
@@ -1295,22 +1478,6 @@ def download_file(acct, conv_id):
 @app.route("/api/usage", methods=["GET"])
 @require_account
 def get_usage(acct):
-    provider = _provider_name(acct)
-    if provider == MINIAPPS_PROVIDER:
-        client = _make_miniapps_client(acct)
-        try:
-            return jsonify({
-                "provider": MINIAPPS_PROVIDER,
-                "quota": None,
-                "local_stats": {
-                    "messages_24h": 0,
-                    "messages_1h": 0,
-                    "by_model": {},
-                },
-                "notification_count": client.get_notification_count(),
-            })
-        finally:
-            client.disconnect_socket()
 
     now_dt  = datetime.now(timezone.utc)
     cut_24h = (now_dt - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
@@ -1476,8 +1643,6 @@ def list_uploads(acct, conv_uuid):
 @require_account
 @api_error_handler
 def update_settings(acct):
-    if _provider_name(acct) == MINIAPPS_PROVIDER:
-        return jsonify({"error": "Account-wide settings are only supported for Claude accounts right now"}), 400
     payload = request.json or {}
     client  = _make_claude_client(acct)
     try:

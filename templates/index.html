@@ -534,21 +534,38 @@ a:hover { text-decoration:underline; }
   background:rgba(168,85,247,0.08); border:1px solid rgba(168,85,247,0.14);
   padding:2px 6px; border-radius:5px; color:var(--violet);
 }
+.code-header {
+  display:flex; 
+  align-items:center; 
+  justify-content:space-between;
+  padding:7px 14px;
+  background:rgba(255,255,255,0.02); 
+  border-bottom:1px solid var(--border-s);
+  margin: 0 0 0 0; /* Remove the negative margins */
+  border-radius: var(--r-l) var(--r-l) 0 0; /* Round top corners */
+}
+
 .md pre {
   position:relative; margin:10px 0;
-  border-radius:var(--r-l); overflow:hidden;
+  border-radius:var(--r-l); overflow:hidden; /* Back to hidden for clean edges */
   border:1px solid var(--border); box-shadow:var(--shadow-md);
   background:var(--bg-2);
+  padding:0; /* Ensure no padding */
 }
+
 .md pre code { 
-  background:none; padding:16px 18px; border:none; color:inherit; 
-  font-size:12px; display:block; overflow-x:auto; line-height:1.6;
+  background:none; 
+  padding:16px 18px; 
+  border:none; 
+  color:inherit; 
+  font-size:12px; 
+  display:block; 
+  overflow-x:auto; 
+  line-height:1.6;
+  border-radius: 0; /* No radius on code */
+  margin:0; /* No margins */
 }
-.code-header {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:7px 14px;
-  background:rgba(255,255,255,0.02); border-bottom:1px solid var(--border-s);
-}
+
 .code-lang { font-family:var(--font-mono); font-size:9px; color:var(--text-3); text-transform:uppercase; letter-spacing:.1em; font-weight:500; }
 .code-copy {
   padding:3px 10px; background:var(--bg-5); border:1px solid var(--border);
@@ -1226,6 +1243,147 @@ a:hover { text-decoration:underline; }
 
 /* ═══════════════════ UTIL ═══════════════════ */
 .hidden { display:none !important; }
+
+/* ═══════════════════ MARKDOWN UTILITIES ═══════════════════ */
+.md-utils {
+  display: flex;
+  gap: 3px;
+  opacity: 0;
+  transition: opacity 0.2s var(--ease);
+  padding: 4px 0;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border-s);
+}
+
+.msg:hover .md-utils {
+  opacity: 1;
+}
+
+.md-utils.bottom {
+  margin-bottom: 0;
+  margin-top: 6px;
+  border-bottom: none;
+  border-top: 1px solid var(--border-s);
+  padding: 6px 0 2px;
+}
+
+.md-util-btn {
+  padding: 3px 8px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-3);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all 0.15s var(--ease);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.md-util-btn:hover {
+  background: var(--bg-4);
+  color: var(--text-2);
+  border-color: var(--border-m);
+}
+
+.md-util-btn.copy:hover {
+  color: var(--accent);
+  border-color: rgba(168,85,247,.25);
+  background: var(--accent-dim);
+}
+
+.md-util-btn.collapse:hover {
+  color: var(--teal);
+  border-color: rgba(56,189,248,.25);
+  background: var(--teal-dim);
+}
+
+.md-util-btn.copied {
+  color: var(--green);
+  border-color: rgba(34,197,94,.2);
+}
+
+/* Collapsible markdown content */
+.md-content-wrap {
+  position: relative;
+}
+
+.md-content-wrap.collapsed .md {
+  max-height: 150px;
+  overflow: hidden;
+  position: relative;
+}
+
+.md-content-wrap.collapsed .md::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: linear-gradient(transparent, var(--bg-3));
+  pointer-events: none;
+}
+
+.md-expand-btn {
+  display: none;
+  width: 100%;
+  padding: 8px;
+  margin-top: 8px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  color: var(--text-2);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s var(--ease);
+}
+
+.md-content-wrap.collapsed .md-expand-btn {
+  display: block;
+}
+
+.md-expand-btn:hover {
+  background: var(--bg-4);
+  color: var(--text);
+  border-color: var(--border-m);
+}
+
+.code-block-wrapper.collapsed pre {
+  max-height: 80px;
+  overflow: hidden;
+  position: relative;
+}
+
+.code-block-wrapper.collapsed pre::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: linear-gradient(transparent, var(--bg-2));
+  pointer-events: none;
+}
+
+.code-collapse {
+  padding: 3px 10px;
+  background: var(--bg-5);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-3);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all .15s var(--ease);
+}
+
+.code-collapse:hover {
+  background: var(--bg-4);
+  color: var(--text-2);
+}
 </style>
 </head>
 
@@ -1324,11 +1482,8 @@ a:hover { text-decoration:underline; }
           <select class="tb-select" id="modelSel" title="Model">
             <optgroup label="Claude" id="claudeModels">
             <option value="claude-sonnet-4-6">sonnet-4-6</option>
-            <option value="claude-opus-4-6">opus-4-6</option>
+            <!-- <option value="claude-opus-4-6">opus-4-6</option> -->
             <option value="claude-haiku-4-5-20251001">haiku-4-5</option>
-            <option value="claude-sonnet-3-7-20250219">sonnet-3-7</option>
-            <option value="claude-opus-4-5">opus-4-5</option>
-            <option value="claude-3-5-sonnet-20241022">sonnet-3-5</option>
             </optgroup>
           </select>
 
@@ -1472,9 +1627,12 @@ a:hover { text-decoration:underline; }
     <div class="form-row">
       <label class="form-lbl">Provider</label>
       <select class="form-inp" id="providerSel" onchange="toggleProviderFields()">
-        <option value="claude">Claude</option>
-        <option value="miniapps">MiniApps</option>
+        <option value="claude">Claude (requires session key)</option>
+        <option value="chatwithai">ChatWithAI (no account needed)</option>
       </select>
+      <div id="chatwithaiHint" style="display:none;margin-top:6px;padding:8px 12px;background:rgba(56,189,248,0.07);border:1px solid rgba(56,189,248,0.18);border-radius:8px;font-size:12px;color:var(--text-2)">
+        ⚡ ChatWithAI works anonymously — just give this account a name and save. No credentials required.
+      </div>
     </div>
     <div class="form-row">
       <label class="form-lbl">Claude Session Key</label>
@@ -1500,34 +1658,6 @@ a:hover { text-decoration:underline; }
       <div class="miniapps-auth-status" id="claudeAuthStatus" style="display:none"></div>
       <input class="form-inp" type="text" id="claudeCodeInp" placeholder="Or paste a Google auth code manually…" style="margin-top:6px">
       <div class="form-hint">Click "Sign in with Google" to authenticate automatically, or paste a Google auth code manually. Used instead of a session key.</div>
-    </div>
-    <div class="form-row" id="miniappsAuthRow">
-      <label class="form-lbl">MiniApps Google Sign-In</label>
-      <button type="button" class="btn-google" id="miniappsGoogleBtn" onclick="miniappsGoogleSignIn()">
-        <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
-          <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285F4"/>
-          <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
-          <path d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z" fill="#FBBC05"/>
-          <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 6.293C4.672 4.166 6.656 3.58 9 3.58z" fill="#EA4335"/>
-        </svg>
-        Sign in with Google
-      </button>
-      <div class="miniapps-auth-status" id="miniappsAuthStatus" style="display:none"></div>
-      <textarea class="form-inp" id="miniappsIdTokenInp" rows="2" placeholder="Or paste a Google ID token manually…" style="margin-top:6px"></textarea>
-      <div class="form-hint">Click "Sign in with Google" to authenticate automatically, or paste an ID token manually.</div>
-    </div>
-    <div class="form-row">
-      <label class="form-lbl">MiniApps Setup Username</label>
-      <input class="form-inp" type="text" id="miniappsSetupUserInp" placeholder="Optional: only for first-time MiniApps setup">
-    </div>
-    <div class="form-row">
-      <label class="form-lbl">MiniApps Setup Password</label>
-      <input class="form-inp" type="password" id="miniappsSetupPassInp" placeholder="Optional: only for first-time MiniApps setup">
-    </div>
-    <div class="form-row">
-      <label class="form-lbl">MiniApps Tool Slug</label>
-      <input class="form-inp" type="text" id="toolSlugInp" placeholder="claude-37">
-      <div class="form-hint">Used as the chat tool for MiniApps accounts.</div>
     </div>
     <div class="toggle-row" style="margin-top:8px">
       <label class="toggle-lbl" for="acctActivateChk" style="cursor:pointer">Set as active account</label>
@@ -1612,12 +1742,17 @@ async function init() {
     let highlighted;
     try { highlighted = hljs.highlight(code, { language: validLang }).value; }
     catch { highlighted = esc(code); }
+
     const id = 'cb_' + Math.random().toString(36).slice(2, 9);
+    const encodedCode = btoa(unescape(encodeURIComponent(code)));
+
     return `<pre><div class="code-header">
       <span class="code-lang">${esc(language || 'code')}</span>
-      <button class="code-copy" onclick="copyCode('${id}',this)">⎘ Copy</button>
-    </div><code id="${id}" class="hljs language-${esc(validLang)}">${highlighted}</code></pre>`;
+      <button class="code-copy" data-copy-id="${id}">⎘ Copy</button>
+    </div><code id="${id}" class="hljs language-${esc(validLang)}" data-raw="${encodedCode}">${highlighted}</code></pre>`;
   };
+
+
   renderer.link = async function(hrefOrToken, title, text) {
     let href, linkTitle, linkText;
     if (hrefOrToken && typeof hrefOrToken === 'object') {
@@ -1633,6 +1768,35 @@ async function init() {
     const titleAttr = linkTitle ? ` title="${linkTitle.replace(/"/g,'&quot;')}"` : '';
     return `<a href="${eHref}"${titleAttr} target="_blank" rel="noopener noreferrer">${linkText}</a>`;
   };
+
+  marked.setOptions({ renderer: renderer });
+
+  document.getElementById('msgs').addEventListener('click', function(e) {
+    const btn = e.target.closest('.code-copy');
+    if (!btn) return;
+    
+    const id = btn.dataset.copyId;
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    let rawCode = '';
+    try {
+      rawCode = decodeURIComponent(escape(atob(el.dataset.raw)));
+    } catch {
+      rawCode = el.textContent;
+    }
+
+    navigator.clipboard.writeText(rawCode).then(() => {
+      btn.textContent = '✓ Copied';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = '⎘ Copy';
+        btn.classList.remove('copied');
+      }, 2000);
+    }).catch(() => {
+      toast('Copy failed', 'err');
+    });
+  });
 
   await refreshAccountState();
 
@@ -1825,9 +1989,10 @@ function setStatus(ok, orgId) {
   const org  = document.getElementById('acctOrg');
   if (ok) {
     const active = S.accounts.find(a => a.active);
+    const prov = (active?.provider || 'claude').toLowerCase();
     dot.classList.add('ok');
-    name.textContent = S.activeAccount || 'default';
-    org.textContent = orgId ? (orgId.slice(0, 8) + '…') : 'auto';
+    name.textContent = active?.name || 'default';
+    org.textContent  = prov === 'chatwithai' ? '⚡ no account needed' : (orgId ? orgId.slice(0,8)+'…' : 'claude.ai');
   } else {
     dot.classList.remove('ok');
     name.textContent = 'Not configured';
@@ -1842,14 +2007,9 @@ function toggleProviderFields() {
     document.getElementById('orgInp')?.closest('.form-row'),
     document.getElementById('claudeAuthRow'),
   ];
-  const miniappsRows = [
-    document.getElementById('miniappsAuthRow'),
-    document.getElementById('miniappsSetupUserInp')?.closest('.form-row'),
-    document.getElementById('miniappsSetupPassInp')?.closest('.form-row'),
-    document.getElementById('toolSlugInp')?.closest('.form-row'),
-  ];
   claudeRows.forEach(el => { if (el) el.style.display = provider === 'claude' ? '' : 'none'; });
-  miniappsRows.forEach(el => { if (el) el.style.display = provider === 'miniapps' ? '' : 'none'; });
+  const hint = document.getElementById('chatwithaiHint');
+  if (hint) hint.style.display = provider === 'chatwithai' ? '' : 'none';
 }
 
 /* ═══════════════════════════════════════════
@@ -1875,12 +2035,55 @@ function toggleBranchRow() {
 ═══════════════════════════════════════════ */
 function copyCode(id, btn) {
   const el = document.getElementById(id);
-  if (!el) return;
-  navigator.clipboard.writeText(el.textContent).then(() => {
-    btn.textContent = '✓ Copied'; btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = '⎘ Copy'; btn.classList.remove('copied'); }, 2000);
+  if (!el) {
+    console.error('Code element not found:', id);
+    return;
+  }
+  
+  // Decode from base64
+  let rawCode = '';
+  if (el.dataset.raw) {
+    try {
+      rawCode = decodeURIComponent(escape(atob(el.dataset.raw)));
+    } catch (e) {
+      console.error('Failed to decode raw code:', e);
+      rawCode = el.textContent;
+    }
+  } else {
+    rawCode = el.textContent;
+  }
+  
+  navigator.clipboard.writeText(rawCode).then(() => {
+    btn.textContent = '✓ Copied';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = '⎘ Copy';
+      btn.classList.remove('copied');
+    }, 2000);
+  }).catch(err => {
+    console.error('Copy failed:', err);
+    // Fallback for older browsers or permission issues
+    const textArea = document.createElement('textarea');
+    textArea.value = rawCode;
+    textArea.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      btn.textContent = '✓ Copied';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = '⎘ Copy';
+        btn.classList.remove('copied');
+      }, 2000);
+    } catch (err) {
+      console.error('Fallback copy failed:', err);
+      toast('Copy failed', 'err');
+    }
+    document.body.removeChild(textArea);
   });
 }
+
 function copyMsg(uuid, btn) {
   const el = document.querySelector(`.msg[data-uuid="${uuid}"] .msg-body`);
   if (!el) return;
@@ -1932,21 +2135,74 @@ async function refreshAccountState() {
   renderAccountMenu();
   renderAccountList();
 
-  // Ensure Claude model is selected
   const sel = document.getElementById('modelSel');
-  if (sel && provider === 'claude' && !sel.value.startsWith('claude')) {
-    sel.value = 'claude-sonnet-4-6';
-  }
-
-  // Show thinking toggle only for Claude accounts
   const thinkBtn = document.getElementById('thinkBtn');
-  if (thinkBtn) thinkBtn.style.display = provider === 'claude' ? '' : 'none';
-
-  fetchQuota();
-
-  // Update textarea placeholder
+  const branchToggleBtn = document.getElementById('branchToggleBtn');
+  const fileInpBtn = document.querySelector('.inp-btn label[for="fileInp"]')?.parentElement;
+  const efpBtn = document.getElementById('efpBtn');
   const msgTa = document.getElementById('msgTa');
-  if (msgTa) msgTa.placeholder = provider === 'miniapps' ? 'Message MiniApps…' : 'Message Claude…';
+
+  if (provider === 'chatwithai') {
+    // Populate model selector from ChatWithAI API
+    if (sel) {
+      try {
+        const mdata = await apiFetch('/api/chatwithai/models');
+        const models = mdata.models || [];
+
+        // Find Claude models
+        const claudeModels = models.filter(
+          m =>
+            (m.vendor_slug || '').toLowerCase().includes('anthropic') ||
+            (m.id || '').toLowerCase().includes('claude')
+        );
+
+        const optgroupEl = document.getElementById('claudeModels');
+
+        if (optgroupEl && claudeModels.length) {
+          optgroupEl.innerHTML = '';
+
+          for (const m of claudeModels) {
+            const opt = document.createElement('option');
+            opt.value = m.id;
+            opt.textContent = m.display_name || m.id;
+            optgroupEl.appendChild(opt);
+          }
+        } else if (sel && !sel.value) {
+          sel.value = 'claude-sonnet-4-6';
+        }
+      } catch {}
+    }
+
+    if (thinkBtn) thinkBtn.style.display = 'none';
+    if (branchToggleBtn) branchToggleBtn.style.display = 'none';
+    if (fileInpBtn) fileInpBtn.style.display = 'none';
+    if (efpBtn) efpBtn.style.display = 'none';
+
+    if (msgTa) {
+      msgTa.placeholder = 'Message ChatWithAI…';
+    }
+
+    // Hide quota — ChatWithAI is anonymous
+    const quotaWrap = document.getElementById('quotaWrap');
+    if (quotaWrap) quotaWrap.style.display = 'none';
+
+  } else {
+    // Claude provider
+    if (sel && !sel.value.startsWith('claude')) {
+      sel.value = 'claude-sonnet-4-6';
+    }
+
+    if (thinkBtn) thinkBtn.style.display = '';
+    if (branchToggleBtn) branchToggleBtn.style.display = '';
+    if (fileInpBtn) fileInpBtn.style.display = '';
+    if (efpBtn) efpBtn.style.display = '';
+
+    if (msgTa) {
+      msgTa.placeholder = 'Message Claude…';
+    }
+
+    fetchQuota();
+  }
 }
 
 async function fetchQuota() {
@@ -2029,8 +2285,11 @@ function renderAccountMenu(filter = '') {
   }
   for (const acct of visible) {
     const prov = (acct.provider || 'claude').toLowerCase();
-    const badge = `<span class="ami-badge" style="color:var(--accent)">${prov === 'miniapps' ? 'M' : 'C'}</span>`;
-    const subtitle = acct.organization_id ? (acct.organization_id.slice(0,8)+'…') : 'auto';
+    const isCWA = prov === 'chatwithai';
+    const badge = isCWA
+      ? `<span class="ami-badge" style="color:#38bdf8;background:rgba(56,189,248,0.10);border-color:rgba(56,189,248,0.18)">⚡ Free</span>`
+      : `<span class="ami-badge" style="color:var(--accent)">🔑 Claude</span>`;
+    const subtitle = isCWA ? 'No account needed' : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
     const el = document.createElement('div');
     el.className = `acct-menu-item ${acct.active ? 'active' : ''}`;
     el.innerHTML = `
@@ -2068,8 +2327,11 @@ function renderAccountList(filter = '') {
   }
   for (const acct of visible) {
     const prov = (acct.provider || 'claude').toLowerCase();
-    const provBadge = `<span style="font-size:10px;padding:1px 5px;background:var(--accent-dim);color:var(--accent);border-radius:4px;font-weight:600;flex-shrink:0">${prov === 'miniapps' ? 'MiniApps' : 'Claude'}</span>`;
-    const subtitle = acct.organization_id ? (acct.organization_id.slice(0,8)+'…') : 'auto';
+    const isCWA = prov === 'chatwithai';
+    const provBadge = isCWA
+      ? `<span style="font-size:10px;padding:1px 6px;background:rgba(56,189,248,0.10);color:#38bdf8;border-radius:4px;font-weight:600;flex-shrink:0">⚡ Free</span>`
+      : `<span style="font-size:10px;padding:1px 5px;background:var(--accent-dim);color:var(--accent);border-radius:4px;font-weight:600;flex-shrink:0">🔑 Claude</span>`;
+    const subtitle = isCWA ? 'No account needed' : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
     const el = document.createElement('div');
     el.className = `acct-list-item ${acct.active ? 'active' : ''}`;
     el.innerHTML = `
@@ -2121,23 +2383,21 @@ async function saveAccount() {
   const sk  = document.getElementById('skInp').value.trim();
   const org = document.getElementById('orgInp').value.trim();
   const claudeCode = document.getElementById('claudeCodeInp').value.trim();
-  const miniappsIdToken = document.getElementById('miniappsIdTokenInp').value.trim();
-  const miniappsSetupUser = document.getElementById('miniappsSetupUserInp').value.trim();
-  const miniappsSetupPass = document.getElementById('miniappsSetupPassInp').value;
-  const toolSlug = document.getElementById('toolSlugInp').value.trim();
 
   const body = { name, provider, activate: act };
+
   if (provider === 'claude') {
-    if (!isEditing && !sk && !claudeCode)  { toast('Sign in with Google or paste a session key / auth code', 'err'); return; }
+    if (!isEditing && !sk && !claudeCode) {
+      toast('Sign in with Google or paste a session key / auth code', 'err');
+      return;
+    }
+
     if (sk) body.session_key = sk;
     if (org) body.organization_id = org;
     if (claudeCode) body.claude_code = claudeCode;
-  } else {
-    if (!isEditing && !miniappsIdToken) { toast('Sign in with Google or paste an ID token first', 'err'); return; }
-    if (miniappsIdToken) body.miniapps_id_token = miniappsIdToken;
-    if (miniappsSetupUser) body.setup_username = miniappsSetupUser;
-    if (miniappsSetupPass) body.setup_password = miniappsSetupPass;
-    body.tool_slug = toolSlug || 'claude-37';
+
+  } else if (provider === 'chatwithai') {
+    // Anonymous provider — no credentials needed
   }
 
   const r = await apiFetch('/api/accounts', {
@@ -2159,68 +2419,6 @@ async function saveAccount() {
   toast('Account saved', 'ok');
 }
 
-/* ── MiniApps Google OAuth ───────────────────────────────────────────────── */
-
-function _miniappsSetAuthStatus(msg, type) {
-  const el = document.getElementById('miniappsAuthStatus');
-  if (!el) return;
-  el.textContent = msg;
-  el.className = 'miniapps-auth-status' + (type ? ' ' + type : '');
-  el.style.display = msg ? '' : 'none';
-}
-
-function _miniappsResetAuthStatus() {
-  const el = document.getElementById('miniappsAuthStatus');
-  if (el) { el.style.display = 'none'; el.className = 'miniapps-auth-status'; el.textContent = ''; }
-  const btn = document.getElementById('miniappsGoogleBtn');
-  if (btn) btn.disabled = false;
-}
-
-async function miniappsGoogleSignIn() {
-  const btn = document.getElementById('miniappsGoogleBtn');
-  if (btn) btn.disabled = true;
-  _miniappsSetAuthStatus('Starting sign-in session…', '');
-
-  let r;
-  try { r = await apiFetch('/api/oauth/miniapps/begin'); } catch(e) { r = null; }
-  if (!r?.state) {
-    _miniappsSetAuthStatus('Failed to start session — check server logs', 'err');
-    if (btn) btn.disabled = false;
-    return;
-  }
-
-  // Open miniapps.ai so the extension content script can trigger GIS there
-  const tab = window.open('https://miniapps.ai/', 'miniapps_gis', 'width=600,height=700,left=200,top=80');
-  _miniappsSetAuthStatus(
-    tab
-      ? 'Google sign-in prompt opening on miniapps.ai — complete it there…'
-      : 'Visit miniapps.ai and complete the Google sign-in prompt…',
-    ''
-  );
-
-  const iv = setInterval(async () => {
-    let s;
-    try { s = await apiFetch(`/api/oauth/miniapps/status?state=${encodeURIComponent(r.state)}`); } catch { return; }
-    if (!s?.done) return;
-    clearInterval(iv);
-    if (tab && !tab.closed) tab.close();
-    if (s.id_token) {
-      document.getElementById('miniappsIdTokenInp').value = s.id_token;
-      _miniappsSetAuthStatus(`✓ Signed in${s.email ? ' as ' + s.email : ''} — ready`, 'ok');
-    } else {
-      _miniappsSetAuthStatus('Sign-in failed: ' + (s.error || 'unknown error'), 'err');
-    }
-    if (btn) btn.disabled = false;
-  }, 1200);
-
-  // Safety timeout after 2 minutes
-  setTimeout(() => {
-    clearInterval(iv);
-    if (tab && !tab.closed) tab.close();
-    if (btn) btn.disabled = false;
-    _miniappsSetAuthStatus('Timed out — try again', 'err');
-  }, 120_000);
-}
 
 /* ── Claude Google OAuth (auth code flow) ───────────────────────────────── */
 
@@ -2242,44 +2440,51 @@ function _claudeResetAuthStatus() {
 async function claudeGoogleSignIn() {
   const btn = document.getElementById('claudeGoogleBtn');
   if (btn) btn.disabled = true;
-  _claudeSetAuthStatus('Opening Google sign-in…', '');
+  _claudeSetAuthStatus('Starting sign-in session…', '');
+
+  // Open immediately in the user gesture context to avoid popup blocking.
+  const tab = window.open('about:blank', 'claude_gis', 'width=600,height=700,left=200,top=80');
 
   let r;
   try { r = await apiFetch('/api/oauth/claude/begin'); } catch(e) { r = null; }
-  if (!r?.auth_url) {
-    _claudeSetAuthStatus('Failed to start OAuth — check server logs', 'err');
+  if (!r?.state) {
+    if (tab && !tab.closed) tab.close();
+    _claudeSetAuthStatus('Failed to start session — check server logs', 'err');
     if (btn) btn.disabled = false;
     return;
   }
 
-  const popup = window.open(r.auth_url, 'claude_oauth', 'width=520,height=660,left=200,top=80');
-  if (!popup) {
-    _claudeSetAuthStatus('Popup blocked — allow popups for this page', 'err');
-    if (btn) btn.disabled = false;
-    return;
-  }
+  // Navigate popup to claude.ai so the extension content script can trigger GIS there.
+  if (tab && !tab.closed) tab.location.href = 'https://claude.ai/';
+  _claudeSetAuthStatus(
+    tab
+      ? 'Google sign-in prompt opening on claude.ai — complete it there…'
+      : 'Visit claude.ai and complete the Google sign-in prompt…',
+    ''
+  );
 
   const iv = setInterval(async () => {
     let s;
     try { s = await apiFetch(`/api/oauth/claude/status?state=${encodeURIComponent(r.state)}`); } catch { return; }
     if (!s?.done) return;
     clearInterval(iv);
-    if (!popup.closed) popup.close();
+    if (tab && !tab.closed) tab.close();
     if (s.code) {
       document.getElementById('claudeCodeInp').value = s.code;
-      _claudeSetAuthStatus('✓ Auth code received — ready to save account', 'ok');
+      _claudeSetAuthStatus('✓ Auth code received — ready', 'ok');
     } else {
       _claudeSetAuthStatus('Sign-in failed: ' + (s.error || 'unknown error'), 'err');
     }
     if (btn) btn.disabled = false;
   }, 1000);
 
-  // Safety timeout after 5 minutes
+  // Safety timeout after 2 minutes
   setTimeout(() => {
     clearInterval(iv);
-    if (!popup.closed) popup.close();
+    if (tab && !tab.closed) tab.close();
     if (btn) btn.disabled = false;
-  }, 300_000);
+    _claudeSetAuthStatus('Timed out — try again', 'err');
+  }, 120_000);
 }
 
 function _resetAcctForm() {
@@ -2287,15 +2492,10 @@ function _resetAcctForm() {
   document.getElementById('skInp').value            = '';
   document.getElementById('orgInp').value           = '';
   document.getElementById('claudeCodeInp').value    = '';
-  document.getElementById('miniappsIdTokenInp').value = '';
-  document.getElementById('miniappsSetupUserInp').value = '';
-  document.getElementById('miniappsSetupPassInp').value = '';
-  document.getElementById('toolSlugInp').value      = 'claude-37';
-  document.getElementById('providerSel').value     = 'claude';
+  document.getElementById('providerSel').value      = 'claude';
   document.getElementById('acctFormTitle').textContent  = 'Add Account';
   document.getElementById('acctSaveBtn').textContent    = 'Add Account';
   document.getElementById('acctCancelEditBtn').style.display = 'none';
-  _miniappsResetAuthStatus();
   _claudeResetAuthStatus();
   toggleProviderFields();
 }
@@ -2307,7 +2507,6 @@ function editAccount(name) {
   document.getElementById('providerSel').value = acct.provider || 'claude';
   document.getElementById('orgInp').value = acct.organization_id || '';
   document.getElementById('skInp').value  = acct.session_key     || '';
-  document.getElementById('toolSlugInp').value = acct.tool_slug || 'claude-37';
   document.getElementById('acctFormTitle').textContent       = 'Edit Account';
   document.getElementById('acctSaveBtn').textContent         = 'Save Changes';
   document.getElementById('acctCancelEditBtn').style.display = '';
@@ -2581,14 +2780,40 @@ function renderMsgs() {
 
 function buildChain(conv) {
   const map = {};
-  for (const m of conv.chat_messages || []) map[m.uuid] = m;
+  const messages = conv.chat_messages || [];
+  
+  // Create map of messages by UUID
+  for (const m of messages) {
+    if (m.uuid) {
+      map[m.uuid] = m;
+    }
+  }
+  
   const chain = [];
   let cur = conv.current_leaf_message_uuid;
   const ROOT = '00000000-0000-4000-8000-000000000000';
-  while (cur && cur !== ROOT && map[cur]) {
+  
+  // If no current_leaf specified, use the last message
+  if (!cur || cur === ROOT) {
+    if (messages.length > 0) {
+      return messages; // Return all messages in order
+    }
+    return [];
+  }
+  
+  // Build chain from leaf backwards
+  const visited = new Set(); // Prevent infinite loops
+  while (cur && cur !== ROOT && map[cur] && !visited.has(cur)) {
+    visited.add(cur);
     chain.unshift(map[cur]);
     cur = map[cur].parent_message_uuid;
   }
+  
+  // If chain is empty but we have messages, return them all
+  if (chain.length === 0 && messages.length > 0) {
+    return messages;
+  }
+  
   return chain;
 }
 
@@ -2618,16 +2843,16 @@ function buildMsgEl(msg) {
         if (isImage) {
           return `<div class="file-img-wrap">
             <img class="msg-img-preview" src="${dlUrl}" alt="${name}" loading="lazy"
-              onclick="openInCanvas('${eDl}','${name}','${eMime}')" title="Click to open in canvas"
+              onclick="openInCanvas('${eDl}','${name.replace(/'/g, "\\'").replace(/"/g, "&quot;")}','${eMime}')" title="Click to open in canvas"
               onerror="this.parentElement.innerHTML='<div class=\\'file-chip\\'><span>${ico}</span><span class=\\'file-chip-name\\'>${name}</span></div>'">
             <div style="display:flex;gap:4px;margin-top:3px;">
-              <button class="file-chip dl img-dl" onclick="openInCanvas('${eDl}','${name}','${eMime}')" style="border:none;cursor:pointer;">👁 Canvas</button>
+              <button class="file-chip dl img-dl" onclick="openInCanvas('${eDl}','${name.replace(/'/g, "\\'").replace(/"/g, "&quot;")}','${eMime}')" style="border:none;cursor:pointer;">👁 Canvas</button>
             </div>
           </div>`;
         }
         return `<div style="display:flex;gap:4px;align-items:center;">
           <div class="file-chip"><span>${ico}</span><span class="file-chip-name">${name}</span></div>
-          <button class="file-chip dl" onclick="openInCanvas('${eDl}','${name}','${eMime}')" title="Preview in canvas" style="border:none;cursor:pointer;">👁</button>
+          <button class="file-chip dl" onclick="openInCanvas('${eDl}','${name.replace(/'/g, "\\'").replace(/"/g, "&quot;")}','${eMime}')" title="Preview in canvas" style="border:none;cursor:pointer;">👁</button>
         </div>`;
       }
       return `<div class="file-chip"><span>${ico}</span><span class="file-chip-name">${name}</span></div>`;
@@ -2645,10 +2870,35 @@ function buildMsgEl(msg) {
 
   let contentHtml = '';
   if (blocks.length) {
-    for (const b of blocks) contentHtml += renderBlock(b);
+    for (const b of blocks) contentHtml += renderBlock(b, false, msg.sender);  // <-- Pass false for streaming, msg.sender for sender
   } else if (msg.text) {
+  if (msg.sender === 'human') {
+    contentHtml = `<div class="md"><p>${esc(msg.text).replace(/\n/g, '<br>')}</p></div>`;
+  } else {
     contentHtml = `<div class="md">${marked.parse(msg.text)}</div>`;
   }
+}
+
+  // Add utility buttons for assistant messages
+  const utilsHtml = msg.sender === 'assistant' ? `
+  <div class="md-utils">
+    <button class="md-util-btn copy" onclick="copyMsgContent('${msg.uuid}', this)">
+      <span>⎘</span><span>Copy</span>
+    </button>
+    <button class="md-util-btn collapse" onclick="toggleMsgCollapse('${msg.uuid}', this)">
+      <span>⊟</span><span>Collapse</span>
+    </button>
+  </div>` : '';
+
+  const utilsBottomHtml = msg.sender === 'assistant' ? `
+    <div class="md-utils bottom">
+      <button class="md-util-btn" onclick="regenerateMsg('${msg.uuid}')">
+        <span>↻</span><span>Regenerate</span>
+      </button>
+      <button class="md-util-btn" onclick="forkFromMsg('${msg.uuid}')">
+        <span>⎇</span><span>Fork</span>
+      </button>
+    </div>` : '';
 
   el.innerHTML = `
     <div class="msg-header">
@@ -2657,11 +2907,19 @@ function buildMsgEl(msg) {
       <span class="msg-ts">${ts}</span>
       ${msg.sender === 'human' ? `<div class="msg-avatar human">${avatar}</div>` : ''}
     </div>
-    <div class="msg-body">${filesHtml}${contentHtml}</div>
+    <div class="msg-body">
+      ${filesHtml}
+      ${utilsHtml}
+      <div class="md-content-wrap" id="content-${msg.uuid}">
+        ${contentHtml}
+        <button class="md-expand-btn" onclick="expandMsg('${msg.uuid}')">Show more ↓</button>
+      </div>
+      ${utilsBottomHtml}
+    </div>
     <div class="msg-actions">
       ${msg.sender === 'human' ? `<button class="msg-act-btn edit-btn" onclick="editMsg('${msg.uuid}')">✎ Edit</button>` : ''}
-      <button class="msg-act-btn" onclick="copyMsg('${msg.uuid}',this)">⎘ Copy</button>
     </div>`;
+
   return el;
 }
 
@@ -2669,10 +2927,15 @@ function buildMsgEl(msg) {
    BLOCK RENDERER
 ═══════════════════════════════════════════ */
 
-function renderBlock(block, streaming = false) {
+function renderBlock(block, streaming = false, sender = 'assistant') {
   switch (block.type) {
     case 'text': {
       const cursor = streaming ? '<span class="scursor"></span>' : '';
+      console.log('renderBlock:', {text: block.text, sender, streaming}); // DEBUG
+      if (sender === 'human') {
+        const escaped = esc(block.text || '').replace(/\n/g, '<br>');
+        return `<div class="md"><p>${escaped}</p></div>`;
+      }
       return `<div class="md">${marked.parse(block.text || '')}${cursor}</div>`;
     }
 
@@ -3455,12 +3718,17 @@ async function doSend() {
   const parentUuid = document.getElementById('branchSel').value;
   const model      = document.getElementById('modelSel').value;
 
-  const fileRefs = S.attached.map(f => ({
-    file_uuid: f.file_uuid,
-    file_name: f._filename || f.file_name || '',
-    file_kind: f._mime     || f.file_kind || '',
-    path:      f.path      || ''
-  }));
+  const active = S.accounts.find(a => a.active);
+  const activeProvider = (active?.provider || 'claude').toLowerCase();
+
+  const fileRefs = activeProvider === 'chatwithai'
+    ? []
+    : S.attached.map(f => ({
+        file_uuid: f.file_uuid,
+        file_name: f._filename || f.file_name || '',
+        file_kind: f._mime     || f.file_kind || '',
+        path:      f.path      || ''
+      }));
 
   const conv      = S.convs[S.convId];
   const humanUuid = uuid4();
@@ -3482,7 +3750,10 @@ async function doSend() {
 
   const asstUuid = uuid4();
   const asstMsg  = {
-    uuid: asstUuid, sender:'assistant', content:[], text:'',
+    uuid: asstUuid, 
+    sender: 'assistant', 
+    content: [], 
+    text: '',
     parent_message_uuid: humanUuid,
     created_at: new Date().toISOString(), index: conv.chat_messages.length
   };
@@ -3633,7 +3904,12 @@ function handleStreamEv(ev, asstMsg, bodyElFn) {
           displayMsg = `Rate limit reached${windowNote}.${resetStr}`;
         }
 
-        errEl.innerHTML = `<div style="color:var(--red);font-size:13px;padding:6px 0">⚠ ${esc(displayMsg)}</div>`;
+        const errDiv = document.createElement('div');
+        errDiv.style.cssText = 'color:var(--red);font-size:13px;padding:6px 0';
+        errDiv.textContent = `⚠ ${displayMsg}`;
+        errEl.innerHTML = '';
+        errEl.appendChild(errDiv);
+
       }
       return;
     }
@@ -3648,7 +3924,7 @@ function updateStreamDisplay(asstMsg, bodyElFn) {
   if (!el) return;
 
   let html = '';
-  for (const b of asstMsg.content) html += renderBlock(b, false);
+  for (const b of asstMsg.content) html += renderBlock(b, false, asstMsg.sender || 'assistant');
 
   const maxIdx = Object.keys(streamBlocks).length
     ? Math.max(...Object.keys(streamBlocks).map(Number))
@@ -3716,6 +3992,142 @@ function toast(msg, type = 'info') {
   el.innerHTML = `<span style="opacity:.5">${ico}</span><span>${esc(msg)}</span>`;
   box.appendChild(el);
   setTimeout(() => el.remove(), 3500);
+}
+
+// Copy message content with formatting preserved
+function copyMsgContent(uuid, btn) {
+  const el = document.querySelector(`.msg[data-uuid="${uuid}"] .md`);
+  if (!el) return;
+  
+  // Get plain text with basic formatting
+  const text = el.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.innerHTML = '<span>✓</span><span>Copied</span>';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.innerHTML = '<span>⎘</span><span>Copy</span>';
+      btn.classList.remove('copied');
+    }, 2000);
+  });
+}
+
+// Copy as raw markdown
+function copyMsgAsMarkdown(uuid, btn) {
+  const conv = S.convs[S.convId];
+  if (!conv) return;
+  
+  const msg = (conv.chat_messages || []).find(m => m.uuid === uuid);
+  if (!msg) return;
+  
+  // Extract markdown from message
+  let markdown = '';
+  if (msg.content && msg.content.length) {
+    for (const block of msg.content) {
+      if (block.type === 'text') {
+        markdown += block.text || '';
+      }
+    }
+  } else {
+    markdown = msg.text || '';
+  }
+  
+  navigator.clipboard.writeText(markdown).then(() => {
+    btn.innerHTML = '<span>✓</span><span>Copied MD</span>';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.innerHTML = '<span>📝</span><span>Copy MD</span>';
+      btn.classList.remove('copied');
+    }, 2000);
+  });
+}
+
+// Toggle collapse/expand for long messages
+function toggleMsgCollapse(uuid, btn) {
+  const wrap = document.getElementById(`content-${uuid}`);
+  if (!wrap) return;
+  
+  const isCollapsed = wrap.classList.contains('collapsed');
+  if (isCollapsed) {
+    wrap.classList.remove('collapsed');
+    btn.innerHTML = '<span>⊟</span><span>Collapse</span>';
+  } else {
+    // Only collapse if content is long enough
+    const mdEl = wrap.querySelector('.md');
+    if (mdEl && mdEl.scrollHeight > 200) {
+      wrap.classList.add('collapsed');
+      btn.innerHTML = '<span>⊞</span><span>Expand</span>';
+    }
+  }
+}
+
+// Expand a collapsed message
+function expandMsg(uuid) {
+  const wrap = document.getElementById(`content-${uuid}`);
+  if (wrap) {
+    wrap.classList.remove('collapsed');
+    const btn = document.querySelector(`.msg[data-uuid="${uuid}"] .md-util-btn.collapse`);
+    if (btn) {
+      btn.innerHTML = '<span>⊟</span><span>Collapse</span>';
+    }
+  }
+}
+
+// Regenerate from a specific message
+function regenerateMsg(uuid) {
+  const conv = S.convs[S.convId];
+  if (!conv) return;
+  
+  const msg = (conv.chat_messages || []).find(m => m.uuid === uuid);
+  if (!msg || msg.sender !== 'assistant') return;
+  
+  // Find the parent human message
+  const parentMsg = (conv.chat_messages || []).find(m => m.uuid === msg.parent_message_uuid);
+  if (!parentMsg) return;
+  
+  // Set branch point and resend
+  document.getElementById('branchSel').value = parentMsg.parent_message_uuid || '00000000-0000-4000-8000-000000000000';
+  document.getElementById('msgTa').value = parentMsg.text || '';
+  
+  // Reattach files if any
+  S.attached = [];
+  if (parentMsg.files_v2 && parentMsg.files_v2.length) {
+    for (const f of parentMsg.files_v2) {
+      S.attached.push({
+        file_uuid: f.file_uuid,
+        _filename: f.file_name,
+        _mime: f.file_kind
+      });
+    }
+    renderAttBar();
+  }
+  
+  toast('Ready to regenerate — press ↵ to send', 'info');
+  document.getElementById('msgTa').focus();
+}
+
+// Fork conversation from a message
+function forkFromMsg(uuid) {
+  const conv = S.convs[S.convId];
+  if (!conv) return;
+  
+  document.getElementById('branchSel').value = uuid;
+  if (!S.branchVisible) toggleBranchRow();
+  document.getElementById('msgTa').focus();
+  toast('Branching from this message — type your alternative response', 'info');
+}
+
+function toggleCodeBlock(wrapperId, btn) {
+  const wrapper = document.getElementById(wrapperId);
+  if (!wrapper) return;
+  
+  const isCollapsed = wrapper.classList.contains('collapsed');
+  if (isCollapsed) {
+    wrapper.classList.remove('collapsed');
+    btn.textContent = '⊟ Collapse';
+  } else {
+    wrapper.classList.add('collapsed');
+    btn.textContent = '⊞ Expand';
+  }
 }
 
 /* ═══════════════════════════════════════════
