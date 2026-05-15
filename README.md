@@ -1,6 +1,6 @@
 # ✦ ChatAI Console
 
-A self-hosted web chat interface for [Claude](https://claude.ai) and [MiniApps.ai](https://miniapps.ai), powered by the reverse-engineered `claude_webapi` and `miniapps_api` libraries. Multi-account management, real-time streaming, file uploads, conversation branching, usage tracking, and a Galaxy-themed UI — all in a single Flask app.
+A self-hosted web chat interface for [Claude](https://claude.ai) and [ChatWithAI.app](https://chatwithai.app), powered partially by the reverse-engineered `claude_webapi`. Multi-account management, real-time streaming, file uploads, conversation branching, usage tracking, and a Galaxy-themed UI — all in a single Flask app.
 
 ## Features
 
@@ -54,8 +54,8 @@ Two options:
 Create a `keys.py` in the project root to auto-load accounts on startup:
 
 ```python
-CLAUDE_ACCOUNTS = [
-    ("Account Name", "sk-ant-..."),
+ACCOUNTS = [
+    ("claude", "Account Name", "sk-ant-..."),
     ("Account Name With Org", "org-uuid", "sk-ant-..."),
 ]
 ```

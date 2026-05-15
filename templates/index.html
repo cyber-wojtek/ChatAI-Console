@@ -1702,19 +1702,25 @@ a:hover { text-decoration:underline; }
 
 <script>
 /* ═══════════════════════════════════════════
-   STATE
+   STATE  — per-tab, not server-global
 ═══════════════════════════════════════════ */
 const S = {
+  // Per-tab account selection
+  tabAccount:    null,   // { name, provider, provider_info, ... } chosen for THIS tab
+  
+  // Conversation state
   convId:        null,
   convs:         {},
   allConvs:      [],
   pinnedIds:     [],
+  
+  // UI state
   streaming:     false,
   thinking:      false,
   attached:      [],
   configured:    false,
-  activeAccount: null,
-  accounts:      [],
+  activeAccount: null,   // server's "active" account (legacy fallback)
+  accounts:      [],     // all known accounts
   sidebarOpen:   true,
   branchVisible: false,
   canvasOpen:    false,
@@ -1809,9 +1815,8 @@ async function init() {
   renderSidebar();
   setupDragDrop();
 
-  /* URL-based routing: open conversation from /c/<id> */
   const urlConvId = getConvIdFromUrl();
-  if (urlConvId && S.configured) {
+  if (urlConvId && getTabAccount()) {
     await selectConv(urlConvId, true);
     if (!S.convs[urlConvId]?.chat_messages) {
       history.replaceState(null, '', '/');
@@ -1894,16 +1899,65 @@ async function handlePaste(e) {
 /* ═══════════════════════════════════════════
    UTILS
 ═══════════════════════════════════════════ */
+
+/* ── Account for this tab ── */
+function getTabAccount() {
+  // Use explicitly chosen tab account, else server active, else first account
+  return S.tabAccount 
+      || S.accounts.find(a => a.active) 
+      || S.accounts[0] 
+      || null;
+}
+
+function getTabAccountName() {
+  return getTabAccount()?.name || null;
+}
+
+function getTabProvider() {
+  return (getTabAccount()?.provider || 'claude').toLowerCase();
+}
+
+function getTabProviderInfo() {
+  return getTabAccount()?.provider_info || {
+    type: 'claude',
+    supports_files: true,
+    supports_artifacts: true,
+    supports_tools: true,
+    supports_thinking: true,
+    supports_branching: true,
+    default_model: 'claude-sonnet-4-6',
+  };
+}
+
+/* ── API fetch with per-tab account header ── */
+function getTabAccountName() {
+  return S.tabAccount?.name || S.activeAccount || null;
+}
+
+// All JSON API calls
 async function apiFetch(url, opts = {}) {
+  opts.headers = opts.headers || {};
+  const name = getTabAccountName();
+  if (name) opts.headers['X-Account-Name'] = name;
   const r = await fetch(url, opts);
   return r.json();
 }
+
+// Streaming / raw response calls
+async function apiFetchRaw(url, opts = {}) {
+  opts.headers = opts.headers || {};
+  const name = getTabAccountName();
+  if (name) opts.headers['X-Account-Name'] = name;
+  return fetch(url, opts);
+}
+
 async function loadPinnedIds() {
   try { S.pinnedIds = await apiFetch('/api/local/conversations'); } catch { S.pinnedIds = []; }
 }
 async function loadAllConvs() {
-  if (!S.configured) { S.allConvs = []; return; }
+  if (!getTabAccount()) { S.allConvs = []; return; }
   try {
+    // apiFetch already sends X-Account-Name
     const data = await apiFetch('/api/conversations');
     const arr = Array.isArray(data) ? data : [];
     S.allConvs = arr.map(c => {
@@ -1919,6 +1973,7 @@ async function loadAllConvs() {
     for (const c of S.allConvs) if (c.uuid) S.convs[c.uuid] = c;
   } catch { S.allConvs = []; }
 }
+
 function getPinnedSet() { return new Set((S.pinnedIds || []).map(p => p.conv_uuid)); }
 function getSavedIds() { return (S.pinnedIds || []).map(p => p.conv_uuid); }
 async function saveId(id, name) {
@@ -1987,12 +2042,16 @@ function setStatus(ok, orgId) {
   const dot  = document.getElementById('acctDot');
   const name = document.getElementById('acctName');
   const org  = document.getElementById('acctOrg');
-  if (ok) {
-    const active = S.accounts.find(a => a.active);
-    const prov = (active?.provider || 'claude').toLowerCase();
+  
+  const tabAcct = getTabAccount();
+  const prov    = getTabProvider();
+  
+  if (ok && tabAcct) {
     dot.classList.add('ok');
-    name.textContent = active?.name || 'default';
-    org.textContent  = prov === 'chatwithai' ? '⚡ no account needed' : (orgId ? orgId.slice(0,8)+'…' : 'claude.ai');
+    name.textContent = tabAcct.name;
+    org.textContent  = prov === 'chatwithai' 
+      ? '⚡ no account needed' 
+      : (tabAcct.organization_id ? tabAcct.organization_id.slice(0,8)+'…' : 'claude.ai');
   } else {
     dot.classList.remove('ok');
     name.textContent = 'Not configured';
@@ -2125,83 +2184,183 @@ function editMsg(uuid) {
    MULTI-ACCOUNT
 ═══════════════════════════════════════════ */
 async function refreshAccountState() {
-  const data = await apiFetch('/api/accounts');
+  const data = await fetch('/api/accounts').then(r => r.json());
   S.accounts      = data.accounts || [];
-  S.activeAccount = data.active || null;
-  S.configured    = S.accounts.some(a => a.active);
-  const active = S.accounts.find(a => a.active);
-  const provider = (active?.provider || 'claude').toLowerCase();
-  setStatus(!!active, active?.organization_id);
+  S.activeAccount = data.active   || null;
+  S.configured    = S.accounts.length > 0;
+
+  // Restore or pick tab account
+  if (!S.tabAccount) {
+    S.tabAccount = S.accounts.find(a => a.active) || S.accounts[0] || null;
+  } else {
+    const refreshed = S.accounts.find(a => a.name === S.tabAccount.name);
+    S.tabAccount = refreshed || S.accounts.find(a => a.active) || S.accounts[0] || null;
+  }
+
+  const acct = S.tabAccount;
+  setStatus(!!acct, acct?.organization_id);
   renderAccountMenu();
   renderAccountList();
+  applyProviderUI(acct);
+}
 
+function applyProviderUI(acct) {
+  if (!acct) return;
+
+  const provider  = (acct.provider || 'claude').toLowerCase();
+  const provInfo  = acct.provider_info || {};
+  const models    = acct.models        || [];
+  const defModel  = acct.default_model || 'claude-sonnet-4-6';
+
+  // Model selector — built from the account's own model list
   const sel = document.getElementById('modelSel');
-  const thinkBtn = document.getElementById('thinkBtn');
+  if (sel) {
+    sel.innerHTML = '';
+
+    if (!models.length) {
+      // Hardcoded fallback per provider
+      const fallbacks = provider === 'chatwithai'
+        ? [{id:'claude-sonnet-4-6', display_name:'Claude Sonnet'},
+           {id:'gpt-4o',            display_name:'GPT-4o'},
+           {id:'gemini-2.0-flash-exp', display_name:'Gemini 2.0 Flash'}]
+        : [{id:'claude-sonnet-4-6',        display_name:'sonnet-4-6'},
+           {id:'claude-haiku-4-5-20251001', display_name:'haiku-4-5'}];
+      fallbacks.forEach(m => {
+        const o = document.createElement('option');
+        o.value = m.id; o.textContent = m.display_name;
+        sel.appendChild(o);
+      });
+    } else {
+      // Group by vendor if present (ChatWithAI has multiple vendors)
+      const byVendor = {};
+      models.forEach(m => {
+        const v = m.vendor_slug || m.vendor || '__none__';
+        (byVendor[v] = byVendor[v] || []).push(m);
+      });
+
+      const vendors = Object.keys(byVendor);
+      const useGroups = vendors.length > 1 || (vendors[0] !== '__none__' && models[0]?.vendor);
+
+      if (useGroups) {
+        vendors.forEach(v => {
+          const og  = document.createElement('optgroup');
+          og.label  = byVendor[v][0].vendor || v;
+          byVendor[v].forEach(m => {
+            const o = document.createElement('option');
+            o.value = m.id; o.textContent = m.display_name || m.id;
+            og.appendChild(o);
+          });
+          sel.appendChild(og);
+        });
+      } else {
+        models.forEach(m => {
+          const o = document.createElement('option');
+          o.value = m.id; o.textContent = m.display_name || m.id;
+          sel.appendChild(o);
+        });
+      }
+    }
+
+    // Set default
+    if (defModel && [...sel.options].some(o => o.value === defModel)) {
+      sel.value = defModel;
+    } else if (sel.options.length) {
+      sel.selectedIndex = 0;
+    }
+  }
+
+  // Show/hide Claude-specific toolbar items
+  const thinkBtn        = document.getElementById('thinkBtn');
   const branchToggleBtn = document.getElementById('branchToggleBtn');
-  const fileInpBtn = document.querySelector('.inp-btn label[for="fileInp"]')?.parentElement;
-  const efpBtn = document.getElementById('efpBtn');
-  const msgTa = document.getElementById('msgTa');
+  const fileInpBtn      = document.querySelector('.inp-btn label[for="fileInp"]')?.parentElement;
+  const efpBtn          = document.getElementById('efpBtn');
+  const msgTa           = document.getElementById('msgTa');
+  const quotaWrap       = document.getElementById('quotaWrap');
 
-  if (provider === 'chatwithai') {
-    // Populate model selector from ChatWithAI API
-    if (sel) {
-      try {
-        const mdata = await apiFetch('/api/chatwithai/models');
-        const models = mdata.models || [];
+  if (thinkBtn)        thinkBtn.style.display        = provInfo.supports_thinking  ? '' : 'none';
+  if (branchToggleBtn) branchToggleBtn.style.display = provInfo.supports_branching ? '' : 'none';
+  if (fileInpBtn)      fileInpBtn.style.display      = provInfo.supports_files     ? '' : 'none';
+  if (efpBtn)          efpBtn.style.display          = provInfo.supports_files     ? '' : 'none';
+  if (msgTa)           msgTa.placeholder             = provider === 'chatwithai'
+                                                         ? 'Message ChatWithAI…'
+                                                         : 'Message Claude…';
+  if (quotaWrap) {
+    if (provider === 'claude') fetchQuota();
+    else quotaWrap.style.display = 'none';
+  }
+}
 
-        // Find Claude models
-        const claudeModels = models.filter(
-          m =>
-            (m.vendor_slug || '').toLowerCase().includes('anthropic') ||
-            (m.id || '').toLowerCase().includes('claude')
-        );
+async function loadModelsForTab(sel, defaultModel) {
+  sel.innerHTML = '';
+  try {
+    // /api/models uses X-Account-Name header via apiFetch
+    const mdata  = await apiFetch('/api/models');
+    const models = mdata.models || [];
+    const provider = mdata.provider || getTabProvider();
 
-        const optgroupEl = document.getElementById('claudeModels');
-
-        if (optgroupEl && claudeModels.length) {
-          optgroupEl.innerHTML = '';
-
-          for (const m of claudeModels) {
-            const opt = document.createElement('option');
-            opt.value = m.id;
-            opt.textContent = m.display_name || m.id;
-            optgroupEl.appendChild(opt);
-          }
-        } else if (sel && !sel.value) {
-          sel.value = 'claude-sonnet-4-6';
-        }
-      } catch {}
+    if (!models.length) {
+      // Hardcoded fallback
+      const fallbacks = provider === 'chatwithai'
+        ? [
+            {id:'claude-sonnet-4-6', display_name:'Claude Sonnet'},
+            {id:'gpt-4o',            display_name:'GPT-4o'},
+            {id:'gemini-2.0-flash-exp', display_name:'Gemini 2.0 Flash'},
+          ]
+        : [
+            {id:'claude-sonnet-4-6',       display_name:'sonnet-4-6'},
+            {id:'claude-haiku-4-5-20251001', display_name:'haiku-4-5'},
+          ];
+      fallbacks.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id; opt.textContent = m.display_name;
+        sel.appendChild(opt);
+      });
+      if (defaultModel) sel.value = defaultModel;
+      return;
     }
 
-    if (thinkBtn) thinkBtn.style.display = 'none';
-    if (branchToggleBtn) branchToggleBtn.style.display = 'none';
-    if (fileInpBtn) fileInpBtn.style.display = 'none';
-    if (efpBtn) efpBtn.style.display = 'none';
+    // Group by vendor if multi-vendor (ChatWithAI)
+    const byVendor = {};
+    models.forEach(m => {
+      const v = m.vendor_slug || m.vendor || '__single__';
+      (byVendor[v] = byVendor[v] || []).push(m);
+    });
 
-    if (msgTa) {
-      msgTa.placeholder = 'Message ChatWithAI…';
+    const vendors = Object.keys(byVendor);
+    if (vendors.length === 1 && vendors[0] === '__single__') {
+      // No grouping
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.display_name || m.id;
+        sel.appendChild(opt);
+      });
+    } else {
+      // Optgroups per vendor
+      vendors.forEach(v => {
+        const group = byVendor[v];
+        const og = document.createElement('optgroup');
+        og.label = group[0].vendor || v;
+        group.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = m.display_name || m.id;
+          og.appendChild(opt);
+        });
+        sel.appendChild(og);
+      });
     }
 
-    // Hide quota — ChatWithAI is anonymous
-    const quotaWrap = document.getElementById('quotaWrap');
-    if (quotaWrap) quotaWrap.style.display = 'none';
-
-  } else {
-    // Claude provider
-    if (sel && !sel.value.startsWith('claude')) {
-      sel.value = 'claude-sonnet-4-6';
+    // Set default
+    const def = mdata.default_model || defaultModel;
+    if (def && [...sel.options].some(o => o.value === def)) {
+      sel.value = def;
+    } else if (sel.options.length) {
+      sel.selectedIndex = 0;
     }
-
-    if (thinkBtn) thinkBtn.style.display = '';
-    if (branchToggleBtn) branchToggleBtn.style.display = '';
-    if (fileInpBtn) fileInpBtn.style.display = '';
-    if (efpBtn) efpBtn.style.display = '';
-
-    if (msgTa) {
-      msgTa.placeholder = 'Message Claude…';
-    }
-
-    fetchQuota();
+  } catch(e) {
+    console.error('Failed to load models:', e);
+    sel.innerHTML = `<option value="${getTabProviderInfo().default_model}">Default</option>`;
   }
 }
 
@@ -2270,11 +2429,20 @@ function _closeAcctOnOutside(e) {
   if (!document.getElementById('acctSwitcher')?.contains(e.target)) closeAcctMenu();
 }
 
+
+
 function renderAccountMenu(filter = '') {
   const list = document.getElementById('acctMenuList');
   list.innerHTML = '';
   const q = filter.toLowerCase().trim();
-  const visible = q ? S.accounts.filter(a => a.name.toLowerCase().includes(q) || (a.provider||'claude').toLowerCase().includes(q)) : S.accounts;
+  const tabName = getTabAccountName();
+  
+  const visible = q 
+    ? S.accounts.filter(a => 
+        a.name.toLowerCase().includes(q) || 
+        (a.provider||'claude').toLowerCase().includes(q))
+    : S.accounts;
+    
   if (!S.accounts.length) {
     list.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:var(--text-3)">No accounts yet</div>';
     return;
@@ -2283,25 +2451,43 @@ function renderAccountMenu(filter = '') {
     list.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:var(--text-3)">No matches</div>';
     return;
   }
+  
   for (const acct of visible) {
-    const prov = (acct.provider || 'claude').toLowerCase();
+    const prov  = (acct.provider || 'claude').toLowerCase();
     const isCWA = prov === 'chatwithai';
+    const isTabActive = acct.name === tabName;  // active FOR THIS TAB
+    const isServerActive = acct.active;          // server-wide active (shown differently)
+    
     const badge = isCWA
       ? `<span class="ami-badge" style="color:#38bdf8;background:rgba(56,189,248,0.10);border-color:rgba(56,189,248,0.18)">⚡ Free</span>`
       : `<span class="ami-badge" style="color:var(--accent)">🔑 Claude</span>`;
-    const subtitle = isCWA ? 'No account needed' : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
+    
+    const subtitle = isCWA 
+      ? 'No account needed' 
+      : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
+    
+    // Show if this is the tab-active account
+    const tabIndicator = isTabActive 
+      ? '<span style="font-size:9px;color:var(--teal);margin-left:4px;font-family:var(--font-mono)">this tab</span>' 
+      : '';
+
     const el = document.createElement('div');
-    el.className = `acct-menu-item ${acct.active ? 'active' : ''}`;
+    el.className = `acct-menu-item ${isTabActive ? 'active' : ''}`;
     el.innerHTML = `
       <div class="ami-info">
-        <div class="ami-name"><span class="ami-name-text">${esc(acct.name)}</span>${badge}</div>
+        <div class="ami-name">
+          <span class="ami-name-text">${esc(acct.name)}</span>
+          ${badge}
+          ${tabIndicator}
+        </div>
         <div class="ami-org">${esc(subtitle)}</div>
       </div>
-      <div class="ami-dot ${acct.active ? '' : 'inactive'}"></div>
+      <div class="ami-dot ${isTabActive ? '' : 'inactive'}"></div>
       <button class="ami-del" onclick="deleteAccount(event,'${esc(acct.name)}')">✕</button>`;
+    
     el.addEventListener('click', e => {
       if (e.target.classList.contains('ami-del')) return;
-      switchAccount(acct.name);
+      switchTabAccount(acct.name);  // Switch THIS TAB's account, not server-wide
     });
     list.appendChild(el);
   }
@@ -2351,74 +2537,55 @@ function filterAccounts(val) {
   renderAccountList(val);
 }
 
-async function switchAccount(name) {
+/* Switch the account for THIS TAB only — no server state change */
+async function switchTabAccount(name) {
   closeAcctMenu();
-  await apiFetch(`/api/accounts/${encodeURIComponent(name)}/activate`, { method:'POST' });
+  const acct = S.accounts.find(a => a.name === name);
+  if (!acct) { toast(`Account "${name}" not found`, 'err'); return; }
+
+  S.tabAccount = acct;
   S.convId = null; S.convs = {}; S.allConvs = []; S.pinnedIds = [];
+
   document.getElementById('chat').classList.add('hidden');
   document.getElementById('splash').classList.remove('hidden');
   history.replaceState(null, '', '/');
-  document.title = 'Claude Console';
-  await refreshAccountState();
+  document.title = 'ChatAI Console';
+
+  setStatus(true, acct.organization_id);
+  renderAccountMenu();
+  applyProviderUI(acct);   // <-- full acct object, has .models already
+
   await Promise.all([loadPinnedIds(), loadAllConvs()]);
   renderSidebar();
-  toast(`Switched to ${name}`, 'ok');
+  toast(`Tab switched to ${name}`, 'ok');
+}
+
+/* Make an account the server-wide active (affects other tabs that haven't
+   explicitly chosen an account yet) — available from settings panel */
+async function setServerActiveAccount(name) {
+  await fetch(`/api/accounts/${encodeURIComponent(name)}/activate`, { method:'POST' });
+  await refreshAccountState();
+  toast(`Default account → ${name}`, 'ok');
 }
 
 async function saveAccount() {
-  const name = document.getElementById('acctNameInp').value.trim();
-  const act  = document.getElementById('acctActivateChk').checked;
-  const provider = document.getElementById('providerSel').value || 'claude';
-  if (!name) { toast('Account name is required', 'err'); return; }
-
-  // Detect if we're editing (Save Changes) vs adding
-  const isEditing = document.getElementById('acctSaveBtn').textContent === 'Save Changes';
-  // For new accounts, disallow duplicate names (backend uses name as key)
-  if (!isEditing && S.accounts.some(a => a.name === name)) {
-    toast('An account named "' + name + '" already exists. Choose a unique name.', 'err');
-    document.getElementById('acctNameInp').focus();
-    return;
-  }
-
-  const sk  = document.getElementById('skInp').value.trim();
-  const org = document.getElementById('orgInp').value.trim();
-  const claudeCode = document.getElementById('claudeCodeInp').value.trim();
-
-  const body = { name, provider, activate: act };
-
-  if (provider === 'claude') {
-    if (!isEditing && !sk && !claudeCode) {
-      toast('Sign in with Google or paste a session key / auth code', 'err');
-      return;
-    }
-
-    if (sk) body.session_key = sk;
-    if (org) body.organization_id = org;
-    if (claudeCode) body.claude_code = claudeCode;
-
-  } else if (provider === 'chatwithai') {
-    // Anonymous provider — no credentials needed
-  }
-
-  const r = await apiFetch('/api/accounts', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
+  // ... existing validation ...
+  const r = await fetch('/api/accounts', {  // Don't use apiFetch here - no account needed yet
+    method: 'POST', 
+    headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(body),
-  });
+  }).then(r => r.json());
+  
   if (!r || r.error) { toast('Error: ' + (r?.error || 'Unknown error'), 'err'); return; }
   _resetAcctForm();
-  await refreshAccountState();
+  await refreshAccountState();  // Refreshes S.accounts
+  
+  // Auto-switch this tab to the new account if activate was checked
   if (act) {
-    S.convId = null; S.convs = {}; S.allConvs = []; S.pinnedIds = [];
-    await Promise.all([loadPinnedIds(), loadAllConvs()]);
-    renderSidebar();
-    document.getElementById('chat').classList.add('hidden');
-    document.getElementById('splash').classList.remove('hidden');
-    history.replaceState(null, '', '/');
-    document.title = 'Claude Console';
+    await switchTabAccount(name);
   }
   toast('Account saved', 'ok');
 }
-
 
 /* ── Claude Google OAuth (auth code flow) ───────────────────────────────── */
 
@@ -2520,15 +2687,22 @@ function cancelAcctEdit() {
 
 async function deleteAccount(e, name) {
   if (e) e.stopPropagation();
-  await apiFetch(`/api/accounts/${encodeURIComponent(name)}`, { method:'DELETE' });
+  await fetch(`/api/accounts/${encodeURIComponent(name)}`, { method:'DELETE' });
   await refreshAccountState();
-  if (S.activeAccount !== name) return;
-  S.convId = null; S.convs = {}; S.allConvs = []; S.pinnedIds = [];
-  document.getElementById('chat').classList.add('hidden');
-  document.getElementById('splash').classList.remove('hidden');
-  history.replaceState(null, '', '/');
-  document.title = 'Claude Console';
-  renderSidebar();
+  
+  // If this was our tab's account, switch to whatever is left
+  if (S.tabAccount?.name === name) {
+    S.tabAccount = S.accounts.find(a => a.active) || S.accounts[0] || null;
+    S.convId = null; S.convs = {}; S.allConvs = []; S.pinnedIds = [];
+    document.getElementById('chat').classList.add('hidden');
+    document.getElementById('splash').classList.remove('hidden');
+    history.replaceState(null, '', '/');
+    document.title = 'ChatAI Console';
+    if (S.tabAccount) {
+      applyProviderUI(getTabProvider(), getTabProviderInfo());
+    }
+    renderSidebar();
+  }
   toast(`Removed "${name}"`, 'info');
 }
 
@@ -3230,8 +3404,17 @@ async function uploadSingleFile(file) {
 
   const form = new FormData();
   form.append('file', file);
+
+  const headers = {};
+  const name = getTabAccountName();
+  if (name) headers['X-Account-Name'] = name;
+
   try {
-    const r = await fetch(`/api/conversations/${S.convId}/upload`, { method:'POST', body:form });
+    const r = await fetch(`/api/conversations/${S.convId}/upload`, {
+      method: 'POST',
+      body: form,
+      headers,   // <-- account header; no Content-Type, browser sets multipart boundary
+    });
     const d = await r.json();
     if (d.file_uuid || d._upload_ok) {
       if (!d.file_uuid && d.id) d.file_uuid = d.id;
@@ -3705,7 +3888,7 @@ let streamBlocks = {};
 
 async function doSend() {
   if (S.streaming) {
-    await fetch(`/api/conversations/${S.convId}/stop`, { method:'POST' });
+    await apiFetchRaw(`/api/conversations/${S.convId}/stop`, { method: 'POST' });
     return;
   }
 
@@ -3772,9 +3955,9 @@ async function doSend() {
   const msgBodyEl = () => document.querySelector(`.msg[data-uuid="${asstUuid}"] .msg-body`);
 
   try {
-    const resp = await fetch(`/api/conversations/${S.convId}/messages`, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
+    const resp = await apiFetchRaw(`/api/conversations/${S.convId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         prompt, model,
         parent_message_uuid: parentUuid,

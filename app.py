@@ -55,6 +55,29 @@ CHATWITHAI_DEFAULT_MODEL = "claude-sonnet-4-6"
 STORE_PATH = Path(__file__).parent / "data" / "accounts.json"
 STORE_PATH.parent.mkdir(exist_ok=True)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Model Management
+# ═══════════════════════════════════════════════════════════════════════════════
+
+CLAUDE_MODELS = [
+    {"id": "claude-sonnet-4-6", "display_name": "Claude 4.6 Sonnet", "category": "text"},
+    #{"id": "claude-opus-4-6", "display_name": "Claude 4.6 Opus", "category": "text"},
+    {"id": "claude-haiku-4-5-20251001", "display_name": "Claude 4.5 Haiku", "category": "text"},
+]
+
+def _get_models_for_provider(provider: str) -> list[dict]:
+    """Get available models based on provider."""
+    if provider == CHATWITHAI_PROVIDER:
+        try:
+            # Fetch ChatWithAI models dynamically
+            return _chatwithai_fetch_models()
+        except Exception:
+            # Return cached or empty list on failure
+            return _CHATWITHAI_MODEL_CACHE.get("models", [])
+    elif provider == CLAUDE_PROVIDER:
+        return CLAUDE_MODELS
+    else:
+        return []
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -199,60 +222,122 @@ def _chatwithai_fetch_models() -> list[dict]:
     _CHATWITHAI_MODEL_CACHE["fetched_at"] = now_ts
     return models
 
-
 def _sync_stream_claude(acct: dict, conv_id: str, payload: dict):
+    """Stream Claude responses using ChatSession API for better conversation tracking."""
     import queue as _queue
-
-    client       = _make_claude_client(acct)
+    
+    client = _make_claude_client(acct)
     q: "_queue.Queue" = _queue.Queue()
     account_name = acct["name"]
-
+    
     async def producer():
         try:
-            url  = client._org_url(f"chat_conversations/{conv_id}/completion")
-            body = json.dumps(payload).encode()
-            session = client._ensure_session()
-            async with session.post(
-                url, data=body,
-                headers={"Accept": "text/event-stream",
-                         "Content-Length": str(len(body))},
-                timeout=3600
-            ) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    q.put(APIError(f"Completion HTTP {resp.status}: {text[:300]}",
-                                   status_code=resp.status))
-                    return
-                async for raw_chunk, _ in resp.content.iter_chunks():
-                    if not raw_chunk:
-                        continue
-                    q.put(raw_chunk)
-                    try:
-                        text = raw_chunk.decode("utf-8", errors="replace")
-                        for line in text.splitlines():
-                            if not line.startswith("data:"):
-                                continue
-                            js = line[5:].strip()
-                            if not js:
-                                continue
-                            try:
-                                evt = json.loads(js)
-                            except json.JSONDecodeError:
-                                continue
-                            if evt.get("type") == "message_limit":
-                                ml = evt.get("message_limit")
-                                if ml:
-                                    _save_quota_snapshot(account_name, ml)
-                    except Exception:
-                        pass
+            # Extract fields from payload
+            prompt = payload.get("prompt", "")
+            files = payload.get("files", [])
+            model = payload.get("model", "claude-sonnet-4-6")
+            parent_uuid = payload.get("parent_message_uuid", "00000000-0000-4000-8000-000000000000")
+            
+            # Get style from payload
+            style = None
+            if "personalized_styles" in payload and payload["personalized_styles"]:
+                style = payload["personalized_styles"][0]
+            
+            # Create or resume chat session
+            metadata = None
+            if parent_uuid != "00000000-0000-4000-8000-000000000000":
+                metadata = {
+                    "conversation_id": conv_id,
+                    "parent_message_uuid": parent_uuid
+                }
+            
+            chat = client.start_chat(
+                model=model,
+                metadata=metadata,
+                style=style
+            )
+            
+            # Override conversation ID if needed
+            if not metadata:
+                chat._conv_id = conv_id
+            
+            # Stream the response
+            accumulated_text = ""
+            message_started = False
+            content_started = False
+            assistant_uuid = str(uuid_lib.uuid4())
+            
+            async for chunk in chat.send_message_stream(prompt, files=files):
+                # Format as SSE events
+                if not message_started:
+                    # Update assistant UUID from metadata if available
+                    if chunk.metadata.get("parent_message_uuid"):
+                        assistant_uuid = chunk.metadata["parent_message_uuid"]
+                    
+                    start_event = {
+                        "type": "message_start",
+                        "message": {
+                            "uuid": assistant_uuid,
+                            "role": "assistant",
+                            "model": model
+                        }
+                    }
+                    sse_data = f"data: {json.dumps(start_event)}\n\n".encode("utf-8")
+                    q.put(sse_data)
+                    message_started = True
+                
+                if not content_started:
+                    content_start = {
+                        "type": "content_block_start",
+                        "index": 0,
+                        "content_block": {
+                            "type": "text",
+                            "text": ""
+                        }
+                    }
+                    sse_data = f"data: {json.dumps(content_start)}\n\n".encode("utf-8")
+                    q.put(sse_data)
+                    content_started = True
+                
+                # Send text deltas
+                if chunk.text_delta:
+                    delta_event = {
+                        "type": "content_block_delta",
+                        "index": 0,
+                        "delta": {
+                            "type": "text_delta",
+                            "text": chunk.text_delta
+                        }
+                    }
+                    sse_data = f"data: {json.dumps(delta_event)}\n\n".encode("utf-8")
+                    q.put(sse_data)
+                    accumulated_text += chunk.text_delta
+            
+            # Send completion events
+            if content_started:
+                # Content block stop
+                stop_event = {"type": "content_block_stop", "index": 0}
+                q.put(f"data: {json.dumps(stop_event)}\n\n".encode("utf-8"))
+                
+                # Message delta with stop reason
+                delta_event = {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": "end_turn"}
+                }
+                q.put(f"data: {json.dumps(delta_event)}\n\n".encode("utf-8"))
+                
+                # Message stop
+                stop_event = {"type": "message_stop"}
+                q.put(f"data: {json.dumps(stop_event)}\n\n".encode("utf-8"))
+                
         except Exception as exc:
             q.put(exc)
         finally:
             q.put(None)
             await client.close()
-
+    
     asyncio.run_coroutine_threadsafe(producer(), _loop)
-
+    
     while True:
         item = q.get()
         if item is None:
@@ -260,6 +345,7 @@ def _sync_stream_claude(acct: dict, conv_id: str, payload: dict):
         if isinstance(item, Exception):
             raise item
         yield item
+
 
 def _sync_stream_chatwithai(prompt: str, model: str, *, assistant_uuid: str):
     url = f"{CHATWITHAI_API_BASE}/api/v1/chatwithai/chats/anonymous/events"
@@ -732,17 +818,56 @@ def ping():
     return jsonify({"ok": True})
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Per-request account resolution (replaces single active-account model)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _resolve_account(req) -> dict | None:
+    """
+    Resolve account per-request. Priority:
+      1. X-Account-Name header
+      2. account_name query param
+      3. account_name in JSON body
+      4. Server is_active fallback
+    """
+    name = req.headers.get("X-Account-Name", "").strip()
+    
+    if not name:
+        name = req.args.get("account_name", "").strip()
+    
+    if not name and req.method in ("POST", "PUT", "PATCH"):
+        if req.content_type and "application/json" in req.content_type:
+            try:
+                body = req.get_json(silent=True, force=False) or {}
+                name = (body.get("account_name") or "").strip()
+            except Exception:
+                pass
+    
+    if name:
+        acct = _get_account_by_name(name)
+        if acct:
+            return acct
+        return None  # named but not found — don't silently fall through
+    
+    return _get_active_account()  # legacy fallback
+
+
 def require_account(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        acct = _get_active_account()
+        acct = _resolve_account(request)
         if not acct:
+            name = (
+                request.headers.get("X-Account-Name") or
+                request.args.get("account_name") or ""
+            ).strip()
+            if name:
+                return jsonify({"error": f"Account '{name}' not found"}), 404
             return jsonify({"error": "No active account configured"}), 401
         if _provider_name(acct) == CLAUDE_PROVIDER and not acct.get("session_key"):
-            return jsonify({"error": "Active account is missing a session_key. Please switch to a valid Claude account or re-add this one."}), 401
+            return jsonify({"error": f"Account '{acct['name']}' is missing a session_key"}), 401
         return fn(acct, *args, **kwargs)
     return wrapper
-
 
 def api_error_handler(fn):
     @wraps(fn)
@@ -772,12 +897,21 @@ def api_error_handler(fn):
 @app.route("/api/health")
 def health():
     acct = _get_active_account()
-    return jsonify({
-        "status":   "ok",
-        "store":    str(STORE_PATH),
-        "account":  acct["name"]               if acct else None,
-        "provider": acct.get("provider","claude") if acct else None,
-    })
+    provider = _provider_name(acct) if acct else None
+    
+    result = {
+        "status": "ok",
+        "store": str(STORE_PATH),
+        "account": acct["name"] if acct else None,
+        "provider": provider,
+    }
+    
+    if provider:
+        models = _get_models_for_provider(provider)
+        result["models_available"] = len(models)
+        result["default_model"] = CHATWITHAI_DEFAULT_MODEL if provider == CHATWITHAI_PROVIDER else "claude-sonnet-4-6"
+    
+    return jsonify(result)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -872,14 +1006,22 @@ def oauth_claude_status():
         _oauth_states.pop(state, None)
     return jsonify(result)
 
-
-@app.route("/api/chatwithai/models", methods=["GET"])
-def chatwithai_models():
-    try:
-        models = _chatwithai_fetch_models()
-    except Exception as exc:
-        return jsonify({"error": str(exc), "models": []}), 502
-    return jsonify({"models": models})
+@app.route("/api/models", methods=["GET"])
+@require_account
+def get_models(acct):
+    """Get models for the account resolved from this request's context."""
+    provider = _provider_name(acct)
+    models   = _get_models_for_provider(provider)
+    return jsonify({
+        "provider":      provider,
+        "account":       acct["name"],
+        "models":        models,
+        "default_model": (
+            CHATWITHAI_DEFAULT_MODEL 
+            if provider == CHATWITHAI_PROVIDER 
+            else "claude-sonnet-4-6"
+        ),
+    })
 
 
 # ── Pages ─────────────────────────────────────────────────────────────────────
@@ -894,21 +1036,47 @@ def index(conv_id=None):
 
 @app.route("/api/accounts", methods=["GET"])
 def list_accounts():
-    data    = store.read()
+    data = store.read()
     accounts = data["accounts"]
-    active  = next((a["name"] for a in accounts if a.get("is_active")), None)
-    return jsonify({
-        "accounts": [_account_to_public(a)
-                     for a in sorted(
-                         accounts,
-                         key=lambda x: (
-                             0 if _normalize_provider(x.get("provider")) == CLAUDE_PROVIDER else 1,
-                             x.get("name", "").lower(),
-                         ),
-                     )],
-        "active": active,
-    })
+    active = next((a["name"] for a in accounts if a.get("is_active")), None)
 
+    account_list = []
+    for a in sorted(accounts, key=lambda x: (
+        0 if _normalize_provider(x.get("provider")) == CLAUDE_PROVIDER else 1,
+        x.get("name", "").lower(),
+    )):
+        pub = _account_to_public(a)
+        provider = _provider_name(a)
+
+        # Attach models directly — no per-request account resolution needed
+        if provider == CHATWITHAI_PROVIDER:
+            try:
+                models = _chatwithai_fetch_models()
+            except Exception:
+                models = _CHATWITHAI_MODEL_CACHE.get("models", [])
+        else:
+            models = CLAUDE_MODELS
+
+        pub["models"] = models
+        pub["default_model"] = (
+            CHATWITHAI_DEFAULT_MODEL
+            if provider == CHATWITHAI_PROVIDER
+            else "claude-sonnet-4-6"
+        )
+        pub["provider_info"] = {
+            "type":               provider,
+            "supports_files":     provider == CLAUDE_PROVIDER,
+            "supports_artifacts": provider == CLAUDE_PROVIDER,
+            "supports_tools":     provider == CLAUDE_PROVIDER,
+            "supports_thinking":  provider == CLAUDE_PROVIDER,
+            "supports_branching": provider == CLAUDE_PROVIDER,
+        }
+        account_list.append(pub)
+
+    return jsonify({
+        "accounts": account_list,
+        "active":   active,
+    })
 
 @app.route("/api/accounts", methods=["POST"])
 def add_account():
@@ -1020,12 +1188,19 @@ def activate_account(n):
 def get_config():
     acct = _get_active_account()
     provider = _provider_name(acct) if acct else CLAUDE_PROVIDER
+    
+    # Get available models for the provider
+    models = _get_models_for_provider(provider) if acct else []
+    default_model = CHATWITHAI_DEFAULT_MODEL if provider == CHATWITHAI_PROVIDER else "claude-sonnet-4-6"
+    
     return jsonify({
         "session_key_set": bool(acct and acct.get("session_key")) if provider == CLAUDE_PROVIDER else bool(acct),
         "organization_id": acct.get("organization_id", "") if acct and provider == CLAUDE_PROVIDER else "",
-        "active_account":  acct["name"] if acct else None,
-        "provider":        provider,
-        "configured":      bool(acct),
+        "active_account": acct["name"] if acct else None,
+        "provider": provider,
+        "configured": bool(acct),
+        "models": models,
+        "default_model": default_model
     })
 
 
@@ -1145,7 +1320,7 @@ def create_conversation(acct):
 
     client = _make_claude_client(acct)
     try:
-        _run(client._ensure_conversation(conv_id))
+        _run(client.ensure_conversation(conv_id))
     finally:
         _run(client.close())
 
@@ -1540,25 +1715,20 @@ def usage_messages(acct):
     return jsonify([])
 
 
-# ── Local conversation index ──────────────────────────────────────────────────
-
-def _local_conv_list_response(acct):
+@app.route("/api/local/conversations", methods=["GET"])
+@require_account
+def local_conv_list(acct):
+    """Returns pinned/local conversations for the resolved account."""
     data = store.read()
     for a in data["accounts"]:
         if a["name"] == acct["name"]:
             convs = sorted(
                 a.get("pinned_conversations", []),
-                key=lambda c: c.get("pinned_at", ""),
+                key=lambda c: c.get("pinned_at", c.get("updated_at", "")),
                 reverse=True,
             )
             return jsonify(convs[:200])
     return jsonify([])
-
-
-@app.route("/api/local/conversations", methods=["GET"])
-@require_account
-def local_conv_list(acct):
-    return _local_conv_list_response(acct)
 
 
 @app.route("/api/local/conversations", methods=["POST"])
