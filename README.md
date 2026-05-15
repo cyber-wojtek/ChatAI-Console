@@ -198,7 +198,7 @@ The backend bridges sync Flask handlers to the async `claude_webapi` client via 
 
 ## Related
 
-- [ChatAI Console OAuth Bridge](../ChatAI-Console-Extension/) — Browser extension for Google sign-in
+- [ChatAI Console OAuth Bridge](https://github.com/cyber-wojtek/ChatAI-Console-Extension.git) — Browser extension for Google sign-in
 
 ## License
 
