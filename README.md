@@ -1,12 +1,13 @@
 # ✦ ChatAI Console
 
-A self-hosted web chat interface for [Claude](https://claude.ai) and [ChatWithAI.app](https://chatwithai.app), powered partially by the reverse-engineered `claude_webapi`. Multi-account management, real-time streaming, file uploads, conversation branching, usage tracking, and a Galaxy-themed UI — all in a single Flask app.
+A self-hosted web chat interface for [Claude](https://claude.ai), [ChatWithAI.app](https://chatwithai.app), and [1min.AI](https://1min.ai), powered by the reverse-engineered `claude_webapi` and `oneminai_webapi` libraries. Multi-account management, real-time streaming, file uploads, conversation branching, usage tracking, and a Galaxy-themed UI — all in a single Flask app.
 
 ## Features
 
 - **Multi-Account** — Add, switch, and manage Claude or MiniApps accounts. Accounts are persisted in a local JSON store.
 - **Real-Time Streaming** — Server-Sent Events deliver tokens as they're generated, with inline thinking block rendering.
 - **All Claude Models** — Sonnet 4-6, Opus 4-6, Haiku 4-5, Sonnet 3-7, Opus 4-5, and Sonnet 3-5.
+- **1min.AI Support** — 30+ models (GPT, Claude, Gemini, Grok, DeepSeek, Flux images, music, video, TTS, STT) via API key or Google OAuth.
 - **Extended Thinking** — Toggle chain-of-thought. Thinking blocks render as collapsible sections.
 - **File Uploads** — Attach  files up to 100 MB. Upload metadata tracked locally.
 - **Conversation Management** — Create, rename, pin, search, branch, and delete conversations.
@@ -48,6 +49,26 @@ Two options:
 2. Enable the bridge from the extension popup
 3. Click **Sign in with Google for Claude** in the account form
 4. Complete Google sign-in in the popup — the auth code is filled in automatically
+
+### 1min.AI
+
+Two options:
+
+**Option A — Extract JWT from browser (manual)**
+1. Sign in at [app.1min.ai](https://app.1min.ai)
+2. Open DevTools (`F12`) → **Network**
+3. Click any request to `api.1min.ai` (e.g. `/users`)
+4. Under **Request Headers**, find `X-Auth-Token: Bearer eyJ…`
+5. Copy everything after `Bearer ` — that is your token
+6. Paste it into the **API Key** field when adding the account
+
+> The token expires after ~7 days. You'll need to repeat this when it does.
+
+**Option B — Google sign-in (via browser extension)**
+1. Install the [ChatAI Console OAuth Bridge](https://github.com/cyber-wojtek/ChatAI-Console-Extension.git) extension
+2. Enable 1min.AI OAuth support from the extension popup
+3. Click **Sign in with Google for 1min.AI** in the account form
+4. Complete Google sign-in in the popup — the JWT is captured and filled in automatically
 
 ### Auto-Seeding Accounts
 
@@ -142,6 +163,7 @@ curl -X POST http://localhost:5000/api/accounts \
 | `POST` | `/api/conversations/<id>/upload` | Upload file |
 | `GET` | `/api/conversations/<id>/download` | Download sandbox file |
 | `GET` | `/api/local/uploads/<id>` | Get upload metadata |
+| `POST` | `/api/oneminai/upload` | Upload file via 1min.AI Asset API |
 
 ### Usage
 
@@ -171,6 +193,11 @@ curl -X POST http://localhost:5000/api/accounts \
 | `GET` | `/api/oauth/miniapps/ext-pending` | Polled by extension to find waiting sessions |
 | `POST` | `/api/oauth/miniapps/ext-callback` | Receive ID token from extension |
 | `GET` | `/api/oauth/miniapps/status?state=` | Poll for completed MiniApps OAuth |
+| `GET` | `/api/oauth/oneminai/begin` | Start 1min.AI Google OAuth session |
+| `GET` | `/api/oauth/oneminai/owns-state` | Check if state belongs to Console |
+| `GET` | `/api/oauth/oneminai/ext-pending` | Polled by extension for waiting sessions |
+| `POST` | `/api/oauth/oneminai/ext-callback` | Receive Google access token from extension |
+| `GET` | `/api/oauth/oneminai/status?state=` | Poll for completed 1min.AI OAuth |
 
 ## Architecture
 
@@ -192,6 +219,7 @@ The backend bridges sync Flask handlers to the async `claude_webapi` client via 
 |---|---|
 | [Flask](https://flask.palletsprojects.com/) | Web framework |
 | [Claude-API](https://github.com/cyber-wojtek/Claude-API/) | Reverse-engineered async Claude.ai client |
+| [1MinAI-API](https://github.com/cyber-wojtek/1MinAI-API/) | Reverse-engineered async 1min.AI client |
 | [MiniappsAI-API](https://github.com/cyber-wojtek/MiniappsAI-API/) | Reverse-engineered MiniApps.ai client |
 | [marked.js](https://marked.js.org/) | Markdown rendering (frontend) |
 | [highlight.js](https://highlightjs.org/) | Syntax highlighting (frontend) |
@@ -199,6 +227,7 @@ The backend bridges sync Flask handlers to the async `claude_webapi` client via 
 ## Related
 
 - [ChatAI Console OAuth Bridge](https://github.com/cyber-wojtek/ChatAI-Console-Extension.git) — Browser extension for Google sign-in
+- [1MinAI-API](https://github.com/cyber-wojtek/1MinAI-API/) — Underlying async Python client for 1min.AI
 
 ## License
 

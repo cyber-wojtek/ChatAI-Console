@@ -74,7 +74,13 @@
 
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* 1min.AI brand */
+  --oneminai:     #f97316;
+  --oneminai-dim: rgba(249,115,22,0.10);
+  --oneminai-mid: rgba(249,115,22,0.22);
 }
+
 
 /* ═══════════════════ RESET ═══════════════════ */
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
@@ -1384,6 +1390,50 @@ a:hover { text-decoration:underline; }
   background: var(--bg-4);
   color: var(--text-2);
 }
+
+/* ── Mini quota bar ── */
+.mini-quota {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+.mini-quota-bar-bg {
+  flex: 1;
+  height: 2px;
+  background: var(--bg-5);
+  border-radius: 2px;
+  overflow: hidden;
+  min-width: 28px;
+}
+.mini-quota-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent), #7c3aed);
+  transition: width .4s var(--ease);
+}
+.mini-quota-bar-fill.warn { background: #e0943a; }
+.mini-quota-bar-fill.crit { background: var(--red); }
+.mini-quota-pct {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  color: var(--text-4);
+  flex-shrink: 0;
+  min-width: 22px;
+  text-align: right;
+  line-height: 1;
+}
+.mini-quota-reset {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  color: var(--text-4);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* Tweak pct color when warn/crit */
+.mini-quota:has(.warn) .mini-quota-pct { color: #e0943a; }
+.mini-quota:has(.crit) .mini-quota-pct { color: var(--red); }
 </style>
 </head>
 
@@ -1629,6 +1679,7 @@ a:hover { text-decoration:underline; }
       <select class="form-inp" id="providerSel" onchange="toggleProviderFields()">
         <option value="claude">Claude (requires session key)</option>
         <option value="chatwithai">ChatWithAI (no account needed)</option>
+        <option value="oneminai">1min.AI (API key or Google OAuth)</option>
       </select>
       <div id="chatwithaiHint" style="display:none;margin-top:6px;padding:8px 12px;background:rgba(56,189,248,0.07);border:1px solid rgba(56,189,248,0.18);border-radius:8px;font-size:12px;color:var(--text-2)">
         ⚡ ChatWithAI works anonymously — just give this account a name and save. No credentials required.
@@ -1643,6 +1694,31 @@ a:hover { text-decoration:underline; }
       <label class="form-lbl">Organization ID</label>
       <input class="form-inp" type="text" id="orgInp" placeholder="Optional: auto-discover if left blank">
       <div class="form-hint">Leave blank to let Claude-API discover the organization automatically.</div>
+    </div>
+    <div class="form-row" id="oneminaiKeyRow" style="display:none">
+      <label class="form-lbl">1min.AI JWT Token</label>
+      <input class="form-inp" type="password" id="oneminaiKeyInp" placeholder="Paste eyJ… token from X-Auth-Token header…">
+      <div class="form-hint">
+        Open <a href="https://app.1min.ai" target="_blank">app.1min.ai</a> while logged in →
+        DevTools (<kbd>F12</kbd>) → <strong>Network</strong> → click any request to
+        <code>api.1min.ai</code> → <strong>Request Headers</strong> →
+        find <code>X-Auth-Token: Bearer eyJ…</code> and copy everything after
+        <code>Bearer </code>. Token expires after ~7 days.
+      </div>
+    </div>
+    <div class="form-row" id="oneminaiOAuthRow" style="display:none">
+      <label class="form-lbl">1min.AI Google Sign-In</label>
+      <button type="button" class="btn-google" id="oneminaiGoogleBtn" onclick="oneminaiGoogleSignIn()">
+        <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+          <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285F4"/>
+          <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
+          <path d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z" fill="#FBBC05"/>
+          <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 6.293C4.672 4.166 6.656 3.58 9 3.58z" fill="#EA4335"/>
+        </svg>
+        Sign in with Google for 1min.AI
+      </button>
+      <div class="miniapps-auth-status" id="oneminaiAuthStatus" style="display:none"></div>
+      <div class="form-hint">Click to authenticate via Google — the extension intercepts the token automatically.</div>
     </div>
     <div class="form-row" id="claudeAuthRow">
       <label class="form-lbl">Claude Google Sign-In</label>
@@ -1729,6 +1805,8 @@ const S = {
 };
 
 const contentCache = {};
+
+const quotaCache = {};
 
 /* ═══════════════════════════════════════════
    INIT
@@ -2069,6 +2147,10 @@ function toggleProviderFields() {
   claudeRows.forEach(el => { if (el) el.style.display = provider === 'claude' ? '' : 'none'; });
   const hint = document.getElementById('chatwithaiHint');
   if (hint) hint.style.display = provider === 'chatwithai' ? '' : 'none';
+  const oneminaiKeyRow   = document.getElementById('oneminaiKeyRow');
+  const oneminaiOAuthRow = document.getElementById('oneminaiOAuthRow');
+  if (oneminaiKeyRow)   oneminaiKeyRow.style.display   = provider === 'oneminai' ? '' : 'none';
+  if (oneminaiOAuthRow) oneminaiOAuthRow.style.display = provider === 'oneminai' ? '' : 'none';
 }
 
 /* ═══════════════════════════════════════════
@@ -2281,9 +2363,11 @@ function applyProviderUI(acct) {
   if (branchToggleBtn) branchToggleBtn.style.display = provInfo.supports_branching ? '' : 'none';
   if (fileInpBtn)      fileInpBtn.style.display      = provInfo.supports_files     ? '' : 'none';
   if (efpBtn)          efpBtn.style.display          = provInfo.supports_files     ? '' : 'none';
-  if (msgTa)           msgTa.placeholder             = provider === 'chatwithai'
-                                                         ? 'Message ChatWithAI…'
-                                                         : 'Message Claude…';
+  if (msgTa) {
+    if (provider === 'chatwithai') msgTa.placeholder = 'Message ChatWithAI…';
+    else if (provider === 'oneminai') msgTa.placeholder = 'Message 1min.AI…';
+    else msgTa.placeholder = 'Message Claude…';
+  }
   if (quotaWrap) {
     if (provider === 'claude') fetchQuota();
     else quotaWrap.style.display = 'none';
@@ -2477,13 +2561,18 @@ function renderAccountMenu(filter = '') {
     const isCWA   = prov === 'chatwithai';
     const isTabActive = acct.name === tabName;
 
+    const is1min = prov === 'oneminai';
     const badge = isCWA
       ? `<span class="ami-badge" style="color:#38bdf8;background:rgba(56,189,248,0.10);border-color:rgba(56,189,248,0.18)">⚡ Free</span>`
-      : `<span class="ami-badge" style="color:var(--accent)">🔑 Claude</span>`;
+      : is1min
+        ? `<span class="ami-badge" style="color:var(--oneminai);background:var(--oneminai-dim);border-color:var(--oneminai-mid)">✦ 1min.AI</span>`
+        : `<span class="ami-badge" style="color:var(--accent)">🔑 Claude</span>`;
 
     const subtitle = isCWA
       ? 'No account needed'
-      : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
+      : is1min
+        ? (acct.api_key ? 'api key set' : 'no key set')
+        : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
 
     // Mini quota bar (Claude only)
     const miniBar = buildMiniQuotaHtml(acct.name);
@@ -2537,12 +2626,17 @@ function renderAccountList(filter = '') {
   for (const acct of visible) {
     const prov  = (acct.provider || 'claude').toLowerCase();
     const isCWA = prov === 'chatwithai';
+    const is1minList = prov === 'oneminai';
     const provBadge = isCWA
       ? `<span style="font-size:10px;padding:1px 6px;background:rgba(56,189,248,0.10);color:#38bdf8;border-radius:4px;font-weight:600;flex-shrink:0">⚡ Free</span>`
-      : `<span style="font-size:10px;padding:1px 5px;background:var(--accent-dim);color:var(--accent);border-radius:4px;font-weight:600;flex-shrink:0">🔑 Claude</span>`;
+      : is1minList
+        ? `<span style="font-size:10px;padding:1px 5px;background:var(--oneminai-dim);color:var(--oneminai);border-radius:4px;font-weight:600;flex-shrink:0">✦ 1min.AI</span>`
+        : `<span style="font-size:10px;padding:1px 5px;background:var(--accent-dim);color:var(--accent);border-radius:4px;font-weight:600;flex-shrink:0">🔑 Claude</span>`;
     const subtitle = isCWA
       ? 'No account needed'
-      : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
+      : is1minList
+        ? (acct.api_key ? 'api key set' : 'no key set')
+        : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
 
     // Mini quota bar (Claude only)
     const miniBar = buildMiniQuotaHtml(acct.name);
@@ -2606,8 +2700,21 @@ async function setServerActiveAccount(name) {
 
 async function saveAccount() {
   // ... existing validation ...
-  const r = await fetch('/api/accounts', {  // Don't use apiFetch here - no account needed yet
-    method: 'POST', 
+  const oneminaiKey = (document.getElementById('oneminaiKeyInp')?.value || '').trim();
+
+  // Build the request body
+  const body = {
+    name,
+    provider,
+    activate: act,
+    session_key:   (document.getElementById('skInp')?.value  || '').trim(),
+    organization_id: (document.getElementById('orgInp')?.value || '').trim(),
+    claude_code:   (document.getElementById('claudeCodeInp')?.value || '').trim(),
+    api_key:       oneminaiKey,
+  };
+
+  const r = await fetch('/api/accounts', {
+    method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(body),
   }).then(r => r.json());
@@ -2690,12 +2797,82 @@ async function claudeGoogleSignIn() {
   }, 120_000);
 }
 
+
+/* ── 1min.AI Google OAuth ───────────────────────────────────────────────── */
+
+function _oneminaiSetAuthStatus(msg, type) {
+  const el = document.getElementById('oneminaiAuthStatus');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'miniapps-auth-status' + (type ? ' ' + type : '');
+  el.style.display = msg ? '' : 'none';
+}
+
+function _oneminaiResetAuthStatus() {
+  const el = document.getElementById('oneminaiAuthStatus');
+  if (el) { el.style.display = 'none'; el.className = 'miniapps-auth-status'; el.textContent = ''; }
+  const btn = document.getElementById('oneminaiGoogleBtn');
+  if (btn) btn.disabled = false;
+}
+
+async function oneminaiGoogleSignIn() {
+  const btn = document.getElementById('oneminaiGoogleBtn');
+  if (btn) btn.disabled = true;
+  _oneminaiSetAuthStatus('Starting 1min.AI sign-in session…', '');
+
+  // Open popup immediately (must be in user-gesture context)
+  const tab = window.open('about:blank', 'oneminai_gis', 'width=600,height=700,left=200,top=80');
+
+  let r;
+  try { r = await apiFetch('/api/oauth/oneminai/begin'); } catch(e) { r = null; }
+  if (!r?.state) {
+    if (tab && !tab.closed) tab.close();
+    _oneminaiSetAuthStatus('Failed to start session — check server logs', 'err');
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  // Navigate to 1min.AI so the extension can intercept the Google OAuth popup
+  if (tab && !tab.closed) tab.location.href = 'https://app.1min.ai/';
+  _oneminaiSetAuthStatus(
+    tab
+      ? 'Google sign-in prompt opening on app.1min.ai — complete it there…'
+      : 'Visit app.1min.ai and complete Google sign-in…',
+    ''
+  );
+
+  const iv = setInterval(async () => {
+    let s;
+    try { s = await apiFetch(`/api/oauth/oneminai/status?state=${encodeURIComponent(r.state)}`); } catch { return; }
+    if (!s?.done) return;
+    clearInterval(iv);
+    if (tab && !tab.closed) tab.close();
+    if (s.api_key) {
+      document.getElementById('oneminaiKeyInp').value = s.api_key;
+      _oneminaiSetAuthStatus(`✓ Authenticated as ${s.email || 'user'} — ready`, 'ok');
+    } else {
+      _oneminaiSetAuthStatus('Sign-in failed: ' + (s.error || 'unknown error'), 'err');
+    }
+    if (btn) btn.disabled = false;
+  }, 1000);
+
+  // 2-minute timeout
+  setTimeout(() => {
+    clearInterval(iv);
+    if (tab && !tab.closed) tab.close();
+    if (btn) btn.disabled = false;
+    _oneminaiSetAuthStatus('Timed out — try again', 'err');
+  }, 120_000);
+}
+
 function _resetAcctForm() {
   document.getElementById('acctNameInp').value      = '';
   document.getElementById('skInp').value            = '';
   document.getElementById('orgInp').value           = '';
   document.getElementById('claudeCodeInp').value    = '';
   document.getElementById('providerSel').value      = 'claude';
+  document.getElementById('oneminaiKeyInp').value       = '';
+  _oneminaiResetAuthStatus();
   document.getElementById('acctFormTitle').textContent  = 'Add Account';
   document.getElementById('acctSaveBtn').textContent    = 'Add Account';
   document.getElementById('acctCancelEditBtn').style.display = 'none';
@@ -2708,8 +2885,9 @@ function editAccount(name) {
   if (!acct) return;
   document.getElementById('acctNameInp').value = acct.name;
   document.getElementById('providerSel').value = acct.provider || 'claude';
-  document.getElementById('orgInp').value = acct.organization_id || '';
-  document.getElementById('skInp').value  = acct.session_key     || '';
+  document.getElementById('orgInp').value       = acct.organization_id || '';
+  document.getElementById('skInp').value        = acct.session_key     || '';
+  document.getElementById('oneminaiKeyInp').value = acct.api_key || '';
   document.getElementById('acctFormTitle').textContent       = 'Edit Account';
   document.getElementById('acctSaveBtn').textContent         = 'Save Changes';
   document.getElementById('acctCancelEditBtn').style.display = '';
@@ -3952,8 +4130,8 @@ async function doSend() {
   const active = S.accounts.find(a => a.active);
   const activeProvider = (active?.provider || 'claude').toLowerCase();
 
-  const fileRefs = activeProvider === 'chatwithai'
-    ? []
+  const fileRefs = (activeProvider === 'chatwithai' || activeProvider === 'oneminai')
+    ? S.attached.map(f => ({ file_uuid: f.file_uuid, file_id: f.file_id || f.file_uuid, _filename: f._filename }))
     : S.attached.map(f => ({
         file_uuid: f.file_uuid,
         file_name: f._filename || f.file_name || '',
@@ -4374,46 +4552,33 @@ function dlUrl(convId, filePath, inline = false) {
 // Pass pctNum (0-100), resetsAt (unix seconds or null).
 function buildMiniQuotaHtml(acctName) {
   const provider = (S.accounts.find(a => a.name === acctName)?.provider || 'claude').toLowerCase();
-  if (provider !== 'claude') return ''; // Only Claude has quotas
+  if (provider !== 'claude') return '';
 
   const cached = quotaCache[acctName];
-  let pctNum   = null;
+  if (!cached) return '';
+
+  let { pctNum, resetsAt } = cached;
+  if (resetsAt && resetsAt * 1000 < Date.now()) pctNum = 0;
+
+  const fillClass = pctNum >= 90 ? ' crit' : pctNum >= 70 ? ' warn' : '';
+
   let resetStr = '';
-
-  if (cached) {
-    // Respect past-reset rule here too
-    let util = cached.pct ?? 0;
-    if (cached.resetsAt && cached.resetsAt * 1000 < Date.now()) util = 0;
-    pctNum = Math.round(util * 100);
-
-    if (cached.resetsAt) {
-      const diff = cached.resetsAt * 1000 - Date.now();
-      if (diff > 0) {
-        const hrs  = Math.floor(diff / 3_600_000);
-        const mins = Math.floor((diff % 3_600_000) / 60_000);
-        resetStr   = hrs > 0 ? `${hrs}h` : `${mins}m`;
-      }
+  if (resetsAt) {
+    const diff = resetsAt * 1000 - Date.now();
+    if (diff > 0) {
+      const hrs  = Math.floor(diff / 3_600_000);
+      const mins = Math.floor((diff % 3_600_000) / 60_000);
+      resetStr   = hrs > 0 ? `${hrs}h` : `${mins}m`;
     }
   }
 
-  if (pctNum === null) {
-    // No data yet — show empty bar with dash
-    return `
-      <div class="mini-quota">
-        <div class="mini-quota-bar-bg"><div class="mini-quota-bar-fill" style="width:0%"></div></div>
-        <span class="mini-quota-pct">—</span>
-      </div>`;
-  }
-
-  const fillClass = pctNum >= 90 ? ' crit' : pctNum >= 70 ? ' warn' : '';
-  return `
-    <div class="mini-quota">
-      <div class="mini-quota-bar-bg">
-        <div class="mini-quota-bar-fill${fillClass}" style="width:${pctNum}%"></div>
-      </div>
-      <span class="mini-quota-pct">${pctNum}%</span>
-      ${resetStr ? `<span class="mini-quota-reset">↺${resetStr}</span>` : ''}
-    </div>`;
+  return `<div class="mini-quota">
+    <div class="mini-quota-bar-bg">
+      <div class="mini-quota-bar-fill${fillClass}" style="width:${pctNum}%"></div>
+    </div>
+    <span class="mini-quota-pct">${pctNum}%</span>
+    ${resetStr ? `<span class="mini-quota-reset">↺ ${resetStr}</span>` : ''}
+  </div>`;
 }
 
 /* ═══════════════════════════════════════════

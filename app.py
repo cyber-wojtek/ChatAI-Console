@@ -27,6 +27,7 @@ from flask import (
 import requests as http_client
 
 from claude_webapi import ClaudeClient
+from oneminai_webapi import OneMinAIClient
 from claude_webapi.constants import CLAUDE_BASE_URL
 from claude_webapi.exceptions import (
     APIError, AuthenticationError, QuotaExceededError,
@@ -47,6 +48,8 @@ CLAUDE_PROVIDER = "claude"
 CHATWITHAI_PROVIDER = "chatwithai"
 CHATWITHAI_API_BASE = "https://api.chatwithai.app"
 CHATWITHAI_DEFAULT_MODEL = "claude-sonnet-4-6"
+ONEMINAI_PROVIDER = "oneminai"
+ONEMINAI_DEFAULT_MODEL = "gpt-4.1-nano"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # JSON Store
@@ -69,13 +72,16 @@ def _get_models_for_provider(provider: str) -> list[dict]:
     """Get available models based on provider."""
     if provider == CHATWITHAI_PROVIDER:
         try:
-            # Fetch ChatWithAI models dynamically
             return _chatwithai_fetch_models()
         except Exception:
-            # Return cached or empty list on failure
             return _CHATWITHAI_MODEL_CACHE.get("models", [])
     elif provider == CLAUDE_PROVIDER:
         return CLAUDE_MODELS
+    elif provider == ONEMINAI_PROVIDER:
+        try:
+            return _oneminai_fetch_models()
+        except Exception:
+            return _ONEMINAI_MODEL_CACHE.get("models", [])
     else:
         return []
 
@@ -404,6 +410,110 @@ def _sync_stream_chatwithai(prompt: str, model: str, *, assistant_uuid: str):
 
 
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 1min.AI helpers
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_ONEMINAI_MODEL_CACHE: dict = {"fetched_at": 0.0, "models": []}
+
+
+def _oneminai_fetch_models() -> list[dict]:
+    now_ts = datetime.now(timezone.utc).timestamp()
+    if _ONEMINAI_MODEL_CACHE["models"] and now_ts - _ONEMINAI_MODEL_CACHE["fetched_at"] < 900:
+        return _ONEMINAI_MODEL_CACHE["models"]
+    try:
+        client = _make_oneminai_client_anon()
+        raw = _run(client.list_models(feature="UNIFY_CHAT_WITH_AI"))
+        models = [
+            {
+                "id":           m.get("modelId", ""),
+                "display_name": m.get("name", m.get("modelId", "")),
+                "provider":     m.get("provider", ""),
+                "category":     "text",
+            }
+            for m in raw if m.get("modelId")
+        ]
+        _run(client.close())
+        _ONEMINAI_MODEL_CACHE["models"]     = models
+        _ONEMINAI_MODEL_CACHE["fetched_at"] = now_ts
+        return models
+    except Exception as exc:
+        log.warning("1min.AI model fetch failed: %s", exc)
+        return _ONEMINAI_MODEL_CACHE.get("models", [])
+
+
+def _make_oneminai_client_anon() -> OneMinAIClient:
+    """Temporary unauthenticated client for model catalog fetching."""
+    return OneMinAIClient("")
+
+
+def _make_oneminai_client(acct: dict) -> OneMinAIClient:
+    key = acct.get("api_key") or acct.get("session_key", "")
+    if not key:
+        raise ValueError(f"1min.AI account '{acct.get('name','?')}' is missing api_key")
+    return OneMinAIClient(key)
+
+
+def _sync_stream_oneminai(acct: dict, conv_id: str, prompt: str, model: str,
+                           *, human_uuid: str, asst_uuid: str):
+    """
+    Stream a 1min.AI chat response as Claude-compatible SSE events so the
+    frontend can consume them without any changes.
+    """
+    import queue as _queue
+
+    q: "_queue.Queue" = _queue.Queue()
+
+    def emit(obj: dict) -> bytes:
+        return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")
+
+    async def producer():
+        client = _make_oneminai_client(acct)
+        try:
+            # Ensure the conversation exists server-side
+            existing = await client._ensure_conversation(conv_id, prompt)
+            actual_conv_id = existing or conv_id
+
+            # Yield message_start so the frontend knows the UUID
+            q.put(emit({"type": "message_start",
+                         "message": {"uuid": asst_uuid, "model": model}}))
+            q.put(emit({"type": "content_block_start", "index": 0,
+                         "content_block": {"type": "text", "text": ""}}))
+
+            async for chunk in await client.chat(
+                prompt,
+                stream          = True,
+                model           = model,
+                conversation_id = actual_conv_id,
+            ):
+                if chunk.text_delta:
+                    q.put(emit({
+                        "type":  "content_block_delta",
+                        "index": 0,
+                        "delta": {"type": "text_delta", "text": chunk.text_delta},
+                    }))
+
+            q.put(emit({"type": "content_block_stop", "index": 0}))
+            q.put(emit({"type": "message_delta",
+                         "delta": {"stop_reason": "end_turn"}}))
+            q.put(emit({"type": "message_stop"}))
+        except Exception as exc:
+            q.put(emit({"type": "error",
+                         "error": {"type": "api_error",
+                                   "message": str(exc)}}))
+        finally:
+            await client.close()
+            q.put(None)
+
+    asyncio.run_coroutine_threadsafe(producer(), _loop)
+    while True:
+        item = q.get()
+        if item is None:
+            break
+        yield item
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Claude message payload builder
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -474,7 +584,7 @@ def _provider_name(acct: dict) -> str:
 
 def _normalize_provider(provider: str | None) -> str:
     prov = (provider or CLAUDE_PROVIDER).strip().lower()
-    if prov in (CHATWITHAI_PROVIDER):
+    if prov in (CHATWITHAI_PROVIDER, ONEMINAI_PROVIDER):
         return prov
     return CLAUDE_PROVIDER
 
@@ -626,6 +736,7 @@ def _account_to_public(a: dict) -> dict:
         "created_at":      a.get("created_at", ""),
         "session_key":     a.get("session_key", "") if provider == CLAUDE_PROVIDER else "",
         "organization_id": a.get("organization_id", "") if provider == CLAUDE_PROVIDER else "",
+        "api_key":         a.get("api_key", "")  if provider == ONEMINAI_PROVIDER else "",
     }
     return pub
 
@@ -800,8 +911,11 @@ def require_account(fn):
             if name:
                 return jsonify({"error": f"Account '{name}' not found"}), 404
             return jsonify({"error": "No active account configured"}), 401
-        if _provider_name(acct) == CLAUDE_PROVIDER and not acct.get("session_key"):
-            return jsonify({"error": f"Account '{acct['name']}' is missing a session_key"}), 401
+        prov = _provider_name(acct)
+        if prov == CLAUDE_PROVIDER and not acct.get("session_key"):
+                return jsonify({"error": f"Account '{acct['name']}' is missing a session_key"}), 401
+        if prov == ONEMINAI_PROVIDER and not acct.get("api_key"):
+                return jsonify({"error": f"Account '{acct['name']}' is missing an api_key"}), 401
         return fn(acct, *args, **kwargs)
     return wrapper
 
@@ -845,7 +959,12 @@ def health():
     if provider:
         models = _get_models_for_provider(provider)
         result["models_available"] = len(models)
-        result["default_model"] = CHATWITHAI_DEFAULT_MODEL if provider == CHATWITHAI_PROVIDER else "claude-sonnet-4-6"
+        if provider == CHATWITHAI_PROVIDER:
+            result["default_model"] = CHATWITHAI_DEFAULT_MODEL
+        elif provider == ONEMINAI_PROVIDER:
+            result["default_model"] = ONEMINAI_DEFAULT_MODEL
+        else:
+            result["default_model"] = "claude-sonnet-4-6"
     
     return jsonify(result)
 
@@ -942,6 +1061,112 @@ def oauth_claude_status():
         _oauth_states.pop(state, None)
     return jsonify(result)
 
+
+
+# ── 1min.AI OAuth (Google access-token relay) ─────────────────────────────────
+# The extension grabs the ya29.… token from the Google popup and POSTs it here.
+# We then call client.oauth_login() to exchange it for a 1min.AI JWT.
+
+@app.route("/api/oauth/oneminai/begin")
+def oauth_oneminai_begin():
+    state = secrets.token_hex(16)
+    with _oauth_lock:
+        _oauth_states[state] = {
+            "done":        False,
+            "provider":    "oneminai",
+            "pending_ext": True,
+        }
+    return jsonify({"state": state})
+
+
+@app.route("/api/oauth/oneminai/owns-state")
+def oauth_oneminai_owns_state():
+    state = request.args.get("state", "")
+    with _oauth_lock:
+        owned = state in _oauth_states and _oauth_states[state].get("provider") == "oneminai"
+    return jsonify({"owned": owned})
+
+
+@app.route("/api/oauth/oneminai/ext-pending")
+def oauth_oneminai_ext_pending():
+    with _oauth_lock:
+        for state, entry in _oauth_states.items():
+            if (
+                entry.get("provider") == "oneminai"
+                and entry.get("pending_ext")
+                and not entry["done"]
+            ):
+                entry["pending_ext"] = False
+                return jsonify({"state": state})
+    return jsonify({"state": None})
+
+
+@app.route("/api/oauth/oneminai/ext-callback", methods=["POST"])
+def oauth_oneminai_ext_callback():
+    """
+    Extension POSTs the Google OAuth access token (ya29.…) here.
+    We exchange it for a 1min.AI JWT and store the api_key.
+    """
+    data         = request.get_json(silent=True) or {}
+    oauth_token  = data.get("oauth_token") or data.get("access_token") or data.get("token")
+    state        = data.get("state")
+    error        = data.get("error")
+
+    if not state:
+        return jsonify({"ok": False, "error": "missing_state"}), 400
+    with _oauth_lock:
+        entry = _oauth_states.get(state)
+    if not entry:
+        return jsonify({"ok": False, "error": "unknown_state"}), 400
+    if entry["done"]:
+        return jsonify({"ok": True})
+    if error:
+        entry.update({"error": error, "done": True, "pending_ext": False})
+        return jsonify({"ok": False, "error": error})
+    if not oauth_token:
+        entry.update({"error": "no_token", "done": True})
+        return jsonify({"ok": False, "error": "no_token"}), 400
+
+    # Exchange Google token → 1min.AI JWT
+    try:
+        tmp_client = OneMinAIClient()
+        user       = _run(tmp_client.oauth_login(oauth_token))
+        api_key    = tmp_client._api_key
+        _run(tmp_client.close())
+        entry.update({
+            "api_key":  api_key,
+            "email":    user.email,
+            "team_id":  user.team_id,
+            "done":     True,
+            "pending_ext": False,
+        })
+        log.info("1min.AI OAuth success: %s", user.email)
+        return jsonify({"ok": True, "email": user.email})
+    except Exception as exc:
+        log.warning("1min.AI OAuth exchange failed: %s", exc)
+        entry.update({"error": str(exc), "done": True, "pending_ext": False})
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.route("/api/oauth/oneminai/status")
+def oauth_oneminai_status():
+    state = request.args.get("state", "")
+    with _oauth_lock:
+        entry = _oauth_states.get(state)
+    if not entry:
+        return jsonify({"error": "invalid_state"}), 400
+    if not entry["done"]:
+        return jsonify({"done": False})
+    result: dict = {"done": True}
+    if "api_key" in entry:
+        result["api_key"] = entry["api_key"]
+        result["email"]   = entry.get("email", "")
+    if "error" in entry:
+        result["error"] = entry["error"]
+    with _oauth_lock:
+        _oauth_states.pop(state, None)
+    return jsonify(result)
+
 @app.route("/api/models", methods=["GET"])
 @require_account
 def get_models(acct):
@@ -1001,11 +1226,13 @@ def list_accounts():
         )
         pub["provider_info"] = {
             "type":               provider,
-            "supports_files":     provider == CLAUDE_PROVIDER,
+            "supports_files":     provider in (CLAUDE_PROVIDER, ONEMINAI_PROVIDER),
             "supports_artifacts": provider == CLAUDE_PROVIDER,
             "supports_tools":     provider == CLAUDE_PROVIDER,
             "supports_thinking":  provider == CLAUDE_PROVIDER,
             "supports_branching": provider == CLAUDE_PROVIDER,
+            "supports_web_search": provider == ONEMINAI_PROVIDER,
+            "supports_image_gen":  provider == ONEMINAI_PROVIDER,
         }
         account_list.append(pub)
 
@@ -1035,6 +1262,8 @@ def add_account():
     boot_org            = org
     boot_last_auth_hash = None
 
+    oneminai_api_key = (req.get("api_key") or "").strip()
+
     if provider == CLAUDE_PROVIDER and not boot_session_key and not existing_account:
         if claude_code:
             auth_client = _run(
@@ -1063,6 +1292,11 @@ def add_account():
                 if boot_org:
                     existing["organization_id"] = boot_org
                 existing.pop("tool_slug", None)
+            elif provider == ONEMINAI_PROVIDER:
+                if oneminai_api_key:
+                    existing["api_key"] = oneminai_api_key
+                existing.pop("session_key", None)
+                existing.pop("organization_id", None)
             else:
                 existing.pop("session_key", None)
                 existing.pop("organization_id", None)
@@ -1073,8 +1307,8 @@ def add_account():
                 creds["session_key"] = boot_session_key
                 if boot_org:
                     creds["organization_id"] = boot_org
-            else:
-                creds = {}
+            elif provider == ONEMINAI_PROVIDER:
+                creds["api_key"] = oneminai_api_key
             data["accounts"].append(_new_account(name, provider, **creds))
         if req.get("activate") or len(data["accounts"]) == 1:
             _set_active_in_data(data, name)
@@ -1127,7 +1361,12 @@ def get_config():
     
     # Get available models for the provider
     models = _get_models_for_provider(provider) if acct else []
-    default_model = CHATWITHAI_DEFAULT_MODEL if provider == CHATWITHAI_PROVIDER else "claude-sonnet-4-6"
+    if provider == CHATWITHAI_PROVIDER:
+        default_model = CHATWITHAI_DEFAULT_MODEL
+    elif provider == ONEMINAI_PROVIDER:
+        default_model = ONEMINAI_DEFAULT_MODEL
+    else:
+        default_model = "claude-sonnet-4-6"
     
     return jsonify({
         "session_key_set": bool(acct and acct.get("session_key")) if provider == CLAUDE_PROVIDER else bool(acct),
@@ -1210,7 +1449,7 @@ def set_preferences(acct):
 @api_error_handler
 def list_conversations(acct):
     provider = _provider_name(acct)
-    if provider == CHATWITHAI_PROVIDER:
+    if provider in (CHATWITHAI_PROVIDER, ONEMINAI_PROVIDER):
         data = store.read()
         for a in data["accounts"]:
             if a["name"] == acct["name"]:
@@ -1225,7 +1464,6 @@ def list_conversations(acct):
                         "name": c.get("display_name", ""),
                         "created_at": c.get("created_at", ""),
                         "updated_at": c.get("updated_at", ""),
-                        # Don't include full chat_messages in list view
                     }
                     for c in convs if c.get("conv_uuid")
                 ]), 200
@@ -1245,13 +1483,14 @@ def create_conversation(acct):
     conv_id = str(uuid_lib.uuid4())
     provider = _provider_name(acct)
     
-    if provider == CHATWITHAI_PROVIDER:
+    if provider in (CHATWITHAI_PROVIDER, ONEMINAI_PROVIDER):
         _upsert_local_conv(acct["name"], conv_id, {
             "display_name": "",
             "created_at": _now(),
             "updated_at": _now(),
+            "provider": provider,
         })
-        log.info("Created ChatWithAI local conversation %s", conv_id[:8])
+        log.info("Created %s local conversation %s", provider, conv_id[:8])
         return jsonify({"success": True, "id": conv_id, "uuid": conv_id}), 201
 
     client = _make_claude_client(acct)
@@ -1280,7 +1519,7 @@ def create_conversation(acct):
 def get_conversation(acct, conv_id):
     provider = _provider_name(acct)
 
-    if provider == CHATWITHAI_PROVIDER:
+    if provider in (CHATWITHAI_PROVIDER, ONEMINAI_PROVIDER):
         # Get the local conversation
         conv = _get_local_conv_entry(acct["name"], conv_id)
         
@@ -1361,8 +1600,7 @@ def update_conversation(acct, conv_id):
     payload = request.json or {}
     provider = _provider_name(acct)
     
-    if provider == CHATWITHAI_PROVIDER:
-        # For ChatWithAI, only update local storage
+    if provider in (CHATWITHAI_PROVIDER, ONEMINAI_PROVIDER):
         if (display_name := payload.get("name")) is not None:
             _upsert_local_conv(acct["name"], conv_id, {
                 "display_name": display_name,
@@ -1408,6 +1646,29 @@ def stop_response(acct, conv_id):
 def send_message(acct, conv_id):
     data = request.json or {}
     provider = _provider_name(acct)
+
+    if provider == ONEMINAI_PROVIDER:
+        prompt       = (data.get("prompt") or "").strip()
+        model        = (data.get("model") or ONEMINAI_DEFAULT_MODEL).strip()
+        parent_uuid  = data.get("parent_message_uuid", "00000000-0000-4000-8000-000000000000")
+        human_uuid   = str(uuid_lib.uuid4())
+        asst_uuid    = str(uuid_lib.uuid4())
+        display_name = data.get("display_name") or (prompt[:30] if prompt else "")
+        _log_message_send(acct["name"], conv_id, model, len(prompt))
+
+        def generate_oneminai():
+            for chunk in _sync_stream_oneminai(
+                acct, conv_id, prompt, model,
+                human_uuid=human_uuid,
+                asst_uuid=asst_uuid,
+            ):
+                yield chunk
+
+        return Response(
+            stream_with_context(generate_oneminai()),
+            content_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     if provider == CHATWITHAI_PROVIDER:
         prompt = (data.get("prompt") or "").strip()
@@ -1519,8 +1780,10 @@ def upload_file(acct, conv_id):
     provider = _provider_name(acct)
     
     if provider == CHATWITHAI_PROVIDER:
-        # ChatWithAI doesn't support file uploads
         return jsonify({"error": "File uploads not supported for ChatWithAI"}), 400
+    if provider == ONEMINAI_PROVIDER:
+        # 1min.AI uploads go via the Asset API — use /api/oneminai/upload
+        return jsonify({"error": "Use /api/oneminai/upload for 1min.AI file uploads"}), 400
     
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
@@ -1583,6 +1846,46 @@ def download_file(acct, conv_id):
                              "Content-Disposition": disposition,
                              "X-Content-Type-Options": "nosniff"})
 
+
+
+
+# ── 1min.AI Asset Upload ──────────────────────────────────────────────────────
+
+@app.route("/api/oneminai/upload", methods=["POST"])
+@require_account
+@api_error_handler
+def oneminai_upload_asset(acct):
+    """Upload a file to the 1min.AI Asset API and return asset_key + file_id."""
+    provider = _provider_name(acct)
+    if provider != ONEMINAI_PROVIDER:
+        return jsonify({"error": "Not a 1min.AI account"}), 400
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    f          = request.files["file"]
+    file_bytes = f.read()
+    mime       = f.content_type or "application/octet-stream"
+    fname      = f.filename or "upload"
+
+    client = _make_oneminai_client(acct)
+    try:
+        asset = _run(client.upload_asset(
+            data=file_bytes, filename=fname, mime_type=mime
+        ))
+        _run(client.close())
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    _save_upload_meta(acct["name"], "oneminai", asset.file_id, fname, len(file_bytes), mime)
+    log.info("1min.AI asset uploaded: %s → key=%s", fname, asset.asset_key[:16])
+    return jsonify({
+        "asset_key": asset.asset_key,
+        "file_id":   asset.file_id,
+        "filename":  fname,
+        "size":      len(file_bytes),
+        "mime":      mime,
+        "_upload_ok": True,
+    }), 200
 
 # ── Usage ─────────────────────────────────────────────────────────────────────
 
