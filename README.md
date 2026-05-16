@@ -24,7 +24,7 @@ A self-hosted web chat interface for [Claude](https://claude.ai), [ChatWithAI.ap
 ```sh
 git clone https://github.com/cyber-wojtek/ChatAI-Console.git
 cd ChatAI-Console
-pip install flask claude_webapi
+pip install flask claude_webapi 1minai_webapi
 python app.py
 ```
 
@@ -62,11 +62,11 @@ Two options:
 5. Copy everything after `Bearer ` — that is your token
 6. Paste it into the **API Key** field when adding the account
 
-> The token expires after ~7 days. You'll need to repeat this when it does.
+> The token expires after ~7 days.
 
 **Option B — Google sign-in (via browser extension)**
 1. Install the [ChatAI Console OAuth Bridge](https://github.com/cyber-wojtek/ChatAI-Console-Extension.git) extension
-2. Enable 1min.AI OAuth support from the extension popup
+2. Enable the bridge from the extension popup
 3. Click **Sign in with Google for 1min.AI** in the account form
 4. Complete Google sign-in in the popup — the JWT is captured and filled in automatically
 
