@@ -2373,27 +2373,41 @@ async function fetchQuota() {
 
 function updateQuotaFromStream(msgLimit) {
   if (!msgLimit) return;
+
   const wrap   = document.getElementById('quotaWrap');
   const label  = document.getElementById('quotaLabel');
   const pct    = document.getElementById('quotaPct');
   const fill   = document.getElementById('quotaBarFill');
   const detail = document.getElementById('quotaDetail');
 
-  const windows = msgLimit.windows || {};
-  const winKey  = Object.keys(windows)[0];
-  const win     = winKey ? windows[winKey] : null;
+  const windows    = msgLimit.windows || {};
+  const winKey     = Object.keys(windows)[0];
+  const win        = winKey ? windows[winKey] : null;
+  const resetsAt   = win?.resets_at ?? msgLimit.resetsAt ?? null;
+  const remaining  = msgLimit.remaining ?? null;
 
-  const utilization = win?.utilization ?? null;
-  const resetsAt    = win?.resets_at   ?? msgLimit.resetsAt ?? null;
-  const remaining   = msgLimit.remaining ?? null;
+  // ── KEY FIX: if reset time is in the past, treat as 0% used ──
+  let utilization = win?.utilization ?? null;
+  if (utilization !== null && resetsAt) {
+    const resetMs = resetsAt * 1000;
+    if (resetMs < Date.now()) {
+      utilization = 0;
+    }
+  }
 
   if (utilization === null) { wrap.style.display = 'none'; return; }
 
+  // Cache for this account so account selectors can show mini bars
+  const acctName = getTabAccountName();
+  if (acctName) {
+    quotaCache[acctName] = { pct: utilization, resetsAt, remaining, window: winKey };
+  }
+
   wrap.style.display = 'block';
   const pctNum = Math.round(utilization * 100);
-  pct.textContent   = `${pctNum}%`;
-  fill.style.width  = `${pctNum}%`;
-  fill.className    = 'quota-bar-fill' +
+  pct.textContent  = `${pctNum}%`;
+  fill.style.width = `${pctNum}%`;
+  fill.className   = 'quota-bar-fill' +
     (pctNum >= 90 ? ' crit' : pctNum >= 70 ? ' warn' : '');
 
   label.textContent = winKey ? `Usage (${winKey} window)` : 'Usage';
@@ -2405,9 +2419,15 @@ function updateQuotaFromStream(msgLimit) {
       const hrs  = Math.floor(diff / 3_600_000);
       const mins = Math.floor((diff % 3_600_000) / 60_000);
       detailTxt += ` · resets in ${hrs > 0 ? hrs + 'h ' : ''}${mins}m`;
+    } else {
+      detailTxt = 'Quota reset — usage cleared';
     }
   }
   detail.textContent = detailTxt;
+
+  // Refresh account selectors so mini bars update
+  renderAccountMenu();
+  renderAccountList();
 }
 
 function toggleAcctMenu() {
@@ -2434,15 +2454,15 @@ function _closeAcctOnOutside(e) {
 function renderAccountMenu(filter = '') {
   const list = document.getElementById('acctMenuList');
   list.innerHTML = '';
-  const q = filter.toLowerCase().trim();
+  const q       = filter.toLowerCase().trim();
   const tabName = getTabAccountName();
-  
-  const visible = q 
-    ? S.accounts.filter(a => 
-        a.name.toLowerCase().includes(q) || 
+
+  const visible = q
+    ? S.accounts.filter(a =>
+        a.name.toLowerCase().includes(q) ||
         (a.provider||'claude').toLowerCase().includes(q))
     : S.accounts;
-    
+
   if (!S.accounts.length) {
     list.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:var(--text-3)">No accounts yet</div>';
     return;
@@ -2451,23 +2471,22 @@ function renderAccountMenu(filter = '') {
     list.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:var(--text-3)">No matches</div>';
     return;
   }
-  
+
   for (const acct of visible) {
-    const prov  = (acct.provider || 'claude').toLowerCase();
-    const isCWA = prov === 'chatwithai';
-    const isTabActive = acct.name === tabName;  // active FOR THIS TAB
-    const isServerActive = acct.active;          // server-wide active (shown differently)
-    
+    const prov    = (acct.provider || 'claude').toLowerCase();
+    const isCWA   = prov === 'chatwithai';
+    const isTabActive = acct.name === tabName;
+
     const badge = isCWA
       ? `<span class="ami-badge" style="color:#38bdf8;background:rgba(56,189,248,0.10);border-color:rgba(56,189,248,0.18)">⚡ Free</span>`
       : `<span class="ami-badge" style="color:var(--accent)">🔑 Claude</span>`;
-    
-    const subtitle = isCWA 
-      ? 'No account needed' 
+
+    const subtitle = isCWA
+      ? 'No account needed'
       : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
-    
-    // Show if this is the tab-active account
-    const tabIndicator = '';
+
+    // Mini quota bar (Claude only)
+    const miniBar = buildMiniQuotaHtml(acct.name);
 
     const el = document.createElement('div');
     el.className = `acct-menu-item ${isTabActive ? 'active' : ''}`;
@@ -2476,16 +2495,16 @@ function renderAccountMenu(filter = '') {
         <div class="ami-name">
           <span class="ami-name-text">${esc(acct.name)}</span>
           ${badge}
-          ${tabIndicator}
         </div>
         <div class="ami-org">${esc(subtitle)}</div>
+        ${miniBar}
       </div>
       <div class="ami-dot ${isTabActive ? '' : 'inactive'}"></div>
       <button class="ami-del" onclick="deleteAccount(event,'${esc(acct.name)}')">✕</button>`;
-    
+
     el.addEventListener('click', e => {
       if (e.target.classList.contains('ami-del')) return;
-      switchTabAccount(acct.name);  // Switch THIS TAB's account, not server-wide
+      switchTabAccount(acct.name);
     });
     list.appendChild(el);
   }
@@ -2500,7 +2519,12 @@ function renderAccountList(filter = '') {
   if (!list) return;
   list.innerHTML = '';
   const q = filter.toLowerCase().trim();
-  const visible = q ? S.accounts.filter(a => a.name.toLowerCase().includes(q) || (a.provider||'claude').toLowerCase().includes(q)) : S.accounts;
+  const visible = q
+    ? S.accounts.filter(a =>
+        a.name.toLowerCase().includes(q) ||
+        (a.provider||'claude').toLowerCase().includes(q))
+    : S.accounts;
+
   if (!S.accounts.length) {
     list.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:4px 0 8px">No accounts added yet.</div>';
     return;
@@ -2509,22 +2533,35 @@ function renderAccountList(filter = '') {
     list.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:4px 0 8px">No accounts match your search.</div>';
     return;
   }
+
   for (const acct of visible) {
-    const prov = (acct.provider || 'claude').toLowerCase();
+    const prov  = (acct.provider || 'claude').toLowerCase();
     const isCWA = prov === 'chatwithai';
     const provBadge = isCWA
       ? `<span style="font-size:10px;padding:1px 6px;background:rgba(56,189,248,0.10);color:#38bdf8;border-radius:4px;font-weight:600;flex-shrink:0">⚡ Free</span>`
       : `<span style="font-size:10px;padding:1px 5px;background:var(--accent-dim);color:var(--accent);border-radius:4px;font-weight:600;flex-shrink:0">🔑 Claude</span>`;
-    const subtitle = isCWA ? 'No account needed' : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
+    const subtitle = isCWA
+      ? 'No account needed'
+      : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
+
+    // Mini quota bar (Claude only)
+    const miniBar = buildMiniQuotaHtml(acct.name);
+
     const el = document.createElement('div');
     el.className = `acct-list-item ${acct.active ? 'active' : ''}`;
     el.innerHTML = `
       <div class="ali-info">
-        <div class="ali-name"><span class="ali-name-text">${esc(acct.name)}</span>${provBadge}</div>
+        <div class="ali-name">
+          <span class="ali-name-text">${esc(acct.name)}</span>
+          ${provBadge}
+        </div>
         <div class="ali-org">${esc(subtitle)}</div>
+        ${miniBar}
       </div>
       ${acct.active ? '<span class="ali-badge">ACTIVE</span>' : ''}
-      ${!acct.active ? `<button class="ali-btn" onclick="switchAccount('${esc(acct.name)}')">Switch</button>` : ''}
+      ${!acct.active
+        ? `<button class="ali-btn" onclick="switchAccount('${esc(acct.name)}')">Switch</button>`
+        : ''}
       <button class="ali-btn edit" onclick="editAccount('${esc(acct.name)}')">Edit</button>
       <button class="ali-btn del"  onclick="deleteAccount(null,'${esc(acct.name)}')">✕</button>`;
     list.appendChild(el);
@@ -2552,6 +2589,7 @@ async function switchTabAccount(name) {
   setStatus(true, acct.organization_id);
   renderAccountMenu();
   applyProviderUI(acct);   // <-- full acct object, has .models already
+  if ((acct.provider || 'claude').toLowerCase() === 'claude') fetchQuota();
 
   await Promise.all([loadPinnedIds(), loadAllConvs()]);
   renderSidebar();
@@ -4330,6 +4368,52 @@ function dlUrl(convId, filePath, inline = false) {
   const inl  = inline ? '&inline=1' : '';
   const acctParam = acct ? `&account_name=${encodeURIComponent(acct)}` : '';
   return base + inl + acctParam;
+}
+
+// Returns HTML string for a mini quota bar for a given account name.
+// Pass pctNum (0-100), resetsAt (unix seconds or null).
+function buildMiniQuotaHtml(acctName) {
+  const provider = (S.accounts.find(a => a.name === acctName)?.provider || 'claude').toLowerCase();
+  if (provider !== 'claude') return ''; // Only Claude has quotas
+
+  const cached = quotaCache[acctName];
+  let pctNum   = null;
+  let resetStr = '';
+
+  if (cached) {
+    // Respect past-reset rule here too
+    let util = cached.pct ?? 0;
+    if (cached.resetsAt && cached.resetsAt * 1000 < Date.now()) util = 0;
+    pctNum = Math.round(util * 100);
+
+    if (cached.resetsAt) {
+      const diff = cached.resetsAt * 1000 - Date.now();
+      if (diff > 0) {
+        const hrs  = Math.floor(diff / 3_600_000);
+        const mins = Math.floor((diff % 3_600_000) / 60_000);
+        resetStr   = hrs > 0 ? `${hrs}h` : `${mins}m`;
+      }
+    }
+  }
+
+  if (pctNum === null) {
+    // No data yet — show empty bar with dash
+    return `
+      <div class="mini-quota">
+        <div class="mini-quota-bar-bg"><div class="mini-quota-bar-fill" style="width:0%"></div></div>
+        <span class="mini-quota-pct">—</span>
+      </div>`;
+  }
+
+  const fillClass = pctNum >= 90 ? ' crit' : pctNum >= 70 ? ' warn' : '';
+  return `
+    <div class="mini-quota">
+      <div class="mini-quota-bar-bg">
+        <div class="mini-quota-bar-fill${fillClass}" style="width:${pctNum}%"></div>
+      </div>
+      <span class="mini-quota-pct">${pctNum}%</span>
+      ${resetStr ? `<span class="mini-quota-reset">↺${resetStr}</span>` : ''}
+    </div>`;
 }
 
 /* ═══════════════════════════════════════════
