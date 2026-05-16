@@ -223,121 +223,58 @@ def _chatwithai_fetch_models() -> list[dict]:
     return models
 
 def _sync_stream_claude(acct: dict, conv_id: str, payload: dict):
-    """Stream Claude responses using ChatSession API for better conversation tracking."""
     import queue as _queue
-    
-    client = _make_claude_client(acct)
+
+    client       = _make_claude_client(acct)
     q: "_queue.Queue" = _queue.Queue()
     account_name = acct["name"]
-    
+
     async def producer():
         try:
-            # Extract fields from payload
-            prompt = payload.get("prompt", "")
-            files = payload.get("files", [])
-            model = payload.get("model", "claude-sonnet-4-6")
-            parent_uuid = payload.get("parent_message_uuid", "00000000-0000-4000-8000-000000000000")
-            
-            # Get style from payload
-            style = None
-            if "personalized_styles" in payload and payload["personalized_styles"]:
-                style = payload["personalized_styles"][0]
-            
-            # Create or resume chat session
-            metadata = None
-            if parent_uuid != "00000000-0000-4000-8000-000000000000":
-                metadata = {
-                    "conversation_id": conv_id,
-                    "parent_message_uuid": parent_uuid
-                }
-            
-            chat = client.start_chat(
-                model=model,
-                metadata=metadata,
-                style=style
-            )
-            
-            # Override conversation ID if needed
-            if not metadata:
-                chat._conv_id = conv_id
-            
-            # Stream the response
-            accumulated_text = ""
-            message_started = False
-            content_started = False
-            assistant_uuid = str(uuid_lib.uuid4())
-            
-            async for chunk in chat.send_message_stream(prompt, files=files):
-                # Format as SSE events
-                if not message_started:
-                    # Update assistant UUID from metadata if available
-                    if chunk.metadata.get("parent_message_uuid"):
-                        assistant_uuid = chunk.metadata["parent_message_uuid"]
-                    
-                    start_event = {
-                        "type": "message_start",
-                        "message": {
-                            "uuid": assistant_uuid,
-                            "role": "assistant",
-                            "model": model
-                        }
-                    }
-                    sse_data = f"data: {json.dumps(start_event)}\n\n".encode("utf-8")
-                    q.put(sse_data)
-                    message_started = True
-                
-                if not content_started:
-                    content_start = {
-                        "type": "content_block_start",
-                        "index": 0,
-                        "content_block": {
-                            "type": "text",
-                            "text": ""
-                        }
-                    }
-                    sse_data = f"data: {json.dumps(content_start)}\n\n".encode("utf-8")
-                    q.put(sse_data)
-                    content_started = True
-                
-                # Send text deltas
-                if chunk.text_delta:
-                    delta_event = {
-                        "type": "content_block_delta",
-                        "index": 0,
-                        "delta": {
-                            "type": "text_delta",
-                            "text": chunk.text_delta
-                        }
-                    }
-                    sse_data = f"data: {json.dumps(delta_event)}\n\n".encode("utf-8")
-                    q.put(sse_data)
-                    accumulated_text += chunk.text_delta
-            
-            # Send completion events
-            if content_started:
-                # Content block stop
-                stop_event = {"type": "content_block_stop", "index": 0}
-                q.put(f"data: {json.dumps(stop_event)}\n\n".encode("utf-8"))
-                
-                # Message delta with stop reason
-                delta_event = {
-                    "type": "message_delta",
-                    "delta": {"stop_reason": "end_turn"}
-                }
-                q.put(f"data: {json.dumps(delta_event)}\n\n".encode("utf-8"))
-                
-                # Message stop
-                stop_event = {"type": "message_stop"}
-                q.put(f"data: {json.dumps(stop_event)}\n\n".encode("utf-8"))
-                
+            url  = client._org_url(f"chat_conversations/{conv_id}/completion")
+            body = json.dumps(payload).encode()
+            session = client._ensure_session()
+            async with session.post(
+                url, data=body,
+                headers={"Accept": "text/event-stream",
+                         "Content-Length": str(len(body))},
+                timeout=3600
+            ) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    q.put(APIError(f"Completion HTTP {resp.status}: {text[:300]}",
+                                   status_code=resp.status))
+                    return
+                async for raw_chunk, _ in resp.content.iter_chunks():
+                    if not raw_chunk:
+                        continue
+                    q.put(raw_chunk)
+                    try:
+                        text = raw_chunk.decode("utf-8", errors="replace")
+                        for line in text.splitlines():
+                            if not line.startswith("data:"):
+                                continue
+                            js = line[5:].strip()
+                            if not js:
+                                continue
+                            try:
+                                evt = json.loads(js)
+                            except json.JSONDecodeError:
+                                continue
+                            if evt.get("type") == "message_limit":
+                                ml = evt.get("message_limit")
+                                if ml:
+                                    _save_quota_snapshot(account_name, ml)
+                    except Exception:
+                        pass
         except Exception as exc:
             q.put(exc)
         finally:
             q.put(None)
             await client.close()
-    
+
     asyncio.run_coroutine_threadsafe(producer(), _loop)
-    
+
     while True:
         item = q.get()
         if item is None:
@@ -345,7 +282,6 @@ def _sync_stream_claude(acct: dict, conv_id: str, payload: dict):
         if isinstance(item, Exception):
             raise item
         yield item
-
 
 def _sync_stream_chatwithai(prompt: str, model: str, *, assistant_uuid: str):
     url = f"{CHATWITHAI_API_BASE}/api/v1/chatwithai/chats/anonymous/events"
@@ -1602,7 +1538,7 @@ def upload_file(acct, conv_id):
     try:
         client = _make_claude_client(acct)
         try:
-            _run(client._ensure_conversation(conv_id))
+            _run(client.ensure_conversation(conv_id))
             file_uuid = _run(client.upload_file(conv_id, tmp_path))
         finally:
             _run(client.close())

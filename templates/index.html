@@ -3012,15 +3012,17 @@ function buildMsgEl(msg) {
       const filePath = f.path || '';
       const isImage = mime.startsWith('image/');
       if (filePath) {
-        const dlUrl = `/api/conversations/${convId}/download?path=${encodeURIComponent(filePath)}`;
-        const eDl = dlUrl.replace(/'/g,"&#39;"); const eMime = (mime||'').replace(/'/g,"&#39;");
+        const url = dlUrl(convId, filePath);
+        const urlInline = dlUrl(convId, filePath, true);
+        const canvasUrl = esc(dlUrl(convId, filePath, true));
+
         if (isImage) {
           return `<div class="file-img-wrap">
             <img class="msg-img-preview" src="${dlUrl}" alt="${name}" loading="lazy"
-              onclick="openInCanvas('${eDl}','${name.replace(/'/g, "\\'").replace(/"/g, "&quot;")}','${eMime}')" title="Click to open in canvas"
+              onclick="openInCanvas('${canvasUrl}','${name.replace(/'/g, "\\'").replace(/"/g, "&quot;")}','${eMime}')" title="Click to open in canvas"
               onerror="this.parentElement.innerHTML='<div class=\\'file-chip\\'><span>${ico}</span><span class=\\'file-chip-name\\'>${name}</span></div>'">
             <div style="display:flex;gap:4px;margin-top:3px;">
-              <button class="file-chip dl img-dl" onclick="openInCanvas('${eDl}','${name.replace(/'/g, "\\'").replace(/"/g, "&quot;")}','${eMime}')" style="border:none;cursor:pointer;">👁 Canvas</button>
+              <button class="file-chip dl img-dl" onclick="openInCanvas('${canvasUrl}','${name.replace(/'/g, "\\'").replace(/"/g, "&quot;")}','${eMime}')" style="border:none;cursor:pointer;">👁 Canvas</button>
             </div>
           </div>`;
         }
@@ -3303,7 +3305,8 @@ function renderPresentFiles(block) {
     const ext  = filename.split('.').pop().toLowerCase();
     const mime = MIME[ext] || 'application/octet-stream';
     const isImg = mime.startsWith('image/');
-    const href = S.convId ? `/api/conversations/${S.convId}/download?path=${encodeURIComponent(fp)}` : '#';
+    const href = S.convId ? dlUrl(S.convId, fp) : '#';
+    const hrefInline = S.convId ? dlUrl(S.convId, fp, true) : '#';
     const ico  = fileIcon(mime);
     const escapedHref = href.replace(/'/g,"&#39;");
     const escapedName = esc(filename);
@@ -3341,10 +3344,11 @@ function renderPresentFiles(block) {
 function downloadFromPaths(filepaths) {
   for (const fp of filepaths) {
     const name = fp.split('/').pop() || 'file';
-    const url = S.convId ? `/api/conversations/${S.convId}/download?path=${encodeURIComponent(fp)}` : null;
-    if (!url) continue;
-    const a = document.createElement('a'); a.href=url; a.download=name; a.style.display='none';
-    document.body.appendChild(a); a.click(); setTimeout(()=>a.remove(),300);
+    if (!S.convId) continue;
+    const url = dlUrl(S.convId, fp);
+    const a = document.createElement('a'); a.href = url; a.download = name;
+    a.style.display = 'none'; document.body.appendChild(a); a.click();
+    setTimeout(() => a.remove(), 300);
   }
 }
 
@@ -3517,10 +3521,10 @@ function _renderEfpItems(uploads, query) {
     const ico   = fileIcon(mime);
     const used  = usedUuids.has(u.file_uuid);
     const isImg = mime.startsWith('image/');
-    const dlUrl = `/api/conversations/${S.convId}/download?path=${encodeURIComponent(u.filename||'')}`;
+    const fileUrl = dlUrl(S.convId, u.filename || '');
 
     const thumbHtml = isImg
-      ? `<img class="efp-thumb" src="${dlUrl}" alt="" onerror="this.outerHTML='<div class=\\'efp-icon\\'>${ico}</div>'">`
+      ? `<img class="efp-thumb" src="${fileUrl}" alt="" onerror="this.outerHTML='<div class=\\'efp-icon\\'>${ico}</div>'">`
       : `<div class="efp-icon">${ico}</div>`;
 
     const el = document.createElement('div');
@@ -3577,6 +3581,13 @@ function switchCanvasTab(tab) {
 }
 
 function openInCanvas(url, name, mime) {
+  // Ensure account_name is in the url
+  const acct = getTabAccountName();
+  if (acct && !url.includes('account_name=')) {
+    url += (url.includes('?') ? '&' : '?') + 
+           'account_name=' + encodeURIComponent(acct);
+  }
+  
   if (!S.canvasOpen) toggleCanvas();
   switchCanvasTab('preview');
 
@@ -3745,13 +3756,13 @@ async function renderCanvasFiles() {
       const mime  = u.content_type || '';
       const ico   = fileIcon(mime);
       const isImg = mime.startsWith('image/');
-      const dlUrl = `/api/conversations/${S.convId}/download?path=${encodeURIComponent(u.filename||'')}`;
-      const escapedDl   = dlUrl.replace(/'/g,"&#39;");
+      const fileUrl = dlUrl(S.convId, u.filename || '');
+      const escapedDl   = esc(fileUrl);
       const escapedName = esc(u.filename||'file');
       const escapedMime = esc(mime);
 
       const thumbHtml = isImg
-        ? `<img class="cfile-thumb" src="${dlUrl}" alt="" onerror="this.outerHTML='<div class=\\'cfile-icon\\'>${ico}</div>'">`
+        ? `<img class="cfile-thumb" src="${escapedDl}" alt="" onerror="this.outerHTML='<div class=\\'cfile-icon\\'>${ico}</div>'">`
         : `<div class="cfile-icon">${ico}</div>`;
 
       const item = document.createElement('div');
@@ -3777,13 +3788,14 @@ async function downloadAllFiles() {
   try {
     const uploads = await apiFetch(`/api/local/uploads/${S.convId}`);
     for (const u of uploads) {
-      const url = `/api/conversations/${S.convId}/download?path=${encodeURIComponent(u.filename||'')}`;
-      const a = document.createElement('a'); a.href=url; a.download=u.filename||'file';
-      a.style.display='none'; document.body.appendChild(a); a.click();
-      setTimeout(()=>a.remove(), 500);
-      await new Promise(r => setTimeout(r, 300)); // small delay between downloads
+      const url = dlUrl(S.convId, u.filename || '');
+      const a = document.createElement('a');
+      a.href = url; a.download = u.filename || 'file';
+      a.style.display = 'none'; document.body.appendChild(a); a.click();
+      setTimeout(() => a.remove(), 500);
+      await new Promise(r => setTimeout(r, 300));
     }
-  } catch(e) { toast('Download error: '+e.message,'err'); }
+  } catch(e) { toast('Download error: ' + e.message, 'err'); }
 }
 
 /* ═══════════════════════════════════════════
@@ -4311,6 +4323,15 @@ function toggleCodeBlock(wrapperId, btn) {
     wrapper.classList.add('collapsed');
     btn.textContent = '⊞ Expand';
   }
+}
+
+function dlUrl(convId, filePath, inline = false) {
+  const base = `/api/conversations/${convId}/download`
+    + `?path=${encodeURIComponent(filePath)}`;
+  const acct = getTabAccountName();
+  const inl  = inline ? '&inline=1' : '';
+  const acctParam = acct ? `&account_name=${encodeURIComponent(acct)}` : '';
+  return base + inl + acctParam;
 }
 
 /* ═══════════════════════════════════════════
