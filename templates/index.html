@@ -2467,9 +2467,7 @@ function renderAccountMenu(filter = '') {
       : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
     
     // Show if this is the tab-active account
-    const tabIndicator = isTabActive 
-      ? '<span style="font-size:9px;color:var(--teal);margin-left:4px;font-family:var(--font-mono)">this tab</span>' 
-      : '';
+    const tabIndicator = '';
 
     const el = document.createElement('div');
     el.className = `acct-menu-item ${isTabActive ? 'active' : ''}`;
@@ -3587,7 +3585,7 @@ function openInCanvas(url, name, mime) {
     url += (url.includes('?') ? '&' : '?') + 
            'account_name=' + encodeURIComponent(acct);
   }
-  
+
   if (!S.canvasOpen) toggleCanvas();
   switchCanvasTab('preview');
 
