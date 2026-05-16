@@ -1806,8 +1806,6 @@ const S = {
 
 const contentCache = {};
 
-const quotaCache = {};
-
 /* ═══════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════ */
@@ -1906,6 +1904,10 @@ async function init() {
   }
 
   window.addEventListener('popstate', onPopState);
+
+  // Background poll: refresh quota/credits for ALL accounts every 90 s
+  _pollAllAccounts();
+  setInterval(_pollAllAccounts, 90_000);
 }
 
 /* ═══════════════════════════════════════════
@@ -2369,8 +2371,11 @@ function applyProviderUI(acct) {
     else msgTa.placeholder = 'Message Claude…';
   }
   if (quotaWrap) {
-    if (provider === 'claude') fetchQuota();
-    else quotaWrap.style.display = 'none';
+    if (provider === 'claude' || provider === 'oneminai') {
+      fetchQuota();
+    } else {
+      quotaWrap.style.display = 'none';
+    }
   }
 }
 
@@ -2448,71 +2453,183 @@ async function loadModelsForTab(sel, defaultModel) {
   }
 }
 
+const quotaCache = {};
+
+/* ── Fetch quota/credits for the current tab account ── */
 async function fetchQuota() {
+  const acct = getTabAccount();
+  if (!acct) return;
+  const provider = (acct.provider || 'claude').toLowerCase();
+  if (provider === 'chatwithai') {
+    document.getElementById('quotaWrap').style.display = 'none';
+    return;
+  }
   try {
     const d = await apiFetch('/api/usage');
-    if (d?.windows) updateQuotaFromStream(d);
+    if (d.provider === 'oneminai') {
+      _cacheOneminai(acct.name, d.credits);
+      _renderSidebarBar();
+    } else if (d.provider === 'claude' && d.windows) {
+      _cacheClaude(acct.name, d);
+      _renderSidebarBar();
+    }
   } catch {}
 }
 
-function updateQuotaFromStream(msgLimit) {
-  if (!msgLimit) return;
+/* ── Poll EVERY account in the background ── */
+async function _pollAllAccounts() {
+  try {
+    const all = await fetch('/api/usage/all').then(r => r.json());
+    let changed = false;
 
+    for (const [name, d] of Object.entries(all)) {
+      if (d.provider === 'oneminai') {
+        if (d.credits !== null && d.credits !== undefined) {
+          _cacheOneminai(name, d.credits);
+          changed = true;
+        }
+      } else if (d.provider === 'claude' && d.quota?.windows) {
+        _cacheClaude(name, d.quota);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      _renderSidebarBar();   // update the active tab's sidebar bar
+      renderAccountMenu();
+      renderAccountList();
+    }
+  } catch { /* silent background poll */ }
+}
+
+/* ── Cache helpers ── */
+function _cacheOneminai(name, credits) {
+  quotaCache[name] = { provider: 'oneminai', credits };
+}
+
+function _cacheClaude(name, payload) {
+  // payload = raw /api/usage body or d.quota from /api/usage/all
+  const windows   = payload.windows || {};
+  const winKey    = Object.keys(windows)[0];
+  const win       = winKey ? windows[winKey] : null;
+  const resetsAt  = win?.resets_at ?? payload.resetsAt ?? null;
+  const remaining = payload.remaining ?? null;
+  let   pct       = win?.utilization ?? null;
+  if (pct !== null && resetsAt && resetsAt * 1000 < Date.now()) pct = 0;
+  if (pct === null) return;   // nothing useful to cache
+  quotaCache[name] = { provider: 'claude', pct, resetsAt, remaining, window: winKey };
+}
+
+/* ── Render the sidebar quota/credits bar for the ACTIVE tab account ── */
+function _renderSidebarBar() {
   const wrap   = document.getElementById('quotaWrap');
   const label  = document.getElementById('quotaLabel');
   const pct    = document.getElementById('quotaPct');
   const fill   = document.getElementById('quotaBarFill');
   const detail = document.getElementById('quotaDetail');
 
-  const windows    = msgLimit.windows || {};
-  const winKey     = Object.keys(windows)[0];
-  const win        = winKey ? windows[winKey] : null;
-  const resetsAt   = win?.resets_at ?? msgLimit.resetsAt ?? null;
-  const remaining  = msgLimit.remaining ?? null;
+  const name   = getTabAccountName();
+  const cached = name ? quotaCache[name] : null;
+  if (!cached) { wrap.style.display = 'none'; return; }
 
-  // ── KEY FIX: if reset time is in the past, treat as 0% used ──
-  let utilization = win?.utilization ?? null;
-  if (utilization !== null && resetsAt) {
-    const resetMs = resetsAt * 1000;
-    if (resetMs < Date.now()) {
-      utilization = 0;
-    }
+  if (cached.provider === 'oneminai') {
+    const cr = cached.credits;
+    if (cr === null || cr === undefined) { wrap.style.display = 'none'; return; }
+    wrap.style.display  = 'block';
+    label.textContent   = 'Credits (1min.AI)';
+    pct.textContent     = cr.toLocaleString();
+    fill.style.width    = cr > 0 ? '100%' : '0%';
+    fill.className      = 'quota-bar-fill';
+    detail.textContent  = `${cr.toLocaleString()} credits remaining`;
+    return;
   }
 
-  if (utilization === null) { wrap.style.display = 'none'; return; }
-
-  // Cache for this account so account selectors can show mini bars
-  const acctName = getTabAccountName();
-  if (acctName) {
-    quotaCache[acctName] = { pct: utilization, resetsAt, remaining, window: winKey };
-  }
-
+  // Claude
+  const { pct: utilization, resetsAt, remaining, window: winKey } = cached;
   wrap.style.display = 'block';
-  const pctNum = Math.round(utilization * 100);
+  const pctNum = Math.round((utilization || 0) * 100);
   pct.textContent  = `${pctNum}%`;
   fill.style.width = `${pctNum}%`;
   fill.className   = 'quota-bar-fill' +
     (pctNum >= 90 ? ' crit' : pctNum >= 70 ? ' warn' : '');
-
   label.textContent = winKey ? `Usage (${winKey} window)` : 'Usage';
 
-  let detailTxt = remaining != null ? `${remaining} msgs remaining` : `${pctNum}% used`;
+  let txt = remaining != null ? `${remaining} msgs remaining` : `${pctNum}% used`;
   if (resetsAt) {
     const diff = resetsAt * 1000 - Date.now();
     if (diff > 0) {
       const hrs  = Math.floor(diff / 3_600_000);
       const mins = Math.floor((diff % 3_600_000) / 60_000);
-      detailTxt += ` · resets in ${hrs > 0 ? hrs + 'h ' : ''}${mins}m`;
+      txt += ` · resets in ${hrs > 0 ? hrs + 'h ' : ''}${mins}m`;
     } else {
-      detailTxt = 'Quota reset — usage cleared';
+      txt = 'Quota reset — usage cleared';
     }
   }
-  detail.textContent = detailTxt;
+  detail.textContent = txt;
+}
 
-  // Refresh account selectors so mini bars update
+/* ── Called from the SSE stream handler when Claude sends message_limit ── */
+function updateQuotaFromStream(msgLimit) {
+  if (!msgLimit) return;
+  const name = getTabAccountName();
+  if (name) _cacheClaude(name, msgLimit);
+  _renderSidebarBar();
   renderAccountMenu();
   renderAccountList();
 }
+
+/* ── Mini bar shown inside the account switcher / settings list ── */
+function buildMiniQuotaHtml(acctName) {
+  const acct     = S.accounts.find(a => a.name === acctName);
+  const provider = (acct?.provider || 'claude').toLowerCase();
+  const cached   = quotaCache[acctName];
+  if (!cached) return '';
+
+  if (provider === 'oneminai') {
+    const { credits } = cached;
+    if (credits === null || credits === undefined) return '';
+    return `<div class="mini-quota">
+      <span class="mini-quota-pct"
+            style="min-width:auto;font-size:9px;color:var(--oneminai)">
+        ✦ ${credits.toLocaleString()} credits
+      </span>
+    </div>`;
+  }
+
+  if (provider !== 'claude') return '';
+
+  let { pct: utilization, resetsAt } = cached;
+  if (resetsAt && resetsAt * 1000 < Date.now()) utilization = 0;
+  const pctNum    = Math.round((utilization || 0) * 100);
+  const fillClass = pctNum >= 90 ? ' crit' : pctNum >= 70 ? ' warn' : '';
+
+  let resetStr = '';
+  if (resetsAt) {
+    const diff = resetsAt * 1000 - Date.now();
+    if (diff > 0) {
+      const hrs  = Math.floor(diff / 3_600_000);
+      const mins = Math.floor((diff % 3_600_000) / 60_000);
+      resetStr   = hrs > 0 ? `${hrs}h` : `${mins}m`;
+    }
+  }
+
+  return `<div class="mini-quota">
+    <div class="mini-quota-bar-bg">
+      <div class="mini-quota-bar-fill${fillClass}" style="width:${pctNum}%"></div>
+    </div>
+    <span class="mini-quota-pct">${pctNum}%</span>
+    ${resetStr ? `<span class="mini-quota-reset">↺ ${resetStr}</span>` : ''}
+  </div>`;
+}
+
+function closeAcctMenu() {
+  document.getElementById('acctMenu')?.classList.add('hidden');
+  document.getElementById('acctChev')?.classList.remove('open');
+}
+function _closeAcctOnOutside(e) {
+  if (!document.getElementById('acctSwitcher')?.contains(e.target)) closeAcctMenu();
+}
+
 
 function toggleAcctMenu() {
   const menu   = document.getElementById('acctMenu');
@@ -2525,15 +2642,6 @@ function toggleAcctMenu() {
     document.addEventListener('click', _closeAcctOnOutside, { once:true, capture:true });
   } else closeAcctMenu();
 }
-function closeAcctMenu() {
-  document.getElementById('acctMenu')?.classList.add('hidden');
-  document.getElementById('acctChev')?.classList.remove('open');
-}
-function _closeAcctOnOutside(e) {
-  if (!document.getElementById('acctSwitcher')?.contains(e.target)) closeAcctMenu();
-}
-
-
 
 function renderAccountMenu(filter = '') {
   const list = document.getElementById('acctMenuList');
@@ -2563,7 +2671,7 @@ function renderAccountMenu(filter = '') {
 
     const is1min = prov === 'oneminai';
     const badge = isCWA
-      ? `<span class="ami-badge" style="color:#38bdf8;background:rgba(56,189,248,0.10);border-color:rgba(56,189,248,0.18)">⚡ Free</span>`
+      ? `<span class="ami-badge" style="color:#38bdf8;background:rgba(56,189,248,0.10);border-color:rgba(56,189,248,0.18)">⚡ ChatWithAI</span>`
       : is1min
         ? `<span class="ami-badge" style="color:var(--oneminai);background:var(--oneminai-dim);border-color:var(--oneminai-mid)">✦ 1min.AI</span>`
         : `<span class="ami-badge" style="color:var(--accent)">🔑 Claude</span>`;
@@ -2604,6 +2712,7 @@ function filterAcctMenu(val) {
 }
 
 function renderAccountList(filter = '') {
+  document.getElementById('settingsOverlay')?.classList.remove('hidden');
   const list = document.getElementById('acctList');
   if (!list) return;
   list.innerHTML = '';
@@ -2640,9 +2749,9 @@ function renderAccountList(filter = '') {
 
     // Mini quota bar (Claude only)
     const miniBar = buildMiniQuotaHtml(acct.name);
-
+    const isActive = getTabAccountName() === acct.name;
     const el = document.createElement('div');
-    el.className = `acct-list-item ${acct.active ? 'active' : ''}`;
+    el.className = `acct-list-item ${isActive ? 'active' : ''}`;
     el.innerHTML = `
       <div class="ali-info">
         <div class="ali-name">
@@ -2652,9 +2761,10 @@ function renderAccountList(filter = '') {
         <div class="ali-org">${esc(subtitle)}</div>
         ${miniBar}
       </div>
-      ${acct.active ? '<span class="ali-badge">ACTIVE</span>' : ''}
-      ${!acct.active
-        ? `<button class="ali-btn" onclick="switchAccount('${esc(acct.name)}')">Switch</button>`
+      ${isActive ? '<span class="ali-badge">ACTIVE</span>' : ''}
+      ${!isActive
+        ? `<button class="ali-btn" onclick="switchTabAccount('${esc(acct.name)}'); document.getElementById('settingsOverlay')?.classList.add('hidden');">Switch</button>`
+
         : ''}
       <button class="ali-btn edit" onclick="editAccount('${esc(acct.name)}')">Edit</button>
       <button class="ali-btn del"  onclick="deleteAccount(null,'${esc(acct.name)}')">✕</button>`;
@@ -2682,8 +2792,8 @@ async function switchTabAccount(name) {
 
   setStatus(true, acct.organization_id);
   renderAccountMenu();
-  applyProviderUI(acct);   // <-- full acct object, has .models already
-  if ((acct.provider || 'claude').toLowerCase() === 'claude') fetchQuota();
+  applyProviderUI(acct);
+  if (['claude', 'oneminai'].includes((acct.provider || 'claude').toLowerCase())) fetchQuota();
 
   await Promise.all([loadPinnedIds(), loadAllConvs()]);
   renderSidebar();
@@ -2699,7 +2809,11 @@ async function setServerActiveAccount(name) {
 }
 
 async function saveAccount() {
-  // ... existing validation ...
+  const name = document.getElementById('acctNameInp').value.trim();
+  const act  = document.getElementById('acctActivateChk').checked;
+  const provider = document.getElementById('providerSel').value || 'claude';
+  if (!name) { toast('Account name is required', 'err'); return; }
+
   const oneminaiKey = (document.getElementById('oneminaiKeyInp')?.value || '').trim();
 
   // Build the request body
@@ -4231,6 +4345,7 @@ async function doSend() {
     await fetchConvMeta(S.convId);
     renderMsgs(); buildBranchSel();
     if (S.canvasOpen && S.canvasTab === 'files') renderCanvasFiles();
+    if (getTabProvider() === 'oneminai') fetchQuota(); 
 
   } catch (err) {
     toast('Stream error: ' + err.message, 'err');
@@ -4546,39 +4661,6 @@ function dlUrl(convId, filePath, inline = false) {
   const inl  = inline ? '&inline=1' : '';
   const acctParam = acct ? `&account_name=${encodeURIComponent(acct)}` : '';
   return base + inl + acctParam;
-}
-
-// Returns HTML string for a mini quota bar for a given account name.
-// Pass pctNum (0-100), resetsAt (unix seconds or null).
-function buildMiniQuotaHtml(acctName) {
-  const provider = (S.accounts.find(a => a.name === acctName)?.provider || 'claude').toLowerCase();
-  if (provider !== 'claude') return '';
-
-  const cached = quotaCache[acctName];
-  if (!cached) return '';
-
-  let { pctNum, resetsAt } = cached;
-  if (resetsAt && resetsAt * 1000 < Date.now()) pctNum = 0;
-
-  const fillClass = pctNum >= 90 ? ' crit' : pctNum >= 70 ? ' warn' : '';
-
-  let resetStr = '';
-  if (resetsAt) {
-    const diff = resetsAt * 1000 - Date.now();
-    if (diff > 0) {
-      const hrs  = Math.floor(diff / 3_600_000);
-      const mins = Math.floor((diff % 3_600_000) / 60_000);
-      resetStr   = hrs > 0 ? `${hrs}h` : `${mins}m`;
-    }
-  }
-
-  return `<div class="mini-quota">
-    <div class="mini-quota-bar-bg">
-      <div class="mini-quota-bar-fill${fillClass}" style="width:${pctNum}%"></div>
-    </div>
-    <span class="mini-quota-pct">${pctNum}%</span>
-    ${resetStr ? `<span class="mini-quota-reset">↺ ${resetStr}</span>` : ''}
-  </div>`;
 }
 
 /* ═══════════════════════════════════════════

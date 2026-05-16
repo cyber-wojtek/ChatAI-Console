@@ -412,19 +412,22 @@ def _sync_stream_chatwithai(prompt: str, model: str, *, assistant_uuid: str):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 1min.AI helpers
+# 1min.AI — everything goes through OneMinAIClient (oneminai_webapi module)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _ONEMINAI_MODEL_CACHE: dict = {"fetched_at": 0.0, "models": []}
 
 
 def _oneminai_fetch_models() -> list[dict]:
+    from datetime import datetime, timezone
     now_ts = datetime.now(timezone.utc).timestamp()
     if _ONEMINAI_MODEL_CACHE["models"] and now_ts - _ONEMINAI_MODEL_CACHE["fetched_at"] < 900:
         return _ONEMINAI_MODEL_CACHE["models"]
     try:
-        client = _make_oneminai_client_anon()
-        raw = _run(client.list_models(feature="UNIFY_CHAT_WITH_AI"))
+        client = OneMinAIClient()          # anonymous — only needs team after login
+        # list_models works without auth for the public catalog
+        raw    = _run(client.list_models(feature="UNIFY_CHAT_WITH_AI"))
+        _run(client.close())
         models = [
             {
                 "id":           m.get("modelId", ""),
@@ -434,7 +437,6 @@ def _oneminai_fetch_models() -> list[dict]:
             }
             for m in raw if m.get("modelId")
         ]
-        _run(client.close())
         _ONEMINAI_MODEL_CACHE["models"]     = models
         _ONEMINAI_MODEL_CACHE["fetched_at"] = now_ts
         return models
@@ -443,39 +445,50 @@ def _oneminai_fetch_models() -> list[dict]:
         return _ONEMINAI_MODEL_CACHE.get("models", [])
 
 
-def _make_oneminai_client_anon() -> OneMinAIClient:
-    """Temporary unauthenticated client for model catalog fetching."""
-    return OneMinAIClient("")
-
-
 def _make_oneminai_client(acct: dict) -> OneMinAIClient:
-    key = acct.get("api_key") or acct.get("session_key", "")
+    """Return an authenticated OneMinAIClient from a stored account dict."""
+    key     = acct.get("api_key") or acct.get("session_key", "")
+    team_id = acct.get("team_id", "")
     if not key:
         raise ValueError(f"1min.AI account '{acct.get('name','?')}' is missing api_key")
-    return OneMinAIClient(key)
+    client = OneMinAIClient(api_key=key)
+    if team_id:
+        client._team_id = team_id   # skip the /users round-trip
+    return client
 
 
-def _sync_stream_oneminai(acct: dict, conv_id: str, prompt: str, model: str,
-                           *, human_uuid: str, asst_uuid: str):
+def _sync_stream_oneminai(
+    acct:        dict,
+    conv_id:     str,
+    prompt:      str,
+    model:       str,
+    *,
+    human_uuid:  str,
+    asst_uuid:   str,
+    file_uuids:  list | None = None,
+    web_search:  bool = False,
+):
     """
-    Stream a 1min.AI chat response as Claude-compatible SSE events so the
-    frontend can consume them without any changes.
+    Stream a 1min.AI chat turn.
+
+    Uses OneMinAIClient.chat(stream=True) which handles:
+      - team_id resolution
+      - server-side conversation creation (_ensure_conversation)
+      - correct SSE parsing (event: content / event: result)
+
+    Emits Claude-compatible SSE so the frontend works unchanged.
     """
     import queue as _queue
 
-    q: "_queue.Queue" = _queue.Queue()
+    q: "_queue.Queue[bytes | None | Exception]" = _queue.Queue()
 
     def emit(obj: dict) -> bytes:
-        return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")
+        return f"data: {json.dumps(obj, ensure_ascii=False)}".encode()
 
     async def producer():
         client = _make_oneminai_client(acct)
         try:
-            # Ensure the conversation exists server-side
-            existing = await client._ensure_conversation(conv_id, prompt)
-            actual_conv_id = existing or conv_id
-
-            # Yield message_start so the frontend knows the UUID
+            # Emit Claude-style stream start
             q.put(emit({"type": "message_start",
                          "message": {"uuid": asst_uuid, "model": model}}))
             q.put(emit({"type": "content_block_start", "index": 0,
@@ -485,7 +498,9 @@ def _sync_stream_oneminai(acct: dict, conv_id: str, prompt: str, model: str,
                 prompt,
                 stream          = True,
                 model           = model,
-                conversation_id = actual_conv_id,
+                conversation_id = conv_id,
+                files           = file_uuids or [],
+                web_search      = web_search,
             ):
                 if chunk.text_delta:
                     q.put(emit({
@@ -495,13 +510,13 @@ def _sync_stream_oneminai(acct: dict, conv_id: str, prompt: str, model: str,
                     }))
 
             q.put(emit({"type": "content_block_stop", "index": 0}))
-            q.put(emit({"type": "message_delta",
-                         "delta": {"stop_reason": "end_turn"}}))
+            q.put(emit({"type": "message_delta", "delta": {"stop_reason": "end_turn"}}))
             q.put(emit({"type": "message_stop"}))
+
         except Exception as exc:
+            log.warning("1min.AI stream error: %s", exc)
             q.put(emit({"type": "error",
-                         "error": {"type": "api_error",
-                                   "message": str(exc)}}))
+                         "error": {"type": "api_error", "message": str(exc)}}))
         finally:
             await client.close()
             q.put(None)
@@ -736,7 +751,8 @@ def _account_to_public(a: dict) -> dict:
         "created_at":      a.get("created_at", ""),
         "session_key":     a.get("session_key", "") if provider == CLAUDE_PROVIDER else "",
         "organization_id": a.get("organization_id", "") if provider == CLAUDE_PROVIDER else "",
-        "api_key":         a.get("api_key", "")  if provider == ONEMINAI_PROVIDER else "",
+        "api_key":         a.get("api_key", "")    if provider == ONEMINAI_PROVIDER else "",
+        "team_id":         a.get("team_id", "")    if provider == ONEMINAI_PROVIDER else "",
     }
     return pub
 
@@ -859,6 +875,115 @@ def _oauth_preflight(subpath):
     """Handle CORS preflight for all /api/oauth/* routes."""
     return "", 204
 
+
+
+# ── 1min.AI conversation list ─────────────────────────────────────────────────
+
+def _list_convs_oneminai(acct: dict):
+    client = _make_oneminai_client(acct)
+    try:
+        records = _run(client.list_conversations())
+        _run(client.close())
+        return [
+            {
+                "uuid":       r.conversation_id,
+                "name":       r.title,
+                "created_at": r.metadata.get("createdAt", ""),
+                "updated_at": r.metadata.get("updatedAt", r.metadata.get("createdAt", "")),
+            }
+            for r in records
+        ]
+    except Exception as exc:
+        log.warning("1min.AI list_conversations: %s", exc)
+        try: _run(client.close())
+        except Exception: pass
+        return []
+
+
+def _create_conv_oneminai(acct: dict, title: str = "New conversation") -> str:
+    """Create a server-side conversation and return its UUID."""
+    client = _make_oneminai_client(acct)
+    try:
+        rec = _run(client.create_conversation(title))
+        _run(client.close())
+        return rec.conversation_id
+    except Exception as exc:
+        log.warning("1min.AI create_conversation: %s", exc)
+        try: _run(client.close())
+        except Exception: pass
+        return str(uuid_lib.uuid4())   # fallback local UUID
+
+
+def _get_conv_oneminai(acct: dict, conv_id: str) -> dict:
+    """Fetch a conversation + its messages from 1min.AI and return Claude-shaped dict."""
+    client = _make_oneminai_client(acct)
+    root   = "00000000-0000-4000-8000-000000000000"
+    try:
+        rec      = _run(client.get_conversation(conv_id))
+        msg_recs = _run(client.get_conversation_messages(conv_id))
+        _run(client.close())
+    except Exception as exc:
+        log.warning("1min.AI get_conversation: %s", exc)
+        try: _run(client.close())
+        except Exception: pass
+        return {
+            "uuid": conv_id, "name": "", "created_at": _now(), "updated_at": _now(),
+            "chat_messages": [], "current_leaf_message_uuid": root, "settings": {},
+        }
+
+    # Convert MessageRecord list → Claude-shaped chat_messages
+    messages: list[dict] = []
+    prev_uuid = root
+    for i, m in enumerate(msg_recs):
+        msg_uuid = (m.record_id or str(uuid_lib.uuid4())) + f"_{i}"
+        sender   = "human" if m.role == "USER" else "assistant"
+        text     = m.content or ""
+        messages.append({
+            "uuid":               msg_uuid,
+            "sender":             sender,
+            "text":               text,
+            "content":            [{"type": "text", "text": text}],
+            "parent_message_uuid": prev_uuid,
+            "created_at":          m.metadata.get("createdAt", _now()),
+            "index":               i,
+        })
+        prev_uuid = msg_uuid
+
+    current_leaf = messages[-1]["uuid"] if messages else root
+    return {
+        "uuid":                      conv_id,
+        "name":                      rec.title,
+        "created_at":                rec.metadata.get("createdAt", _now()),
+        "updated_at":                rec.metadata.get("updatedAt", _now()),
+        "chat_messages":             messages,
+        "current_leaf_message_uuid": current_leaf,
+        "settings":                  {},
+    }
+
+
+def _upload_file_oneminai(acct: dict, conv_id: str, f) -> dict:
+    """Upload a file to 1min.AI Asset API. f = werkzeug FileStorage."""
+    file_bytes = f.read()
+    mime       = f.content_type or "application/octet-stream"
+    fname      = f.filename or "upload"
+    client     = _make_oneminai_client(acct)
+    try:
+        asset = _run(client.upload_asset(data=file_bytes, filename=fname, mime_type=mime))
+        _run(client.close())
+    except Exception as exc:
+        try: _run(client.close())
+        except Exception: pass
+        raise RuntimeError(str(exc)) from exc
+    _save_upload_meta(acct["name"], conv_id, asset.file_id, fname, len(file_bytes), mime)
+    log.info("1min.AI asset: %s → file_id=%s", fname, asset.file_id[:8])
+    return {
+        "file_uuid":  asset.file_id,
+        "asset_key":  asset.asset_key,
+        "_upload_ok": True,
+        "_filename":  fname,
+        "_size":      len(file_bytes),
+        "_mime":      mime,
+    }
 
 @app.route("/api/ping")
 def ping():
@@ -1063,9 +1188,9 @@ def oauth_claude_status():
 
 
 
-# ── 1min.AI OAuth (Google access-token relay) ─────────────────────────────────
-# The extension grabs the ya29.… token from the Google popup and POSTs it here.
-# We then call client.oauth_login() to exchange it for a 1min.AI JWT.
+# ── 1min.AI OAuth (auth-code flow — mirrors Claude exactly) ──────────────────
+# Extension intercepts app.1min.ai, calls GIS initCodeClient, POSTs the code.
+# Backend exchanges code for a 1min.AI JWT via OneMinAIClient.from_google_code().
 
 @app.route("/api/oauth/oneminai/begin")
 def oauth_oneminai_begin():
@@ -1083,12 +1208,16 @@ def oauth_oneminai_begin():
 def oauth_oneminai_owns_state():
     state = request.args.get("state", "")
     with _oauth_lock:
-        owned = state in _oauth_states and _oauth_states[state].get("provider") == "oneminai"
+        owned = (
+            state in _oauth_states
+            and _oauth_states[state].get("provider") == "oneminai"
+        )
     return jsonify({"owned": owned})
 
 
 @app.route("/api/oauth/oneminai/ext-pending")
 def oauth_oneminai_ext_pending():
+    """Content script polls this; returns the first unclaimed waiting state."""
     with _oauth_lock:
         for state, entry in _oauth_states.items():
             if (
@@ -1096,52 +1225,78 @@ def oauth_oneminai_ext_pending():
                 and entry.get("pending_ext")
                 and not entry["done"]
             ):
-                entry["pending_ext"] = False
+                entry["pending_ext"] = False   # claimed — prevent double-handling
                 return jsonify({"state": state})
     return jsonify({"state": None})
 
 
 @app.route("/api/oauth/oneminai/ext-callback", methods=["POST"])
 def oauth_oneminai_ext_callback():
-    """
-    Extension POSTs the Google OAuth access token (ya29.…) here.
-    We exchange it for a 1min.AI JWT and store the api_key.
-    """
-    data         = request.get_json(silent=True) or {}
-    oauth_token  = data.get("oauth_token") or data.get("access_token") or data.get("token")
-    state        = data.get("state")
-    error        = data.get("error")
+    data        = request.get_json(silent=True) or {}
+    # accept both field names defensively
+    oauth_token = (
+        data.get("oauth_token")
+        or data.get("access_token")
+        or data.get("token")
+        or data.get("code")   # never expected but guard anyway
+    )
+    state       = data.get("state")
+    error       = data.get("error")
 
     if not state:
         return jsonify({"ok": False, "error": "missing_state"}), 400
+
     with _oauth_lock:
         entry = _oauth_states.get(state)
     if not entry:
         return jsonify({"ok": False, "error": "unknown_state"}), 400
     if entry["done"]:
         return jsonify({"ok": True})
+
     if error:
         entry.update({"error": error, "done": True, "pending_ext": False})
         return jsonify({"ok": False, "error": error})
+
     if not oauth_token:
-        entry.update({"error": "no_token", "done": True})
+        log.warning("oneminai ext-callback: no token in payload. keys=%s", list(data.keys()))
+        entry.update({"error": "no_token", "done": True, "pending_ext": False})
         return jsonify({"ok": False, "error": "no_token"}), 400
 
-    # Exchange Google token → 1min.AI JWT
+    # Exchange Google access token → 1min.AI JWT
     try:
-        tmp_client = OneMinAIClient()
-        user       = _run(tmp_client.oauth_login(oauth_token))
-        api_key    = tmp_client._api_key
-        _run(tmp_client.close())
+        resp = http_client.post(
+            "https://api.1min.ai/auth/oauth",
+            json={
+                "oauthToken": oauth_token,
+                "referral":   {"referrerId": None, "source": None},
+            },
+            headers={
+                "Content-Type":  "application/json",
+                "Origin":        "https://app.1min.ai",
+                "Referer":       "https://app.1min.ai/",
+                "X-App-Version": "1.1.45",
+                "X-Auth-Token":  "Bearer",
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        body    = resp.json()
+        user    = body["user"]
+        api_key = user["token"]
+        email   = user.get("email", "")
+        teams   = user.get("teams", [])
+        team_id = teams[0]["teamId"] if teams else ""
+
         entry.update({
-            "api_key":  api_key,
-            "email":    user.email,
-            "team_id":  user.team_id,
-            "done":     True,
+            "api_key":     api_key,
+            "team_id":     team_id,
+            "email":       email,
+            "done":        True,
             "pending_ext": False,
         })
-        log.info("1min.AI OAuth success: %s", user.email)
-        return jsonify({"ok": True, "email": user.email})
+        log.info("1min.AI OAuth success: %s  team=%s", email, team_id)
+        return jsonify({"ok": True, "email": email})
+
     except Exception as exc:
         log.warning("1min.AI OAuth exchange failed: %s", exc)
         entry.update({"error": str(exc), "done": True, "pending_ext": False})
@@ -1157,15 +1312,19 @@ def oauth_oneminai_status():
         return jsonify({"error": "invalid_state"}), 400
     if not entry["done"]:
         return jsonify({"done": False})
+
     result: dict = {"done": True}
     if "api_key" in entry:
         result["api_key"] = entry["api_key"]
+        result["team_id"] = entry.get("team_id", "")
         result["email"]   = entry.get("email", "")
     if "error" in entry:
         result["error"] = entry["error"]
+
     with _oauth_lock:
         _oauth_states.pop(state, None)
     return jsonify(result)
+
 
 @app.route("/api/models", methods=["GET"])
 @require_account
@@ -1215,14 +1374,19 @@ def list_accounts():
                 models = _chatwithai_fetch_models()
             except Exception:
                 models = _CHATWITHAI_MODEL_CACHE.get("models", [])
+        elif provider == ONEMINAI_PROVIDER:
+            try:
+                models = _oneminai_fetch_models()
+            except Exception:
+                models = _ONEMINAI_MODEL_CACHE.get("models", [])
         else:
             models = CLAUDE_MODELS
 
-        pub["models"] = models
+        pub["models"]        = models
         pub["default_model"] = (
-            CHATWITHAI_DEFAULT_MODEL
-            if provider == CHATWITHAI_PROVIDER
-            else "claude-sonnet-4-6"
+            CHATWITHAI_DEFAULT_MODEL if provider == CHATWITHAI_PROVIDER else
+            ONEMINAI_DEFAULT_MODEL   if provider == ONEMINAI_PROVIDER   else
+            "claude-sonnet-4-6"
         )
         pub["provider_info"] = {
             "type":               provider,
@@ -1263,6 +1427,7 @@ def add_account():
     boot_last_auth_hash = None
 
     oneminai_api_key = (req.get("api_key") or "").strip()
+    oneminai_team_id = (req.get("team_id") or "").strip()
 
     if provider == CLAUDE_PROVIDER and not boot_session_key and not existing_account:
         if claude_code:
@@ -1295,6 +1460,8 @@ def add_account():
             elif provider == ONEMINAI_PROVIDER:
                 if oneminai_api_key:
                     existing["api_key"] = oneminai_api_key
+                if oneminai_team_id:
+                    existing["team_id"] = oneminai_team_id
                 existing.pop("session_key", None)
                 existing.pop("organization_id", None)
             else:
@@ -1309,6 +1476,8 @@ def add_account():
                     creds["organization_id"] = boot_org
             elif provider == ONEMINAI_PROVIDER:
                 creds["api_key"] = oneminai_api_key
+                if oneminai_team_id:
+                    creds["team_id"] = oneminai_team_id
             data["accounts"].append(_new_account(name, provider, **creds))
         if req.get("activate") or len(data["accounts"]) == 1:
             _set_active_in_data(data, name)
@@ -1449,7 +1618,11 @@ def set_preferences(acct):
 @api_error_handler
 def list_conversations(acct):
     provider = _provider_name(acct)
-    if provider in (CHATWITHAI_PROVIDER, ONEMINAI_PROVIDER):
+
+    if provider == ONEMINAI_PROVIDER:
+        return jsonify(_list_convs_oneminai(acct)), 200
+
+    if provider == CHATWITHAI_PROVIDER:
         data = store.read()
         for a in data["accounts"]:
             if a["name"] == acct["name"]:
@@ -1468,6 +1641,7 @@ def list_conversations(acct):
                     for c in convs if c.get("conv_uuid")
                 ]), 200
         return jsonify([]), 200
+
     client = _make_claude_client(acct)
     try:
         convs = _run(client.list_conversations())
@@ -1480,17 +1654,23 @@ def list_conversations(acct):
 @require_account
 @api_error_handler
 def create_conversation(acct):
-    conv_id = str(uuid_lib.uuid4())
     provider = _provider_name(acct)
-    
-    if provider in (CHATWITHAI_PROVIDER, ONEMINAI_PROVIDER):
+
+    if provider == ONEMINAI_PROVIDER:
+        conv_id = _create_conv_oneminai(acct)
+        log.info("Created 1min.AI conversation %s", conv_id[:8])
+        return jsonify({"success": True, "id": conv_id, "uuid": conv_id}), 201
+
+    conv_id = str(uuid_lib.uuid4())
+
+    if provider == CHATWITHAI_PROVIDER:
         _upsert_local_conv(acct["name"], conv_id, {
             "display_name": "",
             "created_at": _now(),
             "updated_at": _now(),
             "provider": provider,
         })
-        log.info("Created %s local conversation %s", provider, conv_id[:8])
+        log.info("Created ChatWithAI local conversation %s", conv_id[:8])
         return jsonify({"success": True, "id": conv_id, "uuid": conv_id}), 201
 
     client = _make_claude_client(acct)
@@ -1509,7 +1689,7 @@ def create_conversation(acct):
                 break
     store.mutate(fn)
 
-    log.info("Created conversation %s", conv_id[:8])
+    log.info("Created Claude conversation %s", conv_id[:8])
     return jsonify({"success": True, "id": conv_id, "uuid": conv_id}), 201
 
 
@@ -1519,72 +1699,43 @@ def create_conversation(acct):
 def get_conversation(acct, conv_id):
     provider = _provider_name(acct)
 
-    if provider in (CHATWITHAI_PROVIDER, ONEMINAI_PROVIDER):
-        # Get the local conversation
-        conv = _get_local_conv_entry(acct["name"], conv_id)
-        
+    if provider == ONEMINAI_PROVIDER:
+        return jsonify(_get_conv_oneminai(acct, conv_id)), 200
+
+    if provider == CHATWITHAI_PROVIDER:
+        conv      = _get_local_conv_entry(acct["name"], conv_id)
+        root_uuid = "00000000-0000-4000-8000-000000000000"
         if not conv:
-            # Return empty conversation structure for new conversations
             return jsonify({
-                "uuid": conv_id,
-                "name": "",
-                "created_at": _now(),
-                "updated_at": _now(),
+                "uuid": conv_id, "name": "",
+                "created_at": _now(), "updated_at": _now(),
                 "chat_messages": [],
-                "current_leaf_message_uuid": "00000000-0000-4000-8000-000000000000",
+                "current_leaf_message_uuid": root_uuid,
                 "settings": {}
             }), 200
-        
-        # Ensure all messages have proper structure
         messages = conv.get("chat_messages", [])
-        root_uuid = "00000000-0000-4000-8000-000000000000"
-        
-        # Fix message structure if needed
         for i, msg in enumerate(messages):
-            # Ensure UUID exists
-            if "uuid" not in msg:
-                msg["uuid"] = str(uuid_lib.uuid4())
-            
-            # Ensure parent_message_uuid exists
+            if "uuid"               not in msg: msg["uuid"]               = str(uuid_lib.uuid4())
             if "parent_message_uuid" not in msg:
                 msg["parent_message_uuid"] = messages[i-1]["uuid"] if i > 0 else root_uuid
-            
-            # Ensure content structure exists
-            if "content" not in msg:
-                if "text" in msg:
-                    msg["content"] = [{"type": "text", "text": msg["text"]}]
-                else:
-                    msg["content"] = [{"type": "text", "text": ""}]
-            
-            # Ensure index exists
-            if "index" not in msg:
-                msg["index"] = i
-            
-            # Ensure sender exists
-            if "sender" not in msg:
-                msg["sender"] = "human" if i % 2 == 0 else "assistant"
-            
-            # Ensure created_at exists
-            if "created_at" not in msg:
-                msg["created_at"] = conv.get("created_at", _now())
-        
-        # Determine current leaf
+            if "content"            not in msg:
+                msg["content"] = [{"type": "text", "text": msg.get("text", "")}]
+            if "index"              not in msg: msg["index"]              = i
+            if "sender"             not in msg: msg["sender"]             = "human" if i % 2 == 0 else "assistant"
+            if "created_at"         not in msg: msg["created_at"]         = conv.get("created_at", _now())
         current_leaf = conv.get("current_leaf_message_uuid")
         if not current_leaf or current_leaf == root_uuid:
             current_leaf = messages[-1]["uuid"] if messages else root_uuid
-        
-        # Return proper conversation structure
         return jsonify({
-            "uuid": conv_id,
-            "name": conv.get("display_name", ""),
+            "uuid": conv_id, "name": conv.get("display_name", ""),
             "created_at": conv.get("created_at", _now()),
             "updated_at": conv.get("updated_at", _now()),
             "chat_messages": messages,
             "current_leaf_message_uuid": current_leaf,
             "settings": conv.get("settings", {})
         }), 200
-    
-    # Claude provider logic remains the same
+
+    # Claude
     client = _make_claude_client(acct)
     try:
         data = _run(client.get_conversation(conv_id))
@@ -1648,21 +1799,32 @@ def send_message(acct, conv_id):
     provider = _provider_name(acct)
 
     if provider == ONEMINAI_PROVIDER:
-        prompt       = (data.get("prompt") or "").strip()
-        model        = (data.get("model") or ONEMINAI_DEFAULT_MODEL).strip()
-        parent_uuid  = data.get("parent_message_uuid", "00000000-0000-4000-8000-000000000000")
-        human_uuid   = str(uuid_lib.uuid4())
-        asst_uuid    = str(uuid_lib.uuid4())
-        display_name = data.get("display_name") or (prompt[:30] if prompt else "")
+        prompt      = (data.get("prompt") or "").strip()
+        model       = (data.get("model") or ONEMINAI_DEFAULT_MODEL).strip()
+        human_uuid  = str(uuid_lib.uuid4())
+        asst_uuid   = str(uuid_lib.uuid4())
+        web_search  = bool(data.get("web_search", False))
         _log_message_send(acct["name"], conv_id, model, len(prompt))
 
+        # Collect file UUIDs (oneminai uses fileContent.uuid = file_id)
+        raw_files  = data.get("files") or []
+        file_uuids = []
+        for f in raw_files:
+            if isinstance(f, str):
+                file_uuids.append(f)
+            elif isinstance(f, dict):
+                fid = f.get("file_uuid") or f.get("file_id") or f.get("id")
+                if fid:
+                    file_uuids.append(fid)
+
         def generate_oneminai():
-            for chunk in _sync_stream_oneminai(
+            yield from _sync_stream_oneminai(
                 acct, conv_id, prompt, model,
-                human_uuid=human_uuid,
-                asst_uuid=asst_uuid,
-            ):
-                yield chunk
+                human_uuid  = human_uuid,
+                asst_uuid   = asst_uuid,
+                file_uuids  = file_uuids or None,
+                web_search  = web_search,
+            )
 
         return Response(
             stream_with_context(generate_oneminai()),
@@ -1782,8 +1944,13 @@ def upload_file(acct, conv_id):
     if provider == CHATWITHAI_PROVIDER:
         return jsonify({"error": "File uploads not supported for ChatWithAI"}), 400
     if provider == ONEMINAI_PROVIDER:
-        # 1min.AI uploads go via the Asset API — use /api/oneminai/upload
-        return jsonify({"error": "Use /api/oneminai/upload for 1min.AI file uploads"}), 400
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+        try:
+            result = _upload_file_oneminai(acct, conv_id, request.files["file"])
+            return jsonify(result), 200
+        except RuntimeError as exc:
+            return jsonify({"error": str(exc)}), 500
     
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
@@ -1892,7 +2059,24 @@ def oneminai_upload_asset(acct):
 @app.route("/api/usage", methods=["GET"])
 @require_account
 def get_usage(acct):
+    provider = _provider_name(acct)
 
+    if provider == ONEMINAI_PROVIDER:
+        try:
+            client  = _make_oneminai_client(acct)
+            credits = _run(client.get_team_credits())
+            _run(client.close())
+        except Exception as exc:
+            log.warning("1min.AI credits fetch: %s", exc)
+            try: _run(client.close())
+            except Exception: pass
+            credits = None
+        return jsonify({"provider": "oneminai", "credits": credits})
+
+    if provider == CHATWITHAI_PROVIDER:
+        return jsonify({"provider": "chatwithai"})
+
+    # ── Claude ────────────────────────────────────────────────────────────
     now_dt  = datetime.now(timezone.utc)
     cut_24h = (now_dt - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
     cut_1h  = (now_dt - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
@@ -1921,12 +2105,50 @@ def get_usage(acct):
         },
     }
     if snap and "windows" in snap:
-        result["windows"] = snap["windows"]
+        result["windows"]   = snap["windows"]
         if "remaining" in snap:
             result["remaining"] = snap["remaining"]
 
     return jsonify(result)
 
+@app.route("/api/usage/all", methods=["GET"])
+def get_usage_all():
+    """
+    Return quota/credit snapshot for every configured account.
+    Calls 1min.AI for oneminai accounts, reads cached snapshots for Claude.
+    ChatWithAI accounts are skipped (no quota concept).
+    """
+    data     = store.read()
+    results  = {}
+
+    for acct in data["accounts"]:
+        name     = acct["name"]
+        provider = _provider_name(acct)
+
+        if provider == ONEMINAI_PROVIDER:
+            if not acct.get("api_key"):
+                results[name] = {"provider": "oneminai", "credits": None}
+                continue
+            client = None
+            try:
+                client  = _make_oneminai_client(acct)
+                credits = _run(client.get_team_credits())
+            except Exception as exc:
+                log.warning("Credits fetch for %s: %s", name, exc)
+                credits = None
+            finally:
+                if client:
+                    try: _run(client.close())
+                    except Exception: pass
+            results[name] = {"provider": "oneminai", "credits": credits}
+
+        elif provider == CLAUDE_PROVIDER:
+            snap = _get_latest_quota(name)
+            results[name] = {"provider": "claude", "quota": snap}
+
+        # chatwithai — omit entirely
+
+    return jsonify(results)
 
 @app.route("/api/usage/history", methods=["GET"])
 @require_account
