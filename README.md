@@ -1,14 +1,11 @@
 # ✦ ChatAI Console
 
-A self-hosted web chat interface for [Claude](https://claude.ai), [ChatWithAI.app](https://chatwithai.app), and [1min.AI](https://1min.ai), powered by the reverse-engineered `claude_webapi` and `oneminai_webapi` libraries. Multi-account management, real-time streaming, file uploads, conversation branching, usage tracking, and a Galaxy-themed UI — all in a single Flask app.
+A self-hosted, free web chat interface for [Claude](https://claude.ai), [ChatWithAI.app](https://chatwithai.app), and [1min.AI](https://1min.ai), powered by the reverse-engineered `claude_webapi` and `oneminai_webapi` libraries. Multi-account management, real-time streaming, file uploads, conversation branching, usage tracking, and a Galaxy-themed UI — all in a single Flask app.
 
 ## Features
 
 - **Multi-Account** — Add, switch, and manage Claude or MiniApps accounts. Accounts are persisted in a local JSON store.
 - **Real-Time Streaming** — Server-Sent Events deliver tokens as they're generated, with inline thinking block rendering.
-- **All Claude Models** — Sonnet 4-6, Opus 4-6, Haiku 4-5, Sonnet 3-7, Opus 4-5, and Sonnet 3-5.
-- **1min.AI Support** — 30+ models (GPT, Claude, Gemini, Grok, DeepSeek, Flux images, music, video, TTS, STT) via API key or Google OAuth.
-- **Extended Thinking** — Toggle chain-of-thought. Thinking blocks render as collapsible sections.
 - **File Uploads** — Attach  files up to 100 MB. Upload metadata tracked locally.
 - **Conversation Management** — Create, rename, pin, search, branch, and delete conversations.
 - **Artifacts & Canvas** — Split-pane canvas preview for code, HTML, SVG, and Mermaid diagram artifacts.
