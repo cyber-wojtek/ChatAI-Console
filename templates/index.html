@@ -1247,8 +1247,41 @@ a:hover { text-decoration:underline; }
 .efp-item-btn.dl:hover { color:var(--green); border-color:rgba(74,222,128,.25); }
 .efp-item-btn.attach:hover { color:var(--accent); border-color:rgba(168,85,247,.25); }
 
+
+/* ═══════════════════ PROVIDER CAPABILITY GUARDS ═══════════════════ */
+/* Applied via JS; defined here so transitions are smooth */
+.cap-hidden { display: none !important; }
+.provider-badge-chatwithai {
+  font-size: 10px; padding: 1px 6px;
+  background: rgba(56,189,248,0.12); color: #38bdf8;
+  border-radius: 4px; font-weight: 600; flex-shrink: 0;
+}
+.provider-badge-oneminai {
+  font-size: 10px; padding: 1px 6px;
+  background: var(--oneminai-dim); color: var(--oneminai);
+  border-radius: 4px; font-weight: 600; flex-shrink: 0;
+}
+.provider-badge-claude {
+  font-size: 10px; padding: 1px 6px;
+  background: var(--accent-dim); color: var(--accent);
+  border-radius: 4px; font-weight: 600; flex-shrink: 0;
+}
+/* Dim canvas toggle when unavailable */
+#canvasToggleBtn[data-unavailable] {
+  opacity: 0.3; cursor: not-allowed; pointer-events: none;
+}
+
 /* ═══════════════════ UTIL ═══════════════════ */
 .hidden { display:none !important; }
+
+/* ── 1min.AI panel ─────────────────────────────────────────── */
+.omai-tab.active {
+  color: var(--oneminai) !important;
+  border-bottom-color: var(--oneminai) !important;
+}
+#oneminaiPanel audio::-webkit-media-controls-panel {
+  background: var(--bg-3);
+}
 
 /* ═══════════════════ MARKDOWN UTILITIES ═══════════════════ */
 .md-utils {
@@ -1434,6 +1467,377 @@ a:hover { text-decoration:underline; }
 /* Tweak pct color when warn/crit */
 .mini-quota:has(.warn) .mini-quota-pct { color: #e0943a; }
 .mini-quota:has(.crit) .mini-quota-pct { color: var(--red); }
+
+/* ═══════════════════ 1MIN.AI REDESIGNED PANEL ═══════════════════ */
+:root { --omai-width: 360px; }
+
+.omai-panel {
+  width: var(--omai-width);
+  min-width: var(--omai-width);
+  background: linear-gradient(180deg, var(--bg-1) 0%, #080818 100%);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width .25s var(--ease), min-width .25s var(--ease), opacity .2s var(--ease);
+  position: relative;
+  flex-shrink: 0;
+}
+.omai-panel.collapsed {
+  width: 0;
+  min-width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Panel header ── */
+.omai-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: linear-gradient(90deg, rgba(249,115,22,0.06), transparent);
+}
+.omai-panel-logo {
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, rgba(249,115,22,0.25), rgba(249,115,22,0.08));
+  border: 1px solid rgba(249,115,22,0.35);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  flex-shrink: 0;
+  box-shadow: 0 0 18px rgba(249,115,22,0.15);
+}
+.omai-panel-title {
+  font-family: var(--font-head);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--oneminai);
+  letter-spacing: -.02em;
+}
+.omai-panel-close {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  color: var(--text-3);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all .15s;
+}
+.omai-panel-close:hover { background: var(--bg-4); color: var(--text); }
+
+/* ── Tab bar ── */
+.omai-tabs {
+  display: flex;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg-1);
+}
+.omai-tab {
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text-3);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all .15s;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+}
+.omai-tab:hover { color: var(--text-2); }
+.omai-tab.active {
+  color: var(--oneminai) !important;
+  border-bottom-color: var(--oneminai) !important;
+}
+
+/* ── Scrollable body ── */
+.omai-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+/* ── Tab content panels ── */
+.omai-tab-content { display: none; padding: 16px; }
+.omai-tab-content.active { display: flex; flex-direction: column; gap: 14px; }
+
+/* ── Field card ── */
+.omai-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-l);
+  overflow: hidden;
+}
+.omai-card-head {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border-s);
+  background: rgba(255,255,255,0.015);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.omai-card-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+
+/* ── Form elements ── */
+.omai-field { display: flex; flex-direction: column; gap: 5px; }
+.omai-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-3);
+}
+.omai-select {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+  transition: all .2s var(--ease);
+}
+.omai-select:focus { border-color: rgba(249,115,22,.4); box-shadow: 0 0 0 3px rgba(249,115,22,.06); }
+.omai-select option { background: var(--bg-3); }
+
+.omai-input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  outline: none;
+  transition: all .2s var(--ease);
+}
+.omai-input:focus { border-color: rgba(249,115,22,.4); box-shadow: 0 0 0 3px rgba(249,115,22,.06); }
+.omai-input::placeholder { color: var(--text-4); }
+
+.omai-textarea {
+  width: 100%;
+  padding: 10px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.55;
+  resize: vertical;
+  min-height: 90px;
+  outline: none;
+  transition: all .2s var(--ease);
+}
+.omai-textarea:focus { border-color: rgba(249,115,22,.4); box-shadow: 0 0 0 3px rgba(249,115,22,.06); }
+.omai-textarea::placeholder { color: var(--text-4); }
+
+/* ── Row of fields ── */
+.omai-row { display: flex; gap: 8px; }
+.omai-row .omai-field { flex: 1; }
+
+/* ── Checkbox row ── */
+.omai-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  cursor: pointer;
+  transition: background .15s;
+  user-select: none;
+}
+.omai-check-row:hover { background: var(--bg-4); }
+.omai-check-row input[type="checkbox"] { accent-color: var(--oneminai); cursor: pointer; }
+.omai-check-row span { font-size: 12px; color: var(--text-2); }
+
+/* ── Run button ── */
+.omai-run-btn {
+  width: 100%;
+  padding: 11px 16px;
+  background: linear-gradient(135deg, var(--oneminai), #ea6c0a);
+  border: none;
+  border-radius: var(--r-l);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .2s var(--ease);
+  box-shadow: 0 2px 16px rgba(249,115,22,.22), 0 0 30px rgba(249,115,22,.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  letter-spacing: -.01em;
+}
+.omai-run-btn:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 4px 24px rgba(249,115,22,.35);
+  transform: translateY(-1px);
+}
+.omai-run-btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+
+/* ── Result card ── */
+.omai-result {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+}
+.omai-result.visible { display: flex; }
+.omai-result-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r) var(--r) 0 0;
+  border-bottom: none;
+}
+.omai-result-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-3);
+}
+.omai-result-actions { display: flex; gap: 4px; }
+.omai-result-btn {
+  padding: 3px 10px;
+  background: var(--bg-4);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all .15s;
+}
+.omai-result-btn:hover { background: var(--bg-5); color: var(--text); }
+.omai-result-btn.insert { color: var(--oneminai); border-color: rgba(249,115,22,.2); }
+.omai-result-btn.insert:hover { background: var(--oneminai-dim); }
+.omai-result-content {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 0 0 var(--r) var(--r);
+  padding: 12px;
+  font-size: 13px;
+  color: var(--text);
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow-y: auto;
+  line-height: 1.65;
+  font-family: var(--font-ui);
+}
+
+/* ── Image grid ── */
+.omai-img-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.omai-img-item { position: relative; border-radius: var(--r); overflow: hidden; }
+.omai-img-item img {
+  width: 100%;
+  display: block;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.omai-img-item img:hover { opacity: .88; }
+.omai-img-save {
+  display: block;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: var(--bg-3);
+  border: 1px solid rgba(74,222,128,.2);
+  border-radius: 5px;
+  color: var(--green);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  text-decoration: none;
+  text-align: center;
+  transition: all .15s;
+}
+.omai-img-save:hover { background: var(--green-dim); text-decoration: none; }
+
+/* ── Audio player ── */
+.omai-audio-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-l);
+}
+.omai-audio-wrap audio {
+  width: 100%;
+  border-radius: var(--r);
+}
+.omai-audio-dl {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  background: var(--bg-4);
+  border: 1px solid rgba(74,222,128,.2);
+  border-radius: 6px;
+  color: var(--green);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  text-decoration: none;
+  transition: all .15s;
+  align-self: flex-start;
+}
+.omai-audio-dl:hover { background: var(--green-dim); text-decoration: none; }
+
+/* ── Divider between audio sections ── */
+.omai-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+  flex-shrink: 0;
+}
+
+/* ── Toolbar button active for omai panel ── */
+#oneminaiPanelBtn.active {
+  background: var(--oneminai-dim);
+  border-color: var(--oneminai-mid);
+  color: var(--oneminai);
+}
+
 </style>
 </head>
 
@@ -1549,6 +1953,7 @@ a:hover { text-decoration:underline; }
           <button class="tb-icon" onclick="openConvInfo()" title="Info">ⓘ</button>
           <button class="tb-icon" id="chatSearchBtn" onclick="toggleChatSearch()" title="Search messages">⌕</button>
           <button class="tb-icon" id="canvasToggleBtn" onclick="toggleCanvas()" title="Files &amp; Canvas">⊞</button>
+          <button class="tb-icon" id="oneminaiPanelBtn" onclick="toggleOneminaiPanel()" title="1min.AI Tools" style="display:none">✦</button>
           <button class="tb-icon" onclick="openSettings()" title="Settings">⚙</button>
         </div>
       </div>
@@ -1618,6 +2023,245 @@ a:hover { text-decoration:underline; }
       </div>
     </div>
   </main>
+
+  <!-- ── 1MIN.AI TOOLS PANEL (redesigned) ── -->
+  <aside class="omai-panel collapsed" id="oneminaiPanel">
+
+    <div class="omai-panel-head">
+      <div class="omai-panel-logo">✦</div>
+      <span class="omai-panel-title">1min.AI Tools</span>
+      <button class="omai-panel-close" onclick="toggleOneminaiPanel()">✕</button>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="omai-tabs">
+      <button class="omai-tab active" id="omai-tab-text"  onclick="omaiSwitchTab('text')">
+        ✏ Text
+      </button>
+      <button class="omai-tab" id="omai-tab-image" onclick="omaiSwitchTab('image')">
+        🖼 Image
+      </button>
+      <button class="omai-tab" id="omai-tab-audio" onclick="omaiSwitchTab('audio')">
+        🎵 Audio
+      </button>
+    </div>
+
+    <div class="omai-body">
+
+      <!-- ══════════════ TEXT TAB ══════════════ -->
+      <div class="omai-tab-content active" id="omai-content-text">
+
+        <div class="omai-card">
+          <div class="omai-card-head">⚙ Tool Settings</div>
+          <div class="omai-card-body">
+
+            <div class="omai-field">
+              <label class="omai-label">Operation</label>
+              <select class="omai-select" id="omaiTool" onchange="updateOmaiToolHint()">
+                <option value="grammar">✅  Grammar Check</option>
+                <option value="paraphrase">🔄  Paraphrase</option>
+                <option value="rewrite">✍️  Rewrite</option>
+                <option value="summarize">📋  Summarize</option>
+                <option value="expand">📈  Expand</option>
+                <option value="shorten">📉  Shorten</option>
+                <option value="translate">🌐  Translate</option>
+              </select>
+            </div>
+
+            <div class="omai-field" id="omaiTranslateLang" style="display:none">
+              <label class="omai-label">Target Language</label>
+              <input class="omai-input" type="text" id="omaiLang" value="Polish"
+                placeholder="e.g. Spanish, French, German…">
+            </div>
+
+            <div class="omai-field" id="omaiToneRow">
+              <label class="omai-label">Tone</label>
+              <select class="omai-select" id="omaiTone">
+                <option value="professional">Professional</option>
+                <option value="casual">Casual</option>
+                <option value="friendly">Friendly</option>
+                <option value="formal">Formal</option>
+                <option value="persuasive">Persuasive</option>
+              </select>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="omai-card">
+          <div class="omai-card-head">📝 Input Text</div>
+          <div class="omai-card-body">
+            <textarea class="omai-textarea" id="omaiTextInput" rows="6"
+              placeholder="Paste or type your text here…"></textarea>
+          </div>
+        </div>
+
+        <button class="omai-run-btn" onclick="runOmaiTextTool()">
+          ▶ Run Tool
+        </button>
+
+        <div class="omai-result" id="omaiTextResult">
+          <div class="omai-result-bar">
+            <span class="omai-result-label">Result</span>
+            <div class="omai-result-actions">
+              <button class="omai-result-btn" onclick="omaiCopyResult()">⎘ Copy</button>
+              <button class="omai-result-btn insert" onclick="omaiInsertResult()">↩ Insert</button>
+            </div>
+          </div>
+          <div class="omai-result-content" id="omaiTextResultContent"></div>
+        </div>
+
+      </div><!-- /text tab -->
+
+      <!-- ══════════════ IMAGE TAB ══════════════ -->
+      <div class="omai-tab-content" id="omai-content-image">
+
+        <div class="omai-card">
+          <div class="omai-card-head">🖼 Model & Size</div>
+          <div class="omai-card-body">
+
+            <div class="omai-field">
+              <label class="omai-label">Model</label>
+              <select class="omai-select" id="omaiImageModel">
+                <option value="black-forest-labs/flux-1.1-pro">Flux 1.1 Pro</option>
+                <option value="black-forest-labs/flux-2-pro">Flux 2 Pro</option>
+                <option value="black-forest-labs/flux-schnell">Flux Schnell (fast)</option>
+                <option value="gpt-image-1">GPT Image 1</option>
+                <option value="stable-image">Stable Image Core</option>
+                <option value="recraft">Recraft</option>
+              </select>
+            </div>
+
+            <div class="omai-row">
+              <div class="omai-field">
+                <label class="omai-label">Width px</label>
+                <input class="omai-input" type="number" id="omaiImgW"
+                  value="1024" min="256" max="2048" step="64">
+              </div>
+              <div class="omai-field">
+                <label class="omai-label">Height px</label>
+                <input class="omai-input" type="number" id="omaiImgH"
+                  value="1024" min="256" max="2048" step="64">
+              </div>
+              <div class="omai-field">
+                <label class="omai-label">Count</label>
+                <input class="omai-input" type="number" id="omaiImgN"
+                  value="1" min="1" max="4">
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="omai-card">
+          <div class="omai-card-head">💬 Prompt</div>
+          <div class="omai-card-body">
+            <textarea class="omai-textarea" id="omaiImagePrompt" rows="5"
+              placeholder="Describe the image you want to generate…"></textarea>
+          </div>
+        </div>
+
+        <button class="omai-run-btn" onclick="runOmaiImageGen()">
+          ✨ Generate Image
+        </button>
+
+        <div class="omai-result" id="omaiImageResult">
+          <div class="omai-img-grid" id="omaiImageGrid"></div>
+        </div>
+
+      </div><!-- /image tab -->
+
+      <!-- ══════════════ AUDIO TAB ══════════════ -->
+      <div class="omai-tab-content" id="omai-content-audio">
+
+        <!-- TTS section -->
+        <div class="omai-card">
+          <div class="omai-card-head">🔊 Text to Speech</div>
+          <div class="omai-card-body">
+
+            <div class="omai-row">
+              <div class="omai-field">
+                <label class="omai-label">Model</label>
+                <select class="omai-select" id="omaiTTSModel">
+                  <option value="tts-1">TTS-1</option>
+                  <option value="tts-1-hd">TTS-1 HD</option>
+                  <option value="elevenlabs-tts">ElevenLabs</option>
+                </select>
+              </div>
+              <div class="omai-field">
+                <label class="omai-label">Voice</label>
+                <select class="omai-select" id="omaiTTSVoice">
+                  <option value="alloy">Alloy</option>
+                  <option value="nova">Nova</option>
+                  <option value="echo">Echo</option>
+                  <option value="fable">Fable</option>
+                  <option value="onyx">Onyx</option>
+                  <option value="shimmer">Shimmer</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="omai-field">
+              <label class="omai-label">Text to speak</label>
+              <textarea class="omai-textarea" id="omaiTTSText" rows="4"
+                placeholder="Enter the text you want to synthesize…"></textarea>
+            </div>
+
+            <button class="omai-run-btn" onclick="runOmaiTTS()">
+              🔊 Synthesize Speech
+            </button>
+
+            <div class="omai-audio-wrap" id="omaiTTSResult" style="display:none">
+              <audio id="omaiTTSAudio" controls></audio>
+              <a id="omaiTTSDownload" class="omai-audio-dl" download>⬇ Download</a>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Music section -->
+        <div class="omai-card">
+          <div class="omai-card-head">🎵 Music Generation</div>
+          <div class="omai-card-body">
+
+            <div class="omai-row">
+              <div class="omai-field">
+                <label class="omai-label">Model</label>
+                <select class="omai-select" id="omaiMusicModel">
+                  <option value="lyria-002">Lyria 2</option>
+                  <option value="suno-ttapi">Suno</option>
+                  <option value="music-u">Udio</option>
+                </select>
+              </div>
+            </div>
+
+            <label class="omai-check-row">
+              <input type="checkbox" id="omaiInstrumental">
+              <span>Instrumental only (no vocals)</span>
+            </label>
+
+            <div class="omai-field">
+              <label class="omai-label">Describe the music</label>
+              <textarea class="omai-textarea" id="omaiMusicPrompt" rows="4"
+                placeholder="e.g. Chill lo-fi hip hop, melancholic, piano and soft drums…"></textarea>
+            </div>
+
+            <button class="omai-run-btn" onclick="runOmaiMusic()">
+              🎵 Generate Music
+            </button>
+
+            <div class="omai-audio-wrap" id="omaiMusicResult" style="display:none">
+              <audio id="omaiMusicAudio" controls></audio>
+              <a id="omaiMusicDownload" class="omai-audio-dl" download>⬇ Download</a>
+            </div>
+
+          </div>
+        </div>
+
+      </div><!-- /audio tab -->
+
+    </div><!-- /.omai-body -->
+  </aside>
 
   <!-- ── CANVAS PANEL ── -->
   <aside class="canvas-panel collapsed" id="canvasPanel">
@@ -1921,7 +2565,7 @@ function navToHome(replace) {
   S.convId = null;
   document.getElementById('chat').classList.add('hidden');
   document.getElementById('splash').classList.remove('hidden');
-  document.title = 'Claude Console';
+  document.title = 'ChatAI Console';
   if (replace) history.replaceState(null, '', '/');
   else history.pushState(null, '', '/');
   renderSidebar();
@@ -1935,7 +2579,7 @@ async function onPopState(e) {
     S.convId = null;
     document.getElementById('chat').classList.add('hidden');
     document.getElementById('splash').classList.remove('hidden');
-    document.title = 'Claude Console';
+    document.title = 'ChatAI Console';
     renderSidebar();
   }
 }
@@ -2270,6 +2914,18 @@ function editMsg(uuid) {
 async function refreshAccountState() {
   const data = await fetch('/api/accounts').then(r => r.json());
   S.accounts      = data.accounts || [];
+  // Sort by (provider, name) for consistent display order
+  S.accounts.sort((a, b) => {
+    const provA = (a.provider || 'claude').toLowerCase();
+    const provB = (b.provider || 'claude').toLowerCase();
+    if (provA < provB) return -1;
+    if (provA > provB) return 1;
+    const nameA = a.name.toLowerCase();
+    const nameB = b.name.toLowerCase();
+    if (nameA < nameB) return -1;
+    if (nameA > nameB) return 1;
+    return 0;
+  });
   S.activeAccount = data.active   || null;
   S.configured    = S.accounts.length > 0;
 
@@ -2296,7 +2952,84 @@ function applyProviderUI(acct) {
   const models    = acct.models        || [];
   const defModel  = acct.default_model || 'claude-sonnet-4-6';
 
+  // ── Capability flags (graceful defaults keep Claude fully enabled) ──────
+  const supFiles      = provInfo.supports_files      !== false && provider !== 'chatwithai';
+  const supCanvas     = provInfo.supports_canvas     !== false && provider === 'claude';
+  const supArtifacts  = provInfo.supports_artifacts  !== false && provider === 'claude';
+  const supThinking   = provInfo.supports_thinking   !== false && provider === 'claude';
+  const supBranching  = provInfo.supports_branching  !== false && provider === 'claude';
+  const supDownload   = provInfo.supports_download   !== false && provider === 'claude';
+  const supReuseFiles = provInfo.supports_reuse_files !== false && provider !== 'chatwithai';
+
+  // ── Toolbar controls ─────────────────────────────────────────────────────
+    // Show/hide Claude-specific toolbar items
+  const thinkBtn        = document.getElementById('thinkBtn');
+  const branchToggleBtn = document.getElementById('branchToggleBtn');
+  const fileInpBtn      = document.querySelector('.inp-btn label[for="fileInp"]')?.parentElement;
+  const efpBtn          = document.getElementById('efpBtn');
+  const msgTa           = document.getElementById('msgTa');
+  const quotaWrap       = document.getElementById('quotaWrap');
+  const canvasToggleBtn = document.getElementById('canvasToggleBtn');
+  const chatSearchBtn   = document.getElementById('chatSearchBtn');
+
+  if (thinkBtn)        thinkBtn.style.display        = supThinking  ? '' : 'none';
+  if (branchToggleBtn) branchToggleBtn.style.display = supBranching ? '' : 'none';
+  if (canvasToggleBtn) canvasToggleBtn.style.display = supCanvas    ? '' : 'none';
+
+  // Hide canvas panel entirely if not supported
+  const canvasPanel = document.getElementById('canvasPanel');
+  if (canvasPanel) {
+    if (!supCanvas) {
+      canvasPanel.classList.add('collapsed');
+      S.canvasOpen = false;
+    }
+    canvasPanel.style.display = supCanvas ? '' : 'none';
+  }
+
+  if (fileInpBtn) fileInpBtn.style.display = supFiles      ? '' : 'none';
+  if (efpBtn)     efpBtn.style.display     = supReuseFiles ? '' : 'none';
+
+  // ── Placeholder text ──────────────────────────────────────────────────────
+  if (msgTa) {
+    if      (provider === 'chatwithai') msgTa.placeholder = 'Message ChatWithAI…';
+    else if (provider === 'oneminai')   msgTa.placeholder = 'Message 1min.AI…';
+    else                                msgTa.placeholder = 'Message Claude…';
+  }
+
+  // ── Quota bar ─────────────────────────────────────────────────────────────
+  if (quotaWrap) {
+    if (provider === 'claude' || provider === 'oneminai') {
+      fetchQuota();
+    } else {
+      quotaWrap.style.display = 'none';
+    }
+  }
+
+  // ── 1min.AI panel button visibility ──────────────────────────────────────
+  _syncOneminaiPanelBtn();
+  // Pre-populate omaiTool hint on provider switch
+  updateOmaiToolHint();
+
+  // ── Branch row: collapse and hide if not supported ────────────────────────
+  if (!supBranching) {
+    const branchRow = document.getElementById('branchRow');
+    if (branchRow) branchRow.classList.add('hidden');
+    S.branchVisible = false;
+  }
+
+  // Store on tab account for downstream consumers
+  if (S.tabAccount) {
+    S.tabAccount._supFiles      = supFiles;
+    S.tabAccount._supCanvas     = supCanvas;
+    S.tabAccount._supArtifacts  = supArtifacts;
+    S.tabAccount._supThinking   = supThinking;
+    S.tabAccount._supBranching  = supBranching;
+    S.tabAccount._supDownload   = supDownload;
+    S.tabAccount._supReuseFiles = supReuseFiles;
+  }
+
   // Model selector — built from the account's own model list
+
   const sel = document.getElementById('modelSel');
   if (sel) {
     sel.innerHTML = '';
@@ -2352,14 +3085,6 @@ function applyProviderUI(acct) {
       sel.selectedIndex = 0;
     }
   }
-
-  // Show/hide Claude-specific toolbar items
-  const thinkBtn        = document.getElementById('thinkBtn');
-  const branchToggleBtn = document.getElementById('branchToggleBtn');
-  const fileInpBtn      = document.querySelector('.inp-btn label[for="fileInp"]')?.parentElement;
-  const efpBtn          = document.getElementById('efpBtn');
-  const msgTa           = document.getElementById('msgTa');
-  const quotaWrap       = document.getElementById('quotaWrap');
 
   if (thinkBtn)        thinkBtn.style.display        = provInfo.supports_thinking  ? '' : 'none';
   if (branchToggleBtn) branchToggleBtn.style.display = provInfo.supports_branching ? '' : 'none';
@@ -3085,7 +3810,8 @@ async function selectConv(id, skipPush) {
   renderMsgs();
   syncToolbar();
   buildBranchSel();
-  if (S.canvasOpen && S.canvasTab === 'files') renderCanvasFiles();
+  const _scSel = (S.tabAccount?._supCanvas !== false) && (S.tabAccount?.provider || 'claude').toLowerCase() === 'claude';
+  if (_scSel && S.canvasOpen && S.canvasTab === 'files') renderCanvasFiles();
   const c = S.convs[id];
   const name = c?.name || 'Conversation';
   document.title = name + ' — Claude Console';
@@ -3132,6 +3858,7 @@ function renderSidebar() {
         </div>
         <div class="conv-btns">
           <button class="conv-btn pin-btn pinned" onclick="togglePin(event,'${id}')" title="Unpin">📌</button>
+          <button class="conv-btn" onclick="renameConv(event,'${id}')" title="Rename" style="font-size:11px">✎</button>
           <button class="conv-btn del-btn" onclick="delConv(event,'${id}')">✕</button>
         </div>`;
       el.onclick = e => {
@@ -3172,6 +3899,7 @@ function renderSidebar() {
       </div>
       <div class="conv-btns">
         <button class="conv-btn pin-btn" onclick="togglePin(event,'${id}')" title="Pin">📌</button>
+        <button class="conv-btn" onclick="renameConv(event,'${id}')" title="Rename" style="font-size:11px">✎</button>
       </div>`;
     el.onclick = e => {
       if (e.target.closest('.conv-btns')) return;
@@ -3179,6 +3907,240 @@ function renderSidebar() {
     };
     list.appendChild(el);
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// CONVERSATION RENAME
+// ══════════════════════════════════════════════════════════════════════════
+
+async function renameConv(e, id) {
+  e.stopPropagation();
+  const c    = S.convs[id];
+  const old  = c?.name || S.pinnedIds.find(p => p.conv_uuid === id)?.display_name || '';
+  const name = prompt('Rename conversation:', old);
+  if (!name || name === old) return;
+
+  try {
+    const r = await apiFetch(`/api/conversations/${id}/rename`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: name }),
+    });
+    if (r.success || r.conversation) {
+      // Update local cache
+      if (S.convs[id]) S.convs[id].name = name;
+      const pinned = S.pinnedIds.find(p => p.conv_uuid === id);
+      if (pinned) pinned.display_name = name;
+      // Also update allConvs list
+      const ac = (S.allConvs || []).find(c => c.uuid === id);
+      if (ac) ac.name = name;
+      renderSidebar();
+      if (S.convId === id) syncToolbar();
+      toast('Renamed', 'ok');
+    } else {
+      toast('Rename failed: ' + (r.error || 'unknown'), 'err');
+    }
+  } catch (err) {
+    toast('Rename error: ' + err.message, 'err');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 1MIN.AI TOOLS PANEL
+// ══════════════════════════════════════════════════════════════════════════
+
+function toggleOneminaiPanel() {
+  const panel = document.getElementById('oneminaiPanel');
+  const btn   = document.getElementById('oneminaiPanelBtn');
+  const isCollapsed = panel.classList.contains('collapsed');
+  panel.classList.toggle('collapsed', !isCollapsed);
+  if (btn) btn.classList.toggle('active', !isCollapsed ? false : true);
+}
+
+function omaiSwitchTab(tab) {
+  ['text', 'image', 'audio'].forEach(t => {
+    const btn     = document.getElementById(`omai-tab-${t}`);
+    const content = document.getElementById(`omai-content-${t}`);
+    const isActive = t === tab;
+    if (btn)     btn.classList.toggle('active', isActive);
+    if (content) {
+      content.classList.toggle('active', isActive);
+    }
+  });
+}
+
+function updateOmaiToolHint() {
+  const tool  = document.getElementById('omaiTool')?.value;
+  const lang  = document.getElementById('omaiTranslateLang');
+  const tone  = document.getElementById('omaiToneRow');
+  if (lang)  lang.style.display  = tool === 'translate' ? '' : 'none';
+  if (tone)  tone.style.display  = ['grammar', 'summarize', 'expand', 'shorten', 'translate'].includes(tool) ? 'none' : '';
+}
+
+async function runOmaiTextTool() {
+  const tool   = document.getElementById('omaiTool')?.value;
+  const text   = document.getElementById('omaiTextInput')?.value.trim();
+  const lang   = document.getElementById('omaiLang')?.value.trim() || 'English';
+  const tone   = document.getElementById('omaiTone')?.value || 'professional';
+  const result = document.getElementById('omaiTextResult');
+  const output = document.getElementById('omaiTextResultContent');
+
+  if (!text) { toast('Enter some text first', 'err'); return; }
+
+  if (result) result.classList.remove('visible');
+  toast('Processing…', 'info');
+
+  try {
+    const r = await apiFetch('/api/oneminai/content-tool', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool, prompt: text, language: lang, tone }),
+    });
+    if (r.text !== undefined) {
+      if (output) output.textContent = r.text;
+      if (result) result.style.display = '';
+      toast('Done!', 'ok');
+    } else {
+      toast('Error: ' + (r.error || 'unknown'), 'err');
+    }
+  } catch (err) {
+    toast('Error: ' + err.message, 'err');
+  }
+}
+
+function omaiCopyResult() {
+  const el = document.getElementById('omaiTextResultContent');
+  if (el) navigator.clipboard.writeText(el.textContent).then(() => toast('Copied!', 'ok'));
+}
+
+function omaiInsertResult() {
+  const el = document.getElementById('omaiTextResultContent');
+  if (!el) return;
+  const ta = document.getElementById('msgTa');
+  if (ta) {
+    const pos = ta.selectionStart;
+    ta.value  = ta.value.slice(0, pos) + el.textContent + ta.value.slice(ta.selectionEnd);
+    ta.focus();
+    resizeTa(ta);
+    updateCount(ta);
+    toast('Inserted', 'ok');
+  }
+}
+
+async function runOmaiImageGen() {
+  const prompt = document.getElementById('omaiImagePrompt')?.value.trim();
+  const model  = document.getElementById('omaiImageModel')?.value;
+  const w      = parseInt(document.getElementById('omaiImgW')?.value || '1024');
+  const h      = parseInt(document.getElementById('omaiImgH')?.value || '1024');
+  const n      = parseInt(document.getElementById('omaiImgN')?.value || '1');
+  const result = document.getElementById('omaiImageResult');
+  const grid   = document.getElementById('omaiImageGrid');
+
+  if (!prompt) { toast('Enter a prompt first', 'err'); return; }
+
+  toast('Generating image…', 'info');
+  if (result) result.classList.remove('visible');
+  if (grid)   grid.innerHTML = '';
+
+  try {
+    const r = await apiFetch('/api/oneminai/image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, model, width: w, height: h, num_images: n }),
+    });
+    if (r.images && r.images.length) {
+      if (result) result.classList.add('visible');
+      r.images.forEach(img => {
+        const wrap = document.createElement('div');
+        wrap.className = 'omai-img-item';
+        const im = document.createElement('img');
+        im.src = img.url;
+        im.alt = 'Generated image';
+        im.title = 'Click to open in canvas';
+        im.onclick = () => openInCanvas(img.url, 'generated.png', 'image/png');
+        const dl = document.createElement('a');
+        dl.href = img.url; dl.download = 'image.png';
+        dl.className = 'omai-img-save';
+        dl.textContent = '⬇ Save';
+        wrap.appendChild(im); wrap.appendChild(dl);
+        grid.appendChild(wrap);
+      });
+      toast(`Generated ${r.images.length} image(s)`, 'ok');
+    } else {
+      toast('Error: ' + (r.error || 'no images returned'), 'err');
+    }
+  } catch (err) {
+    toast('Error: ' + err.message, 'err');
+  }
+}
+
+async function runOmaiTTS() {
+  const text  = document.getElementById('omaiTTSText')?.value.trim();
+  const model = document.getElementById('omaiTTSModel')?.value;
+  const voice = document.getElementById('omaiTTSVoice')?.value;
+  const res   = document.getElementById('omaiTTSResult');
+  const audio = document.getElementById('omaiTTSAudio');
+  const dl    = document.getElementById('omaiTTSDownload');
+
+  if (!text) { toast('Enter text first', 'err'); return; }
+  if (res) res.style.display = 'none';
+  toast('Synthesizing…', 'info');
+
+  try {
+    const r = await apiFetch('/api/oneminai/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, model, voice }),
+    });
+    if (r.audio_url) {
+      if (audio) { audio.src = r.audio_url; audio.load(); }
+      if (dl)    { dl.href = r.audio_url; dl.download = 'speech.mp3'; }
+      if (res)   res.style.display = 'flex';
+      toast('Done!', 'ok');
+    } else {
+      toast('Error: ' + (r.error || 'no audio'), 'err');
+    }
+  } catch (err) {
+    toast('Error: ' + err.message, 'err');
+  }
+}
+
+async function runOmaiMusic() {
+  const prompt = document.getElementById('omaiMusicPrompt')?.value.trim();
+  const model  = document.getElementById('omaiMusicModel')?.value;
+  const instr  = document.getElementById('omaiInstrumental')?.checked;
+  const res    = document.getElementById('omaiMusicResult');
+  const audio  = document.getElementById('omaiMusicAudio');
+  const dl     = document.getElementById('omaiMusicDownload');
+
+  if (!prompt) { toast('Enter a music description first', 'err'); return; }
+  if (res) res.style.display = 'none';
+  toast('Composing music… (this may take a minute)', 'info');
+
+  try {
+    const r = await apiFetch('/api/oneminai/music', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, model, instrumental: instr }),
+    });
+    if (r.audio_url) {
+      if (audio) { audio.src = r.audio_url; audio.load(); }
+      if (dl)    { dl.href = r.audio_url; dl.download = 'music.mp3'; }
+      if (res)   res.style.display = 'flex';
+      toast('Music ready!', 'ok');
+    } else {
+      toast('Error: ' + (r.error || 'no audio'), 'err');
+    }
+  } catch (err) {
+    toast('Error: ' + err.message, 'err');
+  }
+}
+
+// Show 1min.AI panel button only for oneminai accounts
+function _syncOneminaiPanelBtn() {
+  const btn  = document.getElementById('oneminaiPanelBtn');
+  const prov = getTabProvider();
+  if (btn) btn.style.display = prov === 'oneminai' ? '' : 'none';
 }
 
 function filterConvs(q) {
@@ -3203,7 +4165,8 @@ async function refreshConv() {
   if (!S.convId) return;
   await fetchConvMeta(S.convId);
   renderMsgs(); syncToolbar(); buildBranchSel();
-  if (S.canvasOpen && S.canvasTab === 'files') renderCanvasFiles();
+  const _scRef = (S.tabAccount?._supCanvas !== false) && (S.tabAccount?.provider || 'claude').toLowerCase() === 'claude';
+  if (_scRef && S.canvasOpen && S.canvasTab === 'files') renderCanvasFiles();
   toast('Refreshed', 'ok');
 }
 
@@ -3394,14 +4357,16 @@ function buildMsgEl(msg) {
     </button>
   </div>` : '';
 
+  const _supBranch = S.tabAccount?._supBranching !== false &&
+                     (S.tabAccount?.provider || 'claude').toLowerCase() === 'claude';
   const utilsBottomHtml = msg.sender === 'assistant' ? `
     <div class="md-utils bottom">
       <button class="md-util-btn" onclick="regenerateMsg('${msg.uuid}')">
         <span>↻</span><span>Regenerate</span>
       </button>
-      <button class="md-util-btn" onclick="forkFromMsg('${msg.uuid}')">
+      ${_supBranch ? `<button class="md-util-btn" onclick="forkFromMsg('${msg.uuid}')">
         <span>⎇</span><span>Fork</span>
-      </button>
+      </button>` : ''}
     </div>` : '';
 
   el.innerHTML = `
@@ -3421,7 +4386,7 @@ function buildMsgEl(msg) {
       ${utilsBottomHtml}
     </div>
     <div class="msg-actions">
-      ${msg.sender === 'human' ? `<button class="msg-act-btn edit-btn" onclick="editMsg('${msg.uuid}')">✎ Edit</button>` : ''}
+      ${msg.sender === 'human' && (S.tabAccount?._supBranching !== false) ? `<button class="msg-act-btn edit-btn" onclick="editMsg('${msg.uuid}')">✎ Edit</button>` : ''}
     </div>`;
 
   return el;
@@ -3464,10 +4429,14 @@ function renderBlock(block, streaming = false, sender = 'assistant') {
     }
 
     case 'tool_use': {
+      // Artifacts and present_files are Claude-only
+      const _prov = (S.tabAccount?.provider || 'claude').toLowerCase();
       if (block.name === 'artifacts') {
+        if (_prov !== 'claude') return '';
         return renderArtifactBlock(block, streaming);
       }
       if (block.name === 'present_files') {
+        if (_prov !== 'claude') return '';
         return renderPresentFiles(block);
       }
       const tuId  = 'tu_' + Math.random().toString(36).slice(2, 9);
@@ -4344,7 +5313,8 @@ async function doSend() {
 
     await fetchConvMeta(S.convId);
     renderMsgs(); buildBranchSel();
-    if (S.canvasOpen && S.canvasTab === 'files') renderCanvasFiles();
+    const _sc = (S.tabAccount?._supCanvas !== false) && (S.tabAccount?.provider || 'claude').toLowerCase() === 'claude';
+    if (_sc && S.canvasOpen && S.canvasTab === 'files') renderCanvasFiles();
     if (getTabProvider() === 'oneminai') fetchQuota(); 
 
   } catch (err) {

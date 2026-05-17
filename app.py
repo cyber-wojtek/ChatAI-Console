@@ -879,10 +879,11 @@ def _oauth_preflight(subpath):
 
 # ── 1min.AI conversation list ─────────────────────────────────────────────────
 
-def _list_convs_oneminai(acct: dict):
+def _list_convs_oneminai(acct: dict, search: str | None = None, limit: int = 50):
+    """List 1min.AI conversations, optionally filtered by *search* query."""
     client = _make_oneminai_client(acct)
     try:
-        records = _run(client.list_conversations())
+        records = _run(client.list_conversations(search=search, limit=limit))
         _run(client.close())
         return [
             {
@@ -985,7 +986,143 @@ def _upload_file_oneminai(acct: dict, conv_id: str, f) -> dict:
         "_mime":      mime,
     }
 
+# ── 1min.AI conversation rename ──────────────────────────────────────────────
+
+def _rename_conv_oneminai(acct: dict, conv_id: str, title: str) -> dict:
+    """Rename a 1min.AI conversation via the updated client."""
+    client = _make_oneminai_client(acct)
+    try:
+        rec = _run(client.rename_conversation(conv_id, title))
+        _run(client.close())
+        return {
+            "uuid":       rec.conversation_id,
+            "name":       rec.title,
+            "updated_at": _now(),
+        }
+    except Exception as exc:
+        log.warning("1min.AI rename_conversation: %s", exc)
+        try: _run(client.close())
+        except Exception: pass
+        return {"uuid": conv_id, "name": title, "updated_at": _now()}
+
+
+# ── 1min.AI music generation ──────────────────────────────────────────────────
+
+def _sync_generate_music_oneminai(
+    acct: dict,
+    prompt: str,
+    model: str,
+    instrumental: bool = False,
+    duration: float | None = None,
+) -> dict:
+    """Generate music via 1min.AI and return a response dict."""
+    client = _make_oneminai_client(acct)
+    try:
+        kwargs: dict = {"instrumental": instrumental}
+        if duration is not None:
+            kwargs["duration"] = duration
+        result = _run(client.generate_music(prompt, model=model, **kwargs))
+        _run(client.close())
+        return {"audio_url": result.audio_url, "model": result.model,
+                "record_id": result.record_id}
+    except Exception as exc:
+        try: _run(client.close())
+        except Exception: pass
+        raise RuntimeError(str(exc)) from exc
+
+
+# ── 1min.AI image generation ──────────────────────────────────────────────────
+
+def _sync_generate_image_oneminai(
+    acct: dict,
+    prompt: str,
+    model: str,
+    width: int = 1024,
+    height: int = 1024,
+    num_images: int = 1,
+) -> dict:
+    """Generate image(s) via 1min.AI."""
+    client = _make_oneminai_client(acct)
+    try:
+        result = _run(client.generate_image(
+            prompt, model=model,
+            width=width, height=height, num_images=num_images,
+        ))
+        _run(client.close())
+        return {
+            "images": [{"url": img.url} for img in result.images],
+            "model":  result.model,
+            "record_id": result.record_id,
+        }
+    except Exception as exc:
+        try: _run(client.close())
+        except Exception: pass
+        raise RuntimeError(str(exc)) from exc
+
+
+# ── 1min.AI TTS ───────────────────────────────────────────────────────────────
+
+def _sync_tts_oneminai(
+    acct: dict,
+    text: str,
+    model: str,
+    voice: str,
+    speed: float = 1.0,
+) -> dict:
+    """Text-to-speech via 1min.AI."""
+    client = _make_oneminai_client(acct)
+    try:
+        result = _run(client.text_to_speech(text, model=model, voice=voice, speed=speed))
+        _run(client.close())
+        return {"audio_url": result.audio_url, "model": result.model,
+                "record_id": result.record_id}
+    except Exception as exc:
+        try: _run(client.close())
+        except Exception: pass
+        raise RuntimeError(str(exc)) from exc
+
+
+# ── 1min.AI content tools ─────────────────────────────────────────────────────
+
+def _sync_content_tool_oneminai(
+    acct: dict,
+    tool: str,
+    prompt: str,
+    **kwargs: str,
+) -> str:
+    """
+    Run a content-tool call (summarize, translate, grammar, etc.)
+    and return the result text.
+    """
+    _TOOL_MAP = {
+        "grammar":    "check_grammar",
+        "paraphrase": "paraphrase",
+        "rewrite":    "rewrite",
+        "summarize":  "summarize",
+        "expand":     "expand_content",
+        "shorten":    "shorten_content",
+        "translate":  "translate",
+    }
+    method_name = _TOOL_MAP.get(tool)
+    if not method_name:
+        raise ValueError(f"Unknown content tool: {tool!r}")
+    client = _make_oneminai_client(acct)
+    try:
+        method = getattr(client, method_name)
+        if tool == "translate":
+            result = _run(method(prompt, kwargs.get("language", "English")))
+        else:
+            result = _run(method(prompt, **{k: v for k, v in kwargs.items() if k != "language"}))
+        _run(client.close())
+        return result.text
+    except Exception as exc:
+        try: _run(client.close())
+        except Exception: pass
+        raise RuntimeError(str(exc)) from exc
+
+
 @app.route("/api/ping")
+
 def ping():
     return jsonify({"ok": True})
 
@@ -1069,7 +1206,149 @@ def api_error_handler(fn):
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
+# ── 1min.AI extra endpoints ───────────────────────────────────────────────────
+
+@app.route("/api/conversations/<conv_id>/rename", methods=["PATCH"])
+@require_account
+@api_error_handler
+def rename_conversation_route(acct, conv_id):
+    """Rename a conversation (all providers)."""
+    data  = request.json or {}
+    title = (data.get("title") or data.get("name") or "").strip()
+    if not title:
+        return jsonify({"error": "title is required"}), 400
+
+    provider = _provider_name(acct)
+
+    if provider == ONEMINAI_PROVIDER:
+        result = _rename_conv_oneminai(acct, conv_id, title)
+        # Also update local metadata
+        def fn(store_data):
+            for a in store_data["accounts"]:
+                if a["name"] == acct["name"]:
+                    for c in a.get("pinned_conversations", []):
+                        if c.get("conv_uuid") == conv_id:
+                            c["display_name"] = title
+                            break
+                    break
+        store.mutate(fn)
+        return jsonify({"success": True, "conversation": result})
+
+    if provider == CHATWITHAI_PROVIDER:
+        def fn(store_data):
+            for a in store_data["accounts"]:
+                if a["name"] == acct["name"]:
+                    for c in a.get("pinned_conversations", []):
+                        if c.get("conv_uuid") == conv_id:
+                            c["display_name"] = title
+                            break
+                    break
+        store.mutate(fn)
+        return jsonify({"success": True, "conversation": {"uuid": conv_id, "name": title}})
+
+    # Claude
+    client = _make_claude_client(acct)
+    try:
+        _run(client.update_conversation_settings(conv_id, {"name": title}))
+    finally:
+        _run(client.close())
+    def fn(store_data):
+        for a in store_data["accounts"]:
+            if a["name"] == acct["name"]:
+                for c in a.get("pinned_conversations", []):
+                    if c.get("conv_uuid") == conv_id:
+                        c["display_name"] = title
+                        break
+                break
+    store.mutate(fn)
+    return jsonify({"success": True, "conversation": {"uuid": conv_id, "name": title}})
+
+
+@app.route("/api/oneminai/music", methods=["POST"])
+@require_account
+@api_error_handler
+def oneminai_generate_music(acct):
+    """Generate music via 1min.AI."""
+    if _provider_name(acct) != ONEMINAI_PROVIDER:
+        return jsonify({"error": "Not a 1min.AI account"}), 400
+    data         = request.json or {}
+    prompt       = (data.get("prompt") or "").strip()
+    model        = (data.get("model") or "lyria-002").strip()
+    instrumental = bool(data.get("instrumental", False))
+    duration     = data.get("duration")
+    if not prompt:
+        return jsonify({"error": "prompt is required"}), 400
+    result = _sync_generate_music_oneminai(
+        acct, prompt, model, instrumental=instrumental,
+        duration=float(duration) if duration is not None else None,
+    )
+    return jsonify(result)
+
+
+@app.route("/api/oneminai/image", methods=["POST"])
+@require_account
+@api_error_handler
+def oneminai_generate_image(acct):
+    """Generate image(s) via 1min.AI."""
+    if _provider_name(acct) != ONEMINAI_PROVIDER:
+        return jsonify({"error": "Not a 1min.AI account"}), 400
+    data       = request.json or {}
+    prompt     = (data.get("prompt") or "").strip()
+    model      = (data.get("model") or "black-forest-labs/flux-1.1-pro").strip()
+    width      = int(data.get("width", 1024))
+    height     = int(data.get("height", 1024))
+    num_images = int(data.get("num_images", 1))
+    if not prompt:
+        return jsonify({"error": "prompt is required"}), 400
+    result = _sync_generate_image_oneminai(
+        acct, prompt, model, width=width, height=height, num_images=num_images
+    )
+    return jsonify(result)
+
+
+@app.route("/api/oneminai/tts", methods=["POST"])
+@require_account
+@api_error_handler
+def oneminai_tts(acct):
+    """Text-to-speech via 1min.AI."""
+    if _provider_name(acct) != ONEMINAI_PROVIDER:
+        return jsonify({"error": "Not a 1min.AI account"}), 400
+    data  = request.json or {}
+    text  = (data.get("text") or data.get("prompt") or "").strip()
+    model = (data.get("model") or "tts-1").strip()
+    voice = (data.get("voice") or "alloy").strip()
+    speed = float(data.get("speed", 1.0))
+    if not text:
+        return jsonify({"error": "text is required"}), 400
+    result = _sync_tts_oneminai(acct, text, model, voice, speed)
+    return jsonify(result)
+
+
+@app.route("/api/oneminai/content-tool", methods=["POST"])
+@require_account
+@api_error_handler
+def oneminai_content_tool(acct):
+    """
+    Generic content tool endpoint for 1min.AI:
+    grammar, paraphrase, rewrite, summarize, expand, shorten, translate.
+    """
+    if _provider_name(acct) != ONEMINAI_PROVIDER:
+        return jsonify({"error": "Not a 1min.AI account"}), 400
+    data     = request.json or {}
+    tool     = (data.get("tool") or "").strip().lower()
+    prompt   = (data.get("prompt") or data.get("text") or "").strip()
+    language = (data.get("language") or "English").strip()
+    tone     = (data.get("tone") or "professional").strip()
+    if not tool or not prompt:
+        return jsonify({"error": "tool and prompt are required"}), 400
+    text = _sync_content_tool_oneminai(
+        acct, tool, prompt, language=language, tone=tone
+    )
+    return jsonify({"text": text, "tool": tool})
+
+
 @app.route("/api/health")
+
 def health():
     acct = _get_active_account()
     provider = _provider_name(acct) if acct else None
@@ -1389,14 +1668,17 @@ def list_accounts():
             "claude-sonnet-4-6"
         )
         pub["provider_info"] = {
-            "type":               provider,
-            "supports_files":     provider in (CLAUDE_PROVIDER, ONEMINAI_PROVIDER),
-            "supports_artifacts": provider == CLAUDE_PROVIDER,
-            "supports_tools":     provider == CLAUDE_PROVIDER,
-            "supports_thinking":  provider == CLAUDE_PROVIDER,
-            "supports_branching": provider == CLAUDE_PROVIDER,
+            "type":                provider,
+            "supports_files":      provider in (CLAUDE_PROVIDER, ONEMINAI_PROVIDER),
+            "supports_canvas":     provider == CLAUDE_PROVIDER,
+            "supports_artifacts":  provider == CLAUDE_PROVIDER,
+            "supports_tools":      provider == CLAUDE_PROVIDER,
+            "supports_thinking":   provider == CLAUDE_PROVIDER,
+            "supports_branching":  provider == CLAUDE_PROVIDER,
             "supports_web_search": provider == ONEMINAI_PROVIDER,
             "supports_image_gen":  provider == ONEMINAI_PROVIDER,
+            "supports_download":   provider == CLAUDE_PROVIDER,
+            "supports_reuse_files": provider in (CLAUDE_PROVIDER, ONEMINAI_PROVIDER),
         }
         account_list.append(pub)
 
@@ -1620,7 +1902,9 @@ def list_conversations(acct):
     provider = _provider_name(acct)
 
     if provider == ONEMINAI_PROVIDER:
-        return jsonify(_list_convs_oneminai(acct)), 200
+        search = request.args.get("search") or None
+        limit  = int(request.args.get("limit", 50))
+        return jsonify(_list_convs_oneminai(acct, search=search, limit=limit)), 200
 
     if provider == CHATWITHAI_PROVIDER:
         data = store.read()
@@ -1748,30 +2032,47 @@ def get_conversation(acct, conv_id):
 @require_account
 @api_error_handler
 def update_conversation(acct, conv_id):
-    payload = request.json or {}
+    payload  = request.json or {}
     provider = _provider_name(acct)
-    
-    if provider in (CHATWITHAI_PROVIDER, ONEMINAI_PROVIDER):
-        if (display_name := payload.get("name")) is not None:
+    new_name = payload.get("name") or payload.get("title") or ""
+
+    if provider == ONEMINAI_PROVIDER:
+        if new_name:
+            _rename_conv_oneminai(acct, conv_id, new_name)
+        if new_name:
+            def fn(store_data):
+                for a in store_data["accounts"]:
+                    if a["name"] == acct["name"]:
+                        for c in a.get("pinned_conversations", []):
+                            if c.get("conv_uuid") == conv_id:
+                                c["display_name"] = new_name
+                                break
+                        break
+            store.mutate(fn)
+        return jsonify({"success": True})
+
+    if provider == CHATWITHAI_PROVIDER:
+        if new_name:
             _upsert_local_conv(acct["name"], conv_id, {
-                "display_name": display_name,
-                "updated_at": _now()
+                "display_name": new_name,
+                "updated_at":   _now(),
             })
         return jsonify({"success": True})
 
+    # Claude
     client = _make_claude_client(acct)
     try:
         _run(client.update_conversation_settings(conv_id, payload))
     finally:
         _run(client.close())
 
-    if (display_name := payload.get("name")) is not None:
-        def fn(data):
-            for a in data["accounts"]:
+    if new_name:
+        def fn(store_data):
+            for a in store_data["accounts"]:
                 if a["name"] == acct["name"]:
                     for c in a.get("pinned_conversations", []):
                         if c["conv_uuid"] == conv_id:
-                            c["display_name"] = display_name
+                            c["display_name"] = new_name
                             break
                     break
         store.mutate(fn)
