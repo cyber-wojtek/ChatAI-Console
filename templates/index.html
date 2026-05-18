@@ -4400,7 +4400,7 @@ function renderBlock(block, streaming = false, sender = 'assistant') {
   switch (block.type) {
     case 'text': {
       const cursor = streaming ? '<span class="scursor"></span>' : '';
-      console.log('renderBlock:', {text: block.text, sender, streaming}); // DEBUG
+      // console.log('renderBlock:', {text: block.text, sender, streaming}); // DEBUG
       if (sender === 'human') {
         const escaped = esc(block.text || '').replace(/\n/g, '<br>');
         return `<div class="md"><p>${escaped}</p></div>`;
