@@ -1183,8 +1183,8 @@ a:hover { text-decoration:underline; }
   cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:4px; transition:all .15s;
 }
 .cv-dl-btn:hover { background:var(--green-dim); text-decoration:none; }
-.cv-copy-btn { color:var(--accent); border-color:rgba(99,179,237,.2); }
-.cv-copy-btn:hover { background:var(--accent-dim) !important; }
+.cv-copy-btn { color:var(--text-2); border-color:rgba(99,179,237,.2); }
+.cv-copy-btn:hover { background:var(--blue-dim) !important; }
 .cv-copy-btn.copied { color:var(--green); border-color:rgba(34,197,94,.2); background:var(--green-dim) !important; }
 .cv-frame { flex:1; border:none; background:#fff; display:block; }
 .cv-img { flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; padding:16px; background:var(--bg-2); }
@@ -2402,6 +2402,7 @@ select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
             ⎇ Branch
           </button>
 
+          <button class="tb-icon" onclick="openCopyConvOverlay()" title="Copy Conversation">📋</button>
           <button class="tb-icon" onclick="refreshConv()" title="Refresh">↻</button>
           <button class="tb-icon" onclick="openConvInfo()" title="Info">ⓘ</button>
           <button class="tb-icon" id="chatSearchBtn" onclick="toggleChatSearch()" title="Search messages">⌕</button>
@@ -3104,6 +3105,27 @@ select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
 </div>
 
 
+<!-- ── COPY CONV MODAL ── -->
+<div class="overlay" id="copyConvOverlay">
+  <div class="modal">
+    <div class="modal-hd">📋 Copy Conversation
+      <button class="modal-close" onclick="closeOverlay('copyConvOverlay')">×</button>
+    </div>
+    <div class="form-row">
+      <label class="form-lbl">Format</label>
+      <select class="form-inp" id="copyConvFormatSel">
+        <option value="standard">Standard (You: ... Assistant: ...)</option>
+        <option value="prompt">Prompt Format (---- Human: ... ---- Assistant: ...)</option>
+        <option value="json">JSON</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-sec" onclick="closeOverlay('copyConvOverlay')">Cancel</button>
+      <button class="btn-pri" onclick="doCopyConv(this)">Copy</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── TOASTS ── -->
 <div id="toasts"></div>
 
@@ -3160,9 +3182,17 @@ async function init() {
     const id = 'cb_' + Math.random().toString(36).slice(2, 9);
     const encodedCode = btoa(unescape(encodeURIComponent(code)));
 
+    let renderBtn = '';
+    const l = validLang.toLowerCase();
+    if (['svg', 'html', 'mermaid'].includes(l)) {
+      renderBtn = `<button class="code-copy" onclick="renderCodeBlock('${id}', '${l}')" style="color:var(--teal);border-color:rgba(56,189,248,0.25)">👁 Render</button>`;
+    }
     return `<pre><div class="code-header">
       <span class="code-lang">${esc(language || 'code')}</span>
-      <button class="code-copy" data-copy-id="${id}">⎘ Copy</button>
+      <div style="display:flex;gap:4px">
+        ${renderBtn}
+        <button class="code-copy" data-copy-id="${id}" style="color:var(--text-2)">⎘ Copy</button>
+      </div>
     </div><code id="${id}" class="hljs language-${esc(validLang)}" data-raw="${encodedCode}">${highlighted}</code></pre>`;
   };
 
@@ -3244,6 +3274,9 @@ async function init() {
     } else if (_initProv === 'oneminai') {
       fetchOneminaiModels(false).catch(() => {});
     }
+    else {
+      refreshModels(true).catch(() => {});
+    }
     // Claude quota fetched by _pollAllAccounts below
   }
 
@@ -3260,6 +3293,7 @@ async function init() {
       } else if (urlAcct !== getTabAccountName()) {
         // Activate the account embedded in the URL before fetching the conv
         await switchTabAccount(urlAcct);
+        refreshModels(true).catch(() => {});
       }
     }
     if (acctToUse) {
@@ -4016,16 +4050,7 @@ async function loadModelsForTab(sel, defaultModel) {
 
     if (!models.length) {
       // Hardcoded fallback
-      const fallbacks = provider === 'chatwithai'
-        ? [
-            {id:'claude-sonnet-4-6', display_name:'Claude Sonnet'},
-            {id:'gpt-4o',            display_name:'GPT-4o'},
-            {id:'gemini-2.0-flash-exp', display_name:'Gemini 2.0 Flash'},
-          ]
-        : [
-            {id:'claude-sonnet-4-6',       display_name:'sonnet-4-6'},
-            {id:'claude-haiku-4-5-20251001', display_name:'haiku-4-5'},
-          ];
+      const fallbacks = [];
       fallbacks.forEach(m => {
         const opt = document.createElement('option');
         opt.value = m.id; opt.textContent = m.display_name;
@@ -4080,7 +4105,7 @@ async function loadModelsForTab(sel, defaultModel) {
   }
 }
 
-async function refreshModels() {
+async function refreshModels(silent = false) {
   const sel = document.getElementById('modelSel');
   if (!sel) return;
   const btn = document.getElementById('refreshModelsBtn');
@@ -4090,7 +4115,9 @@ async function refreshModels() {
     loadModelsForTab(sel, sel.value);
     // Invalidate accounts cache so next load gets fresh models
     _cache_invalidate_client();
-    toast(`${sel.options.length} models loaded`, 'ok');
+    if (!silent) {
+      toast(`${sel.options.length} models loaded`, 'ok');
+    }
   } catch (e) {
     console.error('Model refresh failed:', e);
     toast('Model refresh failed', 'err');
@@ -4409,7 +4436,7 @@ function renderAccountMenu(filter = '') {
       : is1min
         ? `<span class="ami-badge" style="color:var(--oneminai);background:var(--oneminai-dim);border-color:var(--oneminai-mid)">✦ 1min.AI</span>`
         : isFlowith
-          ? `<span class="ami-badge" style="color:var(--flowith);background:var(--flowith-dim);border-color:var(--flowith-mid)">⋆ Flowith</span>`
+          ? `<span class="ami-badge" style="color:var(--flowith);background:var(--flowith-dim);border-color:var(--flowith-mid)">⠿ Flowith</span>`
           : `<span class="ami-badge" style="color:var(--accent);background:var(--accent-dim);border-color:var(--accent-mid)">🔑 Claude</span>`;
 
     const subtitle = isCWA
@@ -4480,7 +4507,7 @@ function renderAccountList(filter = '') {
       : is1minList
         ? `<span style="font-size:10px;padding:1px 5px;background:var(--oneminai-dim);color:var(--oneminai);border-radius:4px;font-weight:600;flex-shrink:0">✦ 1min.AI</span>`
         : isFlowithList
-          ? `<span style="font-size:10px;padding:1px 5px;background:var(--flowith-dim);color:var(--flowith);border-radius:4px;font-weight:600;flex-shrink:0">⋆ Flowith</span>`
+          ? `<span style="font-size:10px;padding:1px 5px;background:var(--flowith-dim);color:var(--flowith);border-radius:4px;font-weight:600;flex-shrink:0">⠿ Flowith</span>`
           : `<span style="font-size:10px;padding:1px 5px;background:var(--accent-dim);color:var(--accent);border-radius:4px;font-weight:600;flex-shrink:0">🔑 Claude</span>`;
     const subtitle = isCWA
       ? 'No account needed'
@@ -5670,7 +5697,7 @@ function renderArtifactBlock(block, streaming) {
         <div class="artifact-code show" id="${artId}_code">
           <div class="code-header" style="margin:-14px -16px 12px;padding:7px 14px;background:rgba(255,255,255,0.02);border-bottom:1px solid var(--border-s)">
             <span class="code-lang">${esc(lang)}</span>
-            <button class="code-copy" onclick="copyArtifactCode('${artId}',this)">⎘ Copy</button>
+            <button class="code-copy" onclick="copyArtifactCode('${artId}',this)" style="color:var(--text-3)">⎘ Copy</button>
           </div>
           <code id="${artId}_hlcode" class="hljs language-${esc(validLang)}">${highlighted}</code>
         </div>`;
@@ -6268,25 +6295,23 @@ async function copyCanvasContent(btn) {
 
   let text = '';
   try {
-    const frame  = document.getElementById('cvFrame');
-    const codeEl = document.getElementById('cvCode');
-
-    if (mime === 'artifact') {
-      // iframe showing artifact srcdoc
+    // Check for directly stored raw content first (set by openInCanvasRaw)
+    if (btn._rawContent) {
+      text = btn._rawContent;
+    } else if (mime === 'artifact') {
+      const frame  = document.getElementById('cvFrame');
+      const codeEl = document.getElementById('cvCode');
       if (frame && frame.style.display !== 'none' && frame.srcdoc) {
         text = frame.srcdoc;
       } else if (codeEl && codeEl.style.display !== 'none') {
         text = codeEl.textContent;
       }
     } else if (mime.includes('html') || mime.includes('htm')) {
-      if (frame && frame.style.display !== 'none') {
-        // srcdoc is set directly — use it; fall back to contentDocument or refetch
-        text = frame.srcdoc || '';
-        if (!text) try { text = frame.contentDocument?.documentElement?.outerHTML || ''; } catch {}
-      }
+      const frame = document.getElementById('cvFrame');
+      text = frame?.srcdoc || '';
       if (!text && url) text = await fetch(url).then(r => r.text());
     } else {
-      // plain text / code already loaded in cvCode
+      const codeEl = document.getElementById('cvCode');
       if (codeEl && codeEl.style.display !== 'none') {
         text = codeEl.textContent;
       } else if (url) {
@@ -6297,7 +6322,10 @@ async function copyCanvasContent(btn) {
     await navigator.clipboard.writeText(text);
     btn.textContent = '✓ Copied';
     btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = '⎘ Copy'; btn.classList.remove('copied'); }, 2000);
+    setTimeout(() => {
+      btn.textContent = '⎘ Copy';
+      btn.classList.remove('copied');
+    }, 2000);
   } catch (e) {
     toast('Copy failed: ' + e.message, 'err');
   }
@@ -6643,10 +6671,16 @@ function handleStreamEv(ev, asstMsg, bodyElFn) {
       break;
     }
     case 'content_block_delta': {
-      if (!streamBlocks[ev.index]) streamBlocks[ev.index] = { type:'text', text:'', input_str:'' };
+      if (!streamBlocks[ev.index]) {
+        const dtype = ev.delta?.type === 'thinking_delta' ? 'thinking' : 'text';
+        streamBlocks[ev.index] = { type: dtype, text:'', thinking:'', input_str:'' };
+      }
       const d = ev.delta;
       if (d.type === 'text_delta')          streamBlocks[ev.index].text      += d.text;
-      else if (d.type === 'thinking_delta') streamBlocks[ev.index].thinking  += d.thinking;
+      else if (d.type === 'thinking_delta') {
+        streamBlocks[ev.index].type = 'thinking';
+        streamBlocks[ev.index].thinking  += d.thinking;
+      }
       else if (d.type === 'input_json_delta') {
         streamBlocks[ev.index].input_str = (streamBlocks[ev.index].input_str||'') + d.partial_json;
       }
@@ -7735,6 +7769,150 @@ async function runFlowithVideo() {
     if (runBtn) runBtn.disabled = false;
   }
 }
+/* ═══════════════════════════════════════════
+   COPY CONV & RENDER UTILS
+═══════════════════════════════════════════ */
+function openCopyConvOverlay() {
+  if (!S.convId || !S.convs[S.convId] || !S.convs[S.convId].chat_messages?.length) {
+    toast('Conversation is empty', 'err');
+    return;
+  }
+  openOverlay('copyConvOverlay');
+}
+
+function doCopyConv(btn) {
+  const fmt = document.getElementById('copyConvFormatSel').value;
+  const msgs = buildChain(S.convs[S.convId]);
+  let res = '';
+  
+  if (fmt === 'json') {
+    res = JSON.stringify(msgs, null, 2);
+  } else {
+    for (const m of msgs) {
+      const role = m.sender === 'human' ? 'Human' : 'Assistant';
+      const text = m.text || (m.content || []).filter(c=>c.type==='text').map(c=>c.text).join('\n');
+      
+      if (fmt === 'prompt') {
+        res += `---- ${role}: ----\n${text}\n\n`;
+      } else {
+        const name = role === 'Human' ? 'You' : 'Assistant';
+        res += `${name}:\n${text}\n\n`;
+      }
+    }
+  }
+  
+  navigator.clipboard.writeText(res.trim()).then(() => {
+    const old = btn.textContent;
+    btn.textContent = '✓ Copied';
+    setTimeout(() => { btn.textContent = old; closeOverlay('copyConvOverlay'); }, 1500);
+  }).catch(e => toast('Copy failed', 'err'));
+}
+
+function renderCodeBlock(id, lang) {
+  const el = document.getElementById(id);
+  if (!el) return;
+
+  let rawCode = '';
+  try {
+    rawCode = decodeURIComponent(escape(atob(el.dataset.raw)));
+  } catch {
+    rawCode = el.textContent || '';
+  }
+
+  if (lang === 'svg') {
+    openInCanvasRaw(rawCode, 'Rendered SVG', 'image/svg+xml');
+    return;
+  }
+
+  if (lang === 'html') {
+    openInCanvasRaw(rawCode, 'Rendered HTML', 'text/html');
+    return;
+  }
+
+  if (lang === 'mermaid') {
+    const code64 = btoa(unescape(encodeURIComponent(rawCode)));
+    const html = [
+      '<!doctype html><html><head><meta charset="utf-8">',
+      '<style>body{background:#fff;display:flex;justify-content:center;padding:20px;}</style>',
+      '</head><body>',
+      '<div id="m" class="mermaid"></div>',
+      '<script type="module">',
+      'import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";',
+      'const code = decodeURIComponent(escape(atob(' + JSON.stringify(code64) + ')));',
+      'document.getElementById("m").textContent = code;',
+      'mermaid.initialize({ startOnLoad: true });',
+      '<\/script>',
+      '</body></html>'
+    ].join('');
+    openInCanvasRaw(html, 'Rendered MERMAID', 'text/html');
+    return;
+  }
+}
+
+function openInCanvasRaw(content, name, mime) {
+  // Ensure canvas is visible
+  const canvasPanel = document.getElementById('canvasPanel');
+  if (canvasPanel) canvasPanel.style.display = '';
+  if (!S.canvasOpen) toggleCanvas();
+  switchCanvasTab('preview');
+
+  document.getElementById('cvPreviewEmpty').style.display   = 'none';
+  document.getElementById('cvPreviewContent').style.display = 'flex';
+  document.getElementById('cvPreviewName').textContent = name;
+
+  // Download button — create a real blob only for download (not for display)
+  const dlBtn = document.getElementById('cvDlBtn');
+  if (dlBtn) {
+    const blob = new Blob([content], { type: mime });
+    const url  = URL.createObjectURL(blob);
+    dlBtn.href = url;
+    dlBtn.download = name.toLowerCase().replace(/\s+/g, '-') + (
+      mime.includes('svg') ? '.svg' :
+      mime.includes('html') ? '.html' : '.txt'
+    );
+  }
+
+  // Copy button
+  const copyBtn = document.getElementById('cvCopyBtn');
+  if (copyBtn) {
+    copyBtn.style.display = '';
+    copyBtn.dataset.canvasMime = mime;
+    copyBtn.dataset.canvasUrl  = '';
+    copyBtn.dataset.canvasRaw  = '';  // don't store raw here; handle below
+    copyBtn.classList.remove('copied');
+    copyBtn.textContent = '⎘ Copy';
+    // Store content on the button directly for copyCanvasContent
+    copyBtn._rawContent = content;
+  }
+
+  // Hide all viewers
+  const frame   = document.getElementById('cvFrame');
+  const imgWrap = document.getElementById('cvImgWrap');
+  const codeEl  = document.getElementById('cvCode');
+  const pdfEl   = document.getElementById('cvPdf');
+  [frame, imgWrap, codeEl, pdfEl].forEach(el => { if (el) el.style.display = 'none'; });
+
+  const m = mime.toLowerCase();
+
+  if (m.includes('html')) {
+    // Use srcdoc — no blob URL needed, no security error
+    frame.style.display = 'block';
+    frame.srcdoc = content;
+    return;
+  }
+
+  if (m.includes('svg')) {
+    // Inject SVG directly into a container
+    codeEl.style.display = 'block';
+    codeEl.innerHTML = content;  // SVG renders inline fine
+    return;
+  }
+
+  // Fallback: plain text
+  codeEl.style.display = 'block';
+  codeEl.textContent = content;
+}
+
 /* ═══════════════════════════════════════════
    BOOT
 ═══════════════════════════════════════════ */

@@ -12,6 +12,7 @@ import base64
 import json
 import logging
 import os
+import re
 import secrets
 import sys
 import threading
@@ -846,6 +847,48 @@ def _save_upload_meta(acct_name, conv_uuid, file_uuid, filename, size, content_t
 _FLOWITH_MODEL_CACHE: dict = {"fetched_at": 0.0, "models": []}
 
 
+# ── Flowith <think> tag parser (mirrors flowith_webapi) ─────────────────────
+_FLOWITH_OPEN_RE  = re.compile(r"<think>",  re.IGNORECASE)
+_FLOWITH_CLOSE_RE = re.compile(r"</think>", re.IGNORECASE)
+
+
+class _FlowithThinkParser:
+    def __init__(self) -> None:
+        self._in_think = False
+
+    def feed(self, fragment: str) -> tuple[str, str]:
+        visible: list[str] = []
+        reasoning: list[str] = []
+
+        while fragment:
+            if self._in_think:
+                m = _FLOWITH_CLOSE_RE.search(fragment)
+                if m:
+                    reasoning.append(fragment[: m.start()])
+                    fragment = fragment[m.end():]
+                    self._in_think = False
+                else:
+                    reasoning.append(fragment)
+                    fragment = ""
+            else:
+                m = _FLOWITH_OPEN_RE.search(fragment)
+                if m:
+                    visible.append(fragment[: m.start()])
+                    fragment = fragment[m.end():]
+                    self._in_think = True
+                else:
+                    visible.append(fragment)
+                    fragment = ""
+
+        return "".join(visible), "".join(reasoning)
+
+
+def _flowith_split_think(text: str) -> tuple[str, str]:
+    parser = _FlowithThinkParser()
+    visible, reasoning = parser.feed(text)
+    return visible.strip(), reasoning.strip()
+
+
 async def _flowith_fetch_models() -> list[dict]:
     """Fetch Flowith model catalog with proper category tagging."""
     from datetime import datetime, timezone
@@ -1207,23 +1250,50 @@ def _sync_stream_flowith(
             # ── Stream result ─────────────────────────────────────────────
             _result_url   = None
             _result_text  = ""
+            _reason_text  = ""
+            _think_parser = _FlowithThinkParser()
+            _think_started = False
             async for chunk in client._stream_node_events(
                 ai_node_id, timeout=timeout
             ):
                 evt_type = chunk.get("type", "")
                 if evt_type == "chunks":
                     for fragment in chunk.get("chunks", []):
-                        if fragment:
-                            _result_text += fragment
+                        if not fragment:
+                            continue
+                        visible, reasoning = _think_parser.feed(fragment)
+                        if reasoning:
+                            _reason_text += reasoning
+                            if not _think_started:
+                                q.put(emit({
+                                    "type": "content_block_start",
+                                    "index": 1,
+                                    "content_block": {"type": "thinking", "thinking": ""},
+                                }))
+                                _think_started = True
+                            q.put(emit({
+                                "type":  "content_block_delta",
+                                "index": 1,
+                                "delta": {"type": "thinking_delta",
+                                          "thinking": reasoning},
+                            }))
+                        if visible:
+                            _result_text += visible
                             q.put(emit({
                                 "type":  "content_block_delta",
                                 "index": 0,
                                 "delta": {"type": "text_delta",
-                                          "text": fragment},
+                                          "text": visible},
                             }))
                 elif evt_type == "complete":
                     raw = chunk.get("result", "")
                     nd  = chunk.get("nodeData") or chunk.get("data") or {}
+                    if raw:
+                        visible, reasoning = _flowith_split_think(raw)
+                        if visible and not _result_text:
+                            _result_text = visible
+                        if reasoning and not _reason_text:
+                            _reason_text = reasoning
                     _result_url = (
                         chunk.get("resultUrl")
                         or chunk.get("imageUrl")
@@ -1274,6 +1344,8 @@ def _sync_stream_flowith(
                         "video_url": _ru,
                     }))
 
+            if _think_started:
+                q.put(emit({"type": "content_block_stop", "index": 1}))
             q.put(emit({"type": "content_block_stop", "index": 0}))
             q.put(emit({"type": "message_delta",
                         "delta": {"stop_reason": "end_turn"}}))
@@ -1326,7 +1398,7 @@ async def _flowith_get_credits(acct: dict) -> dict | None:
         }
         return result
     except Exception as exc:
-        log.warning("Flowith credits: %s", exc)
+        log.warning("Flowith credits for account '%s': %s", acct.get("name","?"), exc)
         try: await client.close()
         except Exception: pass
         return None
@@ -3260,6 +3332,7 @@ async def send_message(acct, conv_id):
                         f.get("content_type","").startswith("image/"))]
 
         text_parts:    list[str] = []
+        thinking_parts: list[str] = []
         meta_holder:   list[dict] = []
 
         media_holder: list[dict] = []  # holds flowith_image / flowith_video
@@ -3286,8 +3359,11 @@ async def send_message(acct, conv_id):
                         evt = json.loads(js)
                         etype = evt.get("type", "")
                         if etype == "content_block_delta":
-                            text_parts.append(
-                                evt.get("delta", {}).get("text", ""))
+                            delta = evt.get("delta", {})
+                            if delta.get("type") == "thinking_delta":
+                                thinking_parts.append(delta.get("thinking", ""))
+                            else:
+                                text_parts.append(delta.get("text", ""))
                         elif etype == "flowith_meta":
                             meta_holder.append(evt)
                             skip = True
@@ -3304,6 +3380,7 @@ async def send_message(acct, conv_id):
 
             # ── Persist messages locally after stream completes ───────────
             full_response  = "".join(text_parts)
+            full_thinking  = "".join(thinking_parts).strip()
             meta           = meta_holder[0] if meta_holder else {}
             real_conv_id   = meta.get("real_conv_id") or conv_id
             user_node_id   = meta.get("user_node_id") or human_uuid
@@ -3374,7 +3451,13 @@ async def send_message(acct, conv_id):
                 asst_content = [{"type": "flowith_video", "url": _video_url}]
                 asst_text    = _video_url
             else:
-                asst_content = [{"type": "text", "text": full_response}]
+                asst_content = []
+                if full_thinking:
+                    asst_content.append({"type": "thinking", "thinking": full_thinking})
+                if full_response.strip():
+                    asst_content.append({"type": "text", "text": full_response})
+                if not asst_content:
+                    asst_content = [{"type": "text", "text": full_response}]
                 asst_text    = full_response
 
             asst_msg = {
