@@ -1,6 +1,6 @@
 # ✦ ChatAI Console
 
-A self-hosted, free web chat interface for [Claude](https://claude.ai), [ChatWithAI.app](https://chatwithai.app), and [1min.AI](https://1min.ai), powered by the reverse-engineered `claude_webapi` and `oneminai_webapi` libraries. Multi-account management, real-time streaming, file uploads, conversation branching, usage tracking, and a Galaxy-themed UI — all in a single Flask app.
+A self-hosted, free web chat interface for [Claude](https://claude.ai), [ChatWithAI.app](https://chatwithai.app), [1min.AI](https://1min.ai), and [Flowith.io](https://flowith.io), powered by the reverse-engineered `claude_webapi` and `oneminai_webapi` libraries. Multi-account management, real-time streaming, file uploads, conversation branching, usage tracking, and a Galaxy-themed UI — all in a single Flask app.
 
 ## Features
 
@@ -21,8 +21,8 @@ A self-hosted, free web chat interface for [Claude](https://claude.ai), [ChatWit
 ```sh
 git clone https://github.com/cyber-wojtek/ChatAI-Console.git
 cd ChatAI-Console
-pip install flask claude_webapi 1minai_webapi
-python app.py
+pip install flask claude_webapi 1minai_webapi flowith_webapi hypercorn quart
+python -m hypercorn app:app --reload --bind localhost:5000
 ```
 
 Open **http://localhost:5000**, add an account, and start chatting.
@@ -66,6 +66,24 @@ Two options:
 2. Enable the bridge from the extension popup
 3. Click **Sign in with Google for 1min.AI** in the account form
 4. Complete Google sign-in in the popup — the JWT is captured and filled in automatically
+
+### Flowith.io
+
+Two options:
+
+**Option A — JWT token (manual)**
+1. Sign in at [flowith.io](https://flowith.io) with Google
+2. After the OAuth redirect, the `access_token` appears in the URL hash:
+   `https://flowith.io/#access_token=eyJ…`
+3. Copy the token and paste it into the **API Key / Token** field when adding the account
+
+> The token is a Supabase JWT. It remains valid for the duration of your session.
+
+**Option B — Google sign-in (via browser extension)**
+1. Install the [ChatAI Console OAuth Bridge](https://github.com/cyber-wojtek/ChatAI-Console-Extension.git) extension
+2. Enable the bridge from the extension popup
+3. Click **Sign in with Google for Flowith** in the account form
+4. The extension intercepts the Supabase redirect on `flowith.io` and fills in the token automatically
 
 ### Auto-Seeding Accounts
 
@@ -137,7 +155,16 @@ curl -X POST http://localhost:5000/api/accounts \
   }'
 ```
 
-### Conversations
+```sh
+# Add Flowith account with JWT token
+curl -X POST http://localhost:5000/api/accounts \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "My Flowith",
+    "provider": "flowith",
+    "api_key": "eyJ..."
+  }'```
+  Conversations
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -208,7 +235,7 @@ ChatAI-Console/
     └── index.html          # Single-page Galaxy-themed frontend
 ```
 
-The backend bridges sync Flask handlers to the async `claude_webapi` client via a dedicated `asyncio` event loop on a background thread. Streaming uses SSE with a unified `data: {...}\n\n` format consumed by the frontend's `EventSource`.
+The backend bridges the reverse-engineered APIs and the frontend, exposing REST endpoints for account management, conversation handling, file uploads, and OAuth flows. The frontend is a dynamic SPA that consumes these endpoints to provide a seamless chat experience.
 
 ## Dependencies
 
@@ -217,7 +244,6 @@ The backend bridges sync Flask handlers to the async `claude_webapi` client via 
 | [Flask](https://flask.palletsprojects.com/) | Web framework |
 | [Claude-API](https://github.com/cyber-wojtek/Claude-API/) | Reverse-engineered async Claude.ai client |
 | [1MinAI-API](https://github.com/cyber-wojtek/1MinAI-API/) | Reverse-engineered async 1min.AI client |
-| [MiniappsAI-API](https://github.com/cyber-wojtek/MiniappsAI-API/) | Reverse-engineered MiniApps.ai client |
 | [marked.js](https://marked.js.org/) | Markdown rendering (frontend) |
 | [highlight.js](https://highlightjs.org/) | Syntax highlighting (frontend) |
 

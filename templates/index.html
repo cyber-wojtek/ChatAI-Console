@@ -79,6 +79,11 @@
   --oneminai:     #f97316;
   --oneminai-dim: rgba(249,115,22,0.10);
   --oneminai-mid: rgba(249,115,22,0.22);
+
+  /* Flowith brand */
+  --flowith:     #1A7F85;
+  --flowith-dim: rgba(6,182,212,0.10);
+  --flowith-mid: rgba(16,185,129,0.22);
 }
 
 
@@ -247,7 +252,7 @@ a:hover { text-decoration:underline; }
   overflow:hidden; z-index:50; animation:slideUp .15s var(--ease);
 }
 @keyframes slideUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
-.acct-menu-list { padding:4px; max-height:220px; overflow-y:auto; }
+.acct-menu-list { padding:4px; max-height:270px; overflow-y:auto; }
 .acct-menu-item {
   display:flex; align-items:center; gap:8px; padding:8px 10px;
   border-radius:var(--r); cursor:pointer; transition:background .1s;
@@ -832,6 +837,88 @@ a:hover { text-decoration:underline; }
   border-radius:6px; color:var(--text-2); font-family:var(--font-mono); font-size:10.5px; outline:none;
 }
 
+/* ── Inline branching overlay ── */
+.branch-overlay {
+  position:absolute; inset:0; z-index:60;
+  background:rgba(6,6,14,0.82); backdrop-filter:blur(6px);
+  display:flex; flex-direction:column; align-items:center;
+  padding:16px 20px; overflow-y:auto; animation:fadeIn .15s var(--ease);
+}
+.branch-overlay-title {
+  font-family:var(--font-head); font-size:13px; font-weight:700; color:var(--teal);
+  margin-bottom:12px; display:flex; align-items:center; gap:8px; align-self:flex-start;
+}
+.branch-overlay-close {
+  margin-left:auto; background:var(--bg-3); border:1px solid var(--border);
+  border-radius:6px; color:var(--text-3); font-size:11px; padding:3px 8px;
+  cursor:pointer; transition:all .15s;
+}
+.branch-overlay-close:hover { background:var(--bg-4); color:var(--text); }
+.branch-msg-list {
+  display:flex; flex-direction:column; gap:6px; width:100%; max-width:640px;
+}
+.branch-msg-item {
+  display:flex; align-items:flex-start; gap:8px; padding:8px 12px;
+  background:var(--bg-2); border:1px solid var(--border);
+  border-radius:var(--r-l); cursor:pointer; transition:all .15s var(--ease);
+  position:relative;
+}
+.branch-msg-item:hover {
+  background:var(--bg-3); border-color:var(--teal-mid);
+  transform:translateX(3px);
+}
+.branch-msg-item.selected {
+  border-color:var(--teal); background:var(--teal-dim);
+  box-shadow:0 0 14px rgba(56,189,248,0.10);
+}
+.branch-msg-item.root-item {
+  border-style:dashed; opacity:.7;
+}
+.branch-msg-item.root-item:hover { opacity:1; }
+.branch-msg-sender-badge {
+  font-size:9px; font-weight:700; padding:2px 6px; border-radius:4px;
+  white-space:nowrap; flex-shrink:0; margin-top:1px;
+  font-family:var(--font-mono); letter-spacing:.05em;
+}
+.branch-msg-sender-badge.human {
+  background:rgba(255,255,255,0.06); color:var(--text-3);
+}
+.branch-msg-sender-badge.assistant {
+  background:var(--accent-dim); color:var(--accent);
+}
+.branch-msg-sender-badge.root {
+  background:var(--teal-dim); color:var(--teal);
+}
+.branch-msg-preview {
+  flex:1; font-size:12px; color:var(--text-2); line-height:1.5;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.branch-msg-ts {
+  font-size:9px; color:var(--text-4); font-family:var(--font-mono);
+  flex-shrink:0; margin-top:2px;
+}
+.branch-msg-item .branch-select-arrow {
+  position:absolute; right:10px; top:50%; transform:translateY(-50%);
+  font-size:14px; color:var(--teal); opacity:0; transition:opacity .15s;
+}
+.branch-msg-item:hover .branch-select-arrow,
+.branch-msg-item.selected .branch-select-arrow { opacity:1; }
+.branch-confirm-bar {
+  margin-top:12px; display:flex; align-items:center; gap:10px;
+  padding:8px 12px; background:var(--bg-2); border:1px solid var(--teal-mid);
+  border-radius:var(--r-l); width:100%; max-width:640px;
+}
+.branch-confirm-from {
+  flex:1; font-size:11px; color:var(--text-2); font-family:var(--font-mono);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.branch-confirm-btn {
+  padding:6px 16px; background:var(--teal-mid); border:1px solid var(--teal);
+  border-radius:var(--r); color:var(--teal); font-size:12px; font-weight:600;
+  cursor:pointer; transition:all .15s; flex-shrink:0;
+}
+.branch-confirm-btn:hover { background:rgba(56,189,248,0.25); }
+
 /* Input box */
 .input-box {
   display:flex; align-items:flex-end; gap:6px;
@@ -1248,6 +1335,127 @@ a:hover { text-decoration:underline; }
 .efp-item-btn.attach:hover { color:var(--accent); border-color:rgba(168,85,247,.25); }
 
 
+/* ═══════════════════ POLLING / SETTINGS PANEL ═══════════════════ */
+.polling-panel {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 200;
+  width: 320px;
+  background: linear-gradient(180deg, var(--bg-1), #080816);
+  border: 1px solid var(--border-m);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-xl), 0 0 40px rgba(168,85,247,0.04);
+  overflow: hidden;
+  animation: slideUp .18s var(--ease);
+}
+.polling-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px 10px;
+  border-bottom: 1px solid var(--border-s);
+  background: linear-gradient(90deg, rgba(168,85,247,0.06), transparent);
+}
+.polling-panel-title {
+  font-family: var(--font-head);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  flex: 1;
+}
+.polling-panel-close {
+  width: 22px; height: 22px;
+  border-radius: 5px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  color: var(--text-3);
+  font-size: 11px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all .15s;
+}
+.polling-panel-close:hover { background: var(--bg-4); color: var(--text); }
+.polling-panel-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.poll-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.poll-label {
+  font-size: 11px;
+  color: var(--text-2);
+  font-weight: 500;
+  flex: 1;
+}
+.poll-sub {
+  font-size: 10px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+.poll-input {
+  width: 72px;
+  padding: 5px 8px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: right;
+  outline: none;
+  transition: border-color .15s;
+}
+.poll-input:focus { border-color: rgba(168,85,247,.4); }
+.poll-toggle {
+  position: relative;
+  width: 36px; height: 20px;
+  flex-shrink: 0;
+}
+.poll-toggle input { opacity: 0; width: 0; height: 0; }
+.poll-slider {
+  position: absolute; cursor: pointer;
+  inset: 0; background: var(--bg-5);
+  border-radius: 20px; transition: background .2s;
+}
+.poll-slider:before {
+  content: '';
+  position: absolute;
+  width: 14px; height: 14px;
+  left: 3px; bottom: 3px;
+  background: var(--text-3);
+  border-radius: 50%;
+  transition: transform .2s, background .2s;
+}
+.poll-toggle input:checked + .poll-slider { background: rgba(168,85,247,.35); }
+.poll-toggle input:checked + .poll-slider:before {
+  transform: translateX(16px);
+  background: var(--accent);
+}
+.poll-save-btn {
+  width: 100%;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  border: none;
+  border-radius: var(--r);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s var(--ease);
+  margin-top: 2px;
+}
+.poll-save-btn:hover { filter: brightness(1.1); }
+.poll-status {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+  text-align: center;
+  padding: 3px 0 1px;
+}
+.poll-status.ok  { color: var(--green); }
+.poll-status.err { color: var(--red); }
+
 /* ═══════════════════ PROVIDER CAPABILITY GUARDS ═══════════════════ */
 /* Applied via JS; defined here so transitions are smooth */
 .cap-hidden { display: none !important; }
@@ -1259,6 +1467,11 @@ a:hover { text-decoration:underline; }
 .provider-badge-oneminai {
   font-size: 10px; padding: 1px 6px;
   background: var(--oneminai-dim); color: var(--oneminai);
+  border-radius: 4px; font-weight: 600; flex-shrink: 0;
+}
+.provider-badge-flowith {
+  font-size: 10px; padding: 1px 6px;
+  background: var(--flowith-dim); color: var(--flowith);
   border-radius: 4px; font-weight: 600; flex-shrink: 0;
 }
 .provider-badge-claude {
@@ -1838,6 +2051,205 @@ a:hover { text-decoration:underline; }
   color: var(--oneminai);
 }
 
+/* ── Flowith panel ── */
+:root { --flowith-panel-width: 360px; }
+.flowith-panel {
+  width: var(--flowith-panel-width);
+  min-width: var(--flowith-panel-width);
+  background: linear-gradient(180deg, var(--bg-1) 0%, #080818 100%);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width .25s var(--ease), min-width .25s var(--ease), opacity .2s var(--ease);
+  position: relative;
+  flex-shrink: 0;
+}
+.flowith-panel.collapsed {
+  width: 0;
+  min-width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.flowith-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: linear-gradient(90deg, var(--flowith-dim), transparent);
+}
+.flowith-panel-logo {
+  width: 28px; height: 28px;
+  background: linear-gradient(135deg, rgba(168,85,247,.25), rgba(168,85,247,.08));
+  border: 1px solid rgba(168,85,247,.35);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; flex-shrink: 0;
+  box-shadow: 0 0 18px rgba(168,85,247,.15);
+}
+.flowith-panel-title {
+  font-family: var(--font-head);
+  font-size: 14px; font-weight: 700;
+  color: var(--flowith);
+  letter-spacing: -.02em;
+}
+.flowith-panel-close {
+  margin-left: auto;
+  width: 24px; height: 24px; border-radius: 6px;
+  background: var(--bg-3); border: 1px solid var(--border);
+  color: var(--text-3); font-size: 12px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all .15s;
+}
+.flowith-panel-close:hover { background: var(--bg-4); color: var(--text); }
+.flowith-tabs {
+  display: flex; padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0; background: var(--bg-1);
+}
+.flowith-tab {
+  padding: 10px 14px; font-size: 11px; font-weight: 600;
+  cursor: pointer; color: var(--text-3);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: all .15s; white-space: nowrap;
+  display: flex; align-items: center; gap: 5px;
+  background: none; border-top: none; border-left: none; border-right: none;
+}
+.flowith-tab:hover { color: var(--text-2); }
+.flowith-tab.active {
+  color: var(--flowith) !important;
+  border-bottom-color: var(--flowith) !important;
+}
+.flowith-body { flex: 1; overflow-y: auto; padding: 0; }
+.flowith-tab-content { display: none; padding: 16px; }
+.flowith-tab-content.active { display: flex; flex-direction: column; gap: 14px; }
+.flowith-card {
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-l); overflow: hidden;
+}
+.flowith-card-head {
+  padding: 9px 12px; border-bottom: 1px solid var(--border-s);
+  background: rgba(255,255,255,.015);
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--text-3); display: flex; align-items: center; gap: 6px;
+}
+.flowith-card-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.flowith-field { display: flex; flex-direction: column; gap: 5px; }
+.flowith-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--text-3);
+}
+.flowith-select {
+  width: 100%; padding: 8px 10px;
+  background: var(--bg-3); border: 1px solid var(--border);
+  border-radius: var(--r); color: var(--text);
+  font-family: var(--font-mono); font-size: 12px; outline: none;
+  cursor: pointer; transition: all .2s var(--ease);
+}
+.flowith-select:focus { border-color: rgba(168,85,247,.4); box-shadow: 0 0 0 3px rgba(168,85,247,.06); }
+.flowith-input {
+  width: 100%; padding: 8px 10px;
+  background: var(--bg-3); border: 1px solid var(--border);
+  border-radius: var(--r); color: var(--text);
+  font-family: var(--font-ui); font-size: 12px; outline: none;
+  transition: all .2s var(--ease);
+}
+.flowith-input:focus { border-color: rgba(168,85,247,.4); box-shadow: 0 0 0 3px rgba(168,85,247,.06); }
+.flowith-input::placeholder { color: var(--text-4); }
+.flowith-textarea {
+  width: 100%; padding: 10px;
+  background: var(--bg-3); border: 1px solid var(--border);
+  border-radius: var(--r); color: var(--text);
+  font-family: var(--font-ui); font-size: 13px; line-height: 1.55;
+  resize: vertical; min-height: 90px; outline: none;
+  transition: all .2s var(--ease);
+}
+.flowith-textarea:focus { border-color: rgba(168,85,247,.4); box-shadow: 0 0 0 3px rgba(168,85,247,.06); }
+.flowith-textarea::placeholder { color: var(--text-4); }
+.flowith-row { display: flex; gap: 8px; }
+.flowith-row .flowith-field { flex: 1; }
+.flowith-run-btn {
+  width: 100%; padding: 11px 16px;
+  background: linear-gradient(135deg, var(--flowith), #7c3aed);
+  border: none; border-radius: var(--r-l);
+  color: #fff; font-size: 13px; font-weight: 700;
+  cursor: pointer; transition: all .2s var(--ease);
+  box-shadow: 0 2px 16px rgba(168,85,247,.22), 0 0 30px rgba(168,85,247,.08);
+  display: flex; align-items: center; justify-content: center;
+  gap: 7px; letter-spacing: -.01em;
+}
+.flowith-run-btn:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 4px 24px rgba(168,85,247,.35);
+  transform: translateY(-1px);
+}
+.flowith-run-btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+.flowith-result { display: none; flex-direction: column; gap: 8px; }
+.flowith-result.visible { display: flex; }
+.flowith-img-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+}
+.flowith-img-item { position: relative; border-radius: var(--r); overflow: hidden; }
+.flowith-img-item img {
+  width: 100%; display: block; border-radius: var(--r);
+  border: 1px solid var(--border); cursor: pointer; transition: opacity .15s;
+}
+.flowith-img-item img:hover { opacity: .88; }
+.flowith-img-save {
+  display: block; margin-top: 4px; padding: 4px 8px;
+  background: var(--bg-3); border: 1px solid rgba(74,222,128,.2);
+  border-radius: 5px; color: var(--green); font-size: 10px;
+  font-family: var(--font-mono); text-decoration: none; text-align: center; transition: all .15s;
+}
+.flowith-img-save:hover { background: var(--green-dim); text-decoration: none; }
+.flowith-video-wrap {
+  display: flex; flex-direction: column; gap: 8px; padding: 12px;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-l);
+}
+.flowith-video-wrap video { width: 100%; border-radius: var(--r); }
+.flowith-video-dl {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; background: var(--bg-4);
+  border: 1px solid rgba(74,222,128,.2); border-radius: 6px;
+  color: var(--green); font-size: 11px; font-family: var(--font-mono);
+  text-decoration: none; transition: all .15s; align-self: flex-start;
+}
+.flowith-video-dl:hover { background: var(--green-dim); text-decoration: none; }
+.flowith-credits-badge {
+  font-size: 10px; color: var(--flowith); font-family: var(--font-mono);
+  margin-top: 1px; opacity: .8;
+}
+#flowithPanelBtn.active {
+  background: var(--flowith-dim);
+  border-color: var(--flowith-mid);
+  color: var(--flowith);
+}
+
+/* Flowith auth status badge tint */
+#flowithAuthStatus.ok  { border-color: rgba(168,85,247,.35); background: var(--flowith-dim); color: var(--flowith); }
+#flowithAuthStatus.err { border-color: rgba(248,113,113,.25); background: var(--red-dim); color: var(--red); }
+
+
+/* ── Flowith tier badges in model selects ── */
+.flowith-model-opt-free  { color: var(--green);  }
+.flowith-model-opt-paid  { color: var(--yellow); }
+.flowith-tier-badge {
+  display:inline-block; font-size:8px; font-weight:700;
+  padding:1px 5px; border-radius:3px; vertical-align:middle;
+  margin-left:4px; letter-spacing:.06em;
+}
+.flowith-tier-badge.free {
+  background:var(--green-dim); color:var(--green);
+  border:1px solid rgba(74,222,128,.18);
+}
+.flowith-tier-badge.paid {
+  background:var(--yellow-dim); color:var(--yellow);
+  border:1px solid rgba(250,204,21,.18);
+}
+/* Tier indicator dot on model select options */
+select.flowith-select option[data-tier="1"]::before { content:"💎 "; }
+select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
 </style>
 </head>
 
@@ -1900,6 +2312,7 @@ a:hover { text-decoration:underline; }
           </div>
           <div class="acct-menu-list" id="acctMenuList"></div>
           <div class="acct-menu-footer">
+            <button id="pollingConfigBtn" onclick="togglePollingPanel();closeAcctMenu()" title="Polling &amp; Rate Limit Config">⏱ Polling &amp; Rate Limits</button>
             <button onclick="openSettings();closeAcctMenu()">⚙ Manage Accounts</button>
           </div>
         </div>
@@ -1940,9 +2353,13 @@ a:hover { text-decoration:underline; }
             <option value="claude-haiku-4-5-20251001">haiku-4-5</option>
             </optgroup>
           </select>
+          <button class="tb-icon" onclick="refreshModels()" title="Refresh model list" id="refreshModelsBtn" style="font-size:11px">⟳</button>
 
           <button class="tb-toggle" id="thinkBtn" onclick="cycleThink()" title="Toggle extended thinking">
             🧠 <span id="thinkLbl">Think: off</span>
+          </button>
+          <button class="tb-toggle" id="webSearchBtn" onclick="toggleWebSearch()" title="Enable web search (1min.AI)" style="display:none">
+            🌐 <span id="webSearchLbl">Web Search: off</span>
           </button>
 
           <button class="tb-branch-btn" id="branchToggleBtn" onclick="toggleBranchRow()" title="Branching">
@@ -1954,6 +2371,7 @@ a:hover { text-decoration:underline; }
           <button class="tb-icon" id="chatSearchBtn" onclick="toggleChatSearch()" title="Search messages">⌕</button>
           <button class="tb-icon" id="canvasToggleBtn" onclick="toggleCanvas()" title="Files &amp; Canvas">⊞</button>
           <button class="tb-icon" id="oneminaiPanelBtn" onclick="toggleOneminaiPanel()" title="1min.AI Tools" style="display:none">✦</button>
+          <button class="tb-icon" id="flowithPanelBtn" onclick="toggleFlowithPanel()" title="Flowith Tools" style="display:none">⋆</button>
           <button class="tb-icon" onclick="openSettings()" title="Settings">⚙</button>
         </div>
       </div>
@@ -1986,9 +2404,26 @@ a:hover { text-decoration:underline; }
 
         <div class="branch-row hidden" id="branchRow">
           <span class="branch-lbl">⎇ BRANCH FROM</span>
-          <select class="branch-sel" id="branchSel">
-            <option value="00000000-0000-4000-8000-000000000000">— root / new thread —</option>
-          </select>
+          <div id="branchSelDisplay" style="flex:1;padding:4px 10px;background:var(--bg-3);border:1px solid var(--border);border-radius:6px;color:var(--text-2);font-family:var(--font-mono);font-size:10.5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:border-color .15s"
+               onclick="openBranchOverlay()" title="Click to choose branch point">
+            <span id="branchSelLabel">— root / new thread —</span>
+          </div>
+          <button style="padding:4px 10px;background:var(--bg-3);border:1px solid var(--border);border-radius:6px;color:var(--text-3);font-size:11px;cursor:pointer;transition:all .15s;flex-shrink:0"
+                  onclick="resetBranchPoint()" title="Reset to root">✕</button>
+          <input type="hidden" id="branchSel" value="00000000-0000-4000-8000-000000000000">
+        </div>
+
+        <!-- Branch picker overlay (rendered inside #chat for correct positioning) -->
+        <div class="branch-overlay hidden" id="branchOverlay">
+          <div class="branch-overlay-title">
+            ⎇ Choose branch point
+            <button class="branch-overlay-close" onclick="closeBranchOverlay()">✕ Close</button>
+          </div>
+          <div class="branch-msg-list" id="branchMsgList"></div>
+          <div class="branch-confirm-bar hidden" id="branchConfirmBar">
+            <span class="branch-confirm-from" id="branchConfirmLabel">—</span>
+            <button class="branch-confirm-btn" onclick="confirmBranchSelection()">⎇ Branch here</button>
+          </div>
         </div>
 
         <div class="input-box" id="inputBox">
@@ -2029,7 +2464,10 @@ a:hover { text-decoration:underline; }
 
     <div class="omai-panel-head">
       <div class="omai-panel-logo">✦</div>
-      <span class="omai-panel-title">1min.AI Tools</span>
+      <div style="flex:1;min-width:0">
+        <span class="omai-panel-title">1min.AI Tools</span>
+        <div id="omaiCreditsDisplay" style="font-size:10px;color:var(--oneminai);font-family:var(--font-mono);margin-top:1px;opacity:.8"></div>
+      </div>
       <button class="omai-panel-close" onclick="toggleOneminaiPanel()">✕</button>
     </div>
 
@@ -2263,6 +2701,132 @@ a:hover { text-decoration:underline; }
     </div><!-- /.omai-body -->
   </aside>
 
+
+  <!-- ── FLOWITH TOOLS PANEL ── -->
+  <aside class="flowith-panel collapsed" id="flowithPanel">
+
+    <div class="flowith-panel-head">
+      <div class="flowith-panel-logo">⋆</div>
+      <div style="flex:1;min-width:0">
+        <span class="flowith-panel-title">Flowith Tools</span>
+        <div id="flowithCreditsDisplay" class="flowith-credits-badge"></div>
+      </div>
+      <button class="flowith-panel-close"
+              onclick="_flowithRefreshCredits(true)"
+              title="Refresh credits"
+              style="margin-right:4px;font-size:11px;width:auto;padding:0 8px">
+        ↻
+      </button>
+      <button class="flowith-panel-close" onclick="toggleFlowithPanel()">✕</button>
+    </div>
+
+    <!-- Tab bar — Image + Video only (Chat goes through main interface) -->
+    <div class="flowith-tabs">
+      <button class="flowith-tab active" id="flowith-tab-image" onclick="flowithSwitchTab('image')">
+        🖼 Image
+      </button>
+      <button class="flowith-tab" id="flowith-tab-video" onclick="flowithSwitchTab('video')">
+        🎬 Video
+      </button>
+    </div>
+
+    <div class="flowith-body">
+
+      <!-- ══════════════ IMAGE TAB ══════════════ -->
+      <div class="flowith-tab-content active" id="flowith-content-image">
+
+        <div class="flowith-card">
+          <div class="flowith-card-head">🖼 Model &amp; Ratio</div>
+          <div class="flowith-card-body">
+            <div class="flowith-field">
+              <label class="flowith-label">Model</label>
+              <select class="flowith-select" id="flowithImageModel">
+                <option value="gemini-3.1-flash-image">Gemini 3.1 Flash Image</option>
+                <option value="gemini-3.1-flash-image-preview">Gemini 3.1 Flash Preview</option>
+                <option value="gemini-3-pro-image-preview">Gemini 3 Pro Image</option>
+                <option value="gemini-2.5-flash-image">Gemini 2.5 Flash Image</option>
+                <option value="gpt-image-2">GPT Image 2</option>
+                <option value="gpt-image-1">GPT Image 1</option>
+              </select>
+            </div>
+            <div class="flowith-field">
+              <label class="flowith-label">Aspect Ratio</label>
+              <select class="flowith-select" id="flowithImageRatio">
+                <option value="1:1">1:1 Square</option>
+                <option value="16:9">16:9 Landscape</option>
+                <option value="9:16">9:16 Portrait</option>
+                <option value="4:3">4:3 Classic</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="flowith-card">
+          <div class="flowith-card-head">💬 Prompt</div>
+          <div class="flowith-card-body">
+            <textarea class="flowith-textarea" id="flowithImagePrompt" rows="5"
+              placeholder="Describe the image…"></textarea>
+          </div>
+        </div>
+
+        <button class="flowith-run-btn" id="flowithImageRunBtn" onclick="runFlowithImage()">
+          ✨ Generate Image
+        </button>
+
+        <div class="flowith-result" id="flowithImageResult">
+          <div class="flowith-img-grid" id="flowithImageGrid"></div>
+        </div>
+
+      </div><!-- /image tab -->
+
+      <!-- ══════════════ VIDEO TAB ══════════════ -->
+      <div class="flowith-tab-content" id="flowith-content-video">
+
+        <div class="flowith-card">
+          <div class="flowith-card-head">🎬 Model &amp; Settings</div>
+          <div class="flowith-card-body">
+            <div class="flowith-field">
+              <label class="flowith-label">Model</label>
+              <select class="flowith-select" id="flowithVideoModel">
+                <option value="seedance-2.0-fast">Seedance 2 Fast</option>
+                <option value="kling-video/v2.6/pro/text-to-video">Kling v2.6 Pro</option>
+              </select>
+            </div>
+            <div class="flowith-field">
+              <label class="flowith-label">Aspect Ratio</label>
+              <select class="flowith-select" id="flowithVideoRatio">
+                <option value="16:9">16:9 Landscape</option>
+                <option value="9:16">9:16 Portrait</option>
+                <option value="1:1">1:1 Square</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="flowith-card">
+          <div class="flowith-card-head">💬 Prompt</div>
+          <div class="flowith-card-body">
+            <textarea class="flowith-textarea" id="flowithVideoPrompt" rows="5"
+              placeholder="Describe the video scene…"></textarea>
+          </div>
+        </div>
+
+        <button class="flowith-run-btn" id="flowithVideoRunBtn" onclick="runFlowithVideo()">
+          🎬 Generate Video
+        </button>
+
+        <div class="flowith-result" id="flowithVideoResult">
+          <div class="flowith-video-wrap" id="flowithVideoWrap" style="display:none">
+            <video id="flowithVideo" controls></video>
+            <a id="flowithVideoDl" class="flowith-video-dl" download>⬇ Download</a>
+          </div>
+        </div>
+
+      </div><!-- /video tab -->
+
+    </div><!-- /.flowith-body -->
+  </aside>
+
   <!-- ── CANVAS PANEL ── -->
   <aside class="canvas-panel collapsed" id="canvasPanel">
     <button class="canvas-close" onclick="toggleCanvas()">✕</button>
@@ -2301,6 +2865,60 @@ a:hover { text-decoration:underline; }
   </aside>
 
 </div><!-- /.app -->
+
+<!-- ── POLLING CONFIG PANEL ── -->
+<div class="polling-panel" id="pollingPanel" style="display:none">
+  <div class="polling-panel-head">
+    <span>⏱</span>
+    <span class="polling-panel-title">Polling &amp; Rate Limits</span>
+    <button class="polling-panel-close" onclick="closePollingPanel()">✕</button>
+  </div>
+  <div class="polling-panel-body">
+
+    <div class="poll-row">
+      <div>
+        <div class="poll-label">Auto-poll credits/quota</div>
+        <div class="poll-sub">Fetch usage in the background</div>
+      </div>
+      <label class="poll-toggle">
+        <input type="checkbox" id="pollAutoToggle" checked onchange="pollingDirty()">
+        <span class="poll-slider"></span>
+      </label>
+    </div>
+
+    <div class="poll-row">
+      <div>
+        <div class="poll-label">Poll interval</div>
+        <div class="poll-sub">Seconds between background polls</div>
+      </div>
+      <input class="poll-input" type="number" id="pollIntervalInp"
+        value="90" min="10" max="3600" step="5" oninput="pollingDirty()">
+    </div>
+
+    <div class="poll-row">
+      <div>
+        <div class="poll-label">Stagger delay</div>
+        <div class="poll-sub">Seconds between per-account requests</div>
+      </div>
+      <input class="poll-input" type="number" id="pollStaggerInp"
+        value="2.5" min="0" max="30" step="0.5" oninput="pollingDirty()">
+    </div>
+
+    <div class="poll-row">
+      <div>
+        <div class="poll-label">Request timeout</div>
+        <div class="poll-sub">Seconds before giving up on a request</div>
+      </div>
+      <input class="poll-input" type="number" id="pollTimeoutInp"
+        value="30" min="5" max="120" step="5" oninput="pollingDirty()">
+    </div>
+
+    <button class="poll-save-btn" id="pollSaveBtn" onclick="savePollingConfig()">
+      Save Configuration
+    </button>
+    <div class="poll-status" id="pollStatus"></div>
+  </div>
+</div>
 <div class="overlay" id="settingsOverlay">
   <div class="modal" style="width:560px">
     <div class="modal-hd">⚙ Accounts &amp; Settings
@@ -2324,6 +2942,7 @@ a:hover { text-decoration:underline; }
         <option value="claude">Claude (requires session key)</option>
         <option value="chatwithai">ChatWithAI (no account needed)</option>
         <option value="oneminai">1min.AI (API key or Google OAuth)</option>
+        <option value="flowith">Flowith.io (JWT token)</option>
       </select>
       <div id="chatwithaiHint" style="display:none;margin-top:6px;padding:8px 12px;background:rgba(56,189,248,0.07);border:1px solid rgba(56,189,248,0.18);border-radius:8px;font-size:12px;color:var(--text-2)">
         ⚡ ChatWithAI works anonymously — just give this account a name and save. No credentials required.
@@ -2349,6 +2968,32 @@ a:hover { text-decoration:underline; }
         find <code>X-Auth-Token: Bearer eyJ…</code> and copy everything after
         <code>Bearer </code>. Token expires after ~7 days.
       </div>
+    </div>
+    <div class="form-row" id="flowithKeyRow" style="display:none">
+      <label class="form-lbl">Flowith — Google Sign-In</label>
+      <button type="button" class="btn-google" id="flowithGoogleBtn" onclick="flowithGoogleSignIn()">
+        <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+          <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285F4"/>
+          <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
+          <path d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z" fill="#FBBC05"/>
+          <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 6.293C4.672 4.166 6.656 3.58 9 3.58z" fill="#EA4335"/>
+        </svg>
+        Sign in with Google for Flowith
+      </button>
+      <div class="miniapps-auth-status" id="flowithAuthStatus" style="display:none"></div>
+      <div class="form-hint" style="margin-top:6px">
+        Click to authenticate — the extension intercepts the
+        <code>access_token</code> from the Flowith redirect URL automatically.<br>
+        Or paste the token manually below
+        (copy from <code>flowith.io/#access_token=eyJ…</code> after signing in).
+      </div>
+      <input class="form-inp" type="password" id="flowithKeyInp"
+        placeholder="Or paste access_token manually (eyJ…)…"
+        style="margin-top:8px">
+    </div>
+    <div class="form-row" id="flowithUserIdRow" style="display:none">
+      <label class="form-lbl">Flowith User ID <span style="color:var(--text-3)">(optional — parsed from JWT)</span></label>
+      <input class="form-inp" type="text" id="flowithUserIdInp" placeholder="Parsed automatically from the JWT…">
     </div>
     <div class="form-row" id="oneminaiOAuthRow" style="display:none">
       <label class="form-lbl">1min.AI Google Sign-In</label>
@@ -2383,8 +3028,12 @@ a:hover { text-decoration:underline; }
       <label class="toggle-lbl" for="acctActivateChk" style="cursor:pointer">Set as active account</label>
       <input type="checkbox" id="acctActivateChk" checked>
     </div>
-    <hr class="form-divider">
-    <div class="section-title">Extended Thinking</div>
+    <hr class="form-divider" id="extThinkingDivider">
+    <div id="extThinkingSection" style="display:none">
+    <div class="section-title" style="display:flex;align-items:center;gap:8px">
+      Extended Thinking
+      <span style="font-size:10px;padding:1px 7px;background:var(--accent-dim);color:var(--accent);border:1px solid rgba(168,85,247,0.2);border-radius:4px;font-weight:600;letter-spacing:.04em">Claude only</span>
+    </div>
     <div class="toggle-row">
       <div>
         <div class="toggle-lbl">Account-wide Extended Thinking</div>
@@ -2395,6 +3044,8 @@ a:hover { text-decoration:underline; }
         <button class="btn-sec" style="font-size:11px;padding:6px 12px" onclick="setAcctThink(null)">Disable</button>
       </div>
     </div>
+    </div><!-- /#extThinkingSection -->
+    <div id="extThinkingDividerBottom" style="display:none"><hr class="form-divider" style="margin-bottom:0"></div>
     <div class="modal-actions">
       <button class="btn-sec" onclick="closeOverlay('settingsOverlay')">Close</button>
       <button class="btn-sec" id="acctCancelEditBtn" onclick="cancelAcctEdit()" style="display:none">Cancel</button>
@@ -2427,6 +3078,7 @@ a:hover { text-decoration:underline; }
 const S = {
   // Per-tab account selection
   tabAccount:    null,   // { name, provider, provider_info, ... } chosen for THIS tab
+  webSearch:     false,  // 1min.AI web search toggle
   
   // Conversation state
   convId:        null,
@@ -2524,43 +3176,87 @@ async function init() {
     });
   });
 
-  await refreshAccountState();
-
-  try {
-    const prefs = await apiFetch('/api/preferences');
-    if (prefs.theme) document.documentElement.setAttribute('data-theme', prefs.theme);
-  } catch {}
-
-  await Promise.all([loadPinnedIds(), loadAllConvs()]);
+  // Show UI immediately with empty state
   renderSidebar();
   setupDragDrop();
 
+  // Load accounts first (fast — memory only now)
+  await refreshAccountState();
+
+  // Load pinned (local store, fast) immediately
+  await loadPinnedIds();
+  renderSidebar();  // show pinned convs right away
+
+  // Load remote convs in background — don't await
+  loadAllConvs().then(() => renderSidebar()).catch(() => {});
+
+  // Preferences in background
+  fetch('/api/preferences').then(r => r.json()).then(prefs => {
+    if (prefs.theme) document.documentElement.setAttribute('data-theme', prefs.theme);
+  }).catch(() => {});
+
+  // Warm up models + credits for the initial account (background, no await)
+  const _initAcct = getTabAccount();
+  if (_initAcct) {
+    const _initProv = (_initAcct.provider || 'claude').toLowerCase();
+    if (_initProv === 'flowith') {
+      _fetchAndCacheFlowithModels().catch(() => {});
+      apiFetch('/api/flowith/credits').then(d => {
+        const raw = d.credits_total ?? (d.credits?.total) ?? d.credits ?? null;
+        if (raw != null) _cacheFlowith(_initAcct.name, raw);
+      }).catch(() => {});
+    } else if (_initProv === 'oneminai') {
+      fetchOneminaiModels(false).catch(() => {});
+    }
+    // Claude quota fetched by _pollAllAccounts below
+  }
+
+  const urlAcct   = getAcctIdFromUrl();
   const urlConvId = getConvIdFromUrl();
-  if (urlConvId && getTabAccount()) {
-    await selectConv(urlConvId, true);
-    if (!S.convs[urlConvId]?.chat_messages) {
-      history.replaceState(null, '', '/');
-      S.convId = null;
-      document.getElementById('chat').classList.add('hidden');
-      document.getElementById('splash').classList.remove('hidden');
-      toast('Conversation not found', 'err');
+  if (urlConvId) {
+    let acctToUse = urlAcct || getTabAccountName();
+    if (urlAcct) {
+      const found = S.accounts.find(a => a.name === urlAcct);
+      if (!found) {
+        history.replaceState(null, '', '/');
+        toast('Account in URL not found', 'err');
+        acctToUse = null;
+      } else if (urlAcct !== getTabAccountName()) {
+        // Activate the account embedded in the URL before fetching the conv
+        await switchTabAccount(urlAcct);
+      }
+    }
+    if (acctToUse) {
+      await selectConv(urlConvId, acctToUse, true);
+      if (!S.convs[urlConvId]?.chat_messages) {
+        history.replaceState(null, '', '/');
+        S.convId = null;
+        document.getElementById('chat').classList.add('hidden');
+        document.getElementById('splash').classList.remove('hidden');
+        toast('Conversation not found', 'err');
+      }
     }
   }
 
   window.addEventListener('popstate', onPopState);
-
-  // Background poll: refresh quota/credits for ALL accounts every 90 s
   _pollAllAccounts();
-  setInterval(_pollAllAccounts, 90_000);
 }
 
 /* ═══════════════════════════════════════════
    URL ROUTING
 ═══════════════════════════════════════════ */
 function getConvIdFromUrl() {
-  const m = window.location.pathname.match(/^\/c\/([a-f0-9-]+)/);
+  // matches both /c/<uuid> and /a/<acct>/c/<uuid>
+  const m = window.location.pathname.match(/\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
   return m ? m[1] : null;
 }
+
+function getAcctIdFromUrl() {
+  // Match /a/accountName/ or /a/accountName/c/convId
+  const m = window.location.pathname.match(/^\/a\/([^\/]+)(?:\/c\/[a-f0-9-]+)?/);
+  return m ? decodeURIComponent(m[1]) === "undefined" ? null : decodeURIComponent(m[1]) : null;
+}
+
 function navToHome(replace) {
   S.convId = null;
   document.getElementById('chat').classList.add('hidden');
@@ -2571,9 +3267,14 @@ function navToHome(replace) {
   renderSidebar();
 }
 async function onPopState(e) {
-  const id = e.state?.convId || getConvIdFromUrl();
+  const urlAcct = getAcctIdFromUrl();
+  const id      = e.state?.convId || getConvIdFromUrl();
   if (id) {
-    await selectConv(id, true);
+    if (urlAcct && urlAcct !== getTabAccountName()) {
+      const found = S.accounts.find(a => a.name === urlAcct);
+      if (found) await switchTabAccount(urlAcct);
+    }
+    await selectConv(id, urlAcct || getTabAccountName(), true);
     if (!S.convs[id]?.chat_messages) navToHome(true);
   } else {
     S.convId = null;
@@ -2654,10 +3355,6 @@ function getTabProviderInfo() {
 }
 
 /* ── API fetch with per-tab account header ── */
-function getTabAccountName() {
-  return S.tabAccount?.name || S.activeAccount || null;
-}
-
 // All JSON API calls
 async function apiFetch(url, opts = {}) {
   opts.headers = opts.headers || {};
@@ -2775,7 +3472,13 @@ function setStatus(ok, orgId) {
     name.textContent = tabAcct.name;
     org.textContent  = prov === 'chatwithai' 
       ? '⚡ no account needed' 
-      : (tabAcct.organization_id ? tabAcct.organization_id.slice(0,8)+'…' : 'claude.ai');
+      : prov === 'claude' 
+        ? `Org: ${orgId || 'unknown'}`
+        : prov === 'oneminai'
+          ? `1min.AI`
+          : prov === 'flowith'
+            ? `Flowith`
+            : '';
   } else {
     dot.classList.remove('ok');
     name.textContent = 'Not configured';
@@ -2797,6 +3500,20 @@ function toggleProviderFields() {
   const oneminaiOAuthRow = document.getElementById('oneminaiOAuthRow');
   if (oneminaiKeyRow)   oneminaiKeyRow.style.display   = provider === 'oneminai' ? '' : 'none';
   if (oneminaiOAuthRow) oneminaiOAuthRow.style.display = provider === 'oneminai' ? '' : 'none';
+
+  const flowithKeyRow    = document.getElementById('flowithKeyRow');
+  const flowithUserIdRow = document.getElementById('flowithUserIdRow');
+  if (flowithKeyRow)    flowithKeyRow.style.display    = provider === 'flowith' ? '' : 'none';
+  if (flowithUserIdRow) flowithUserIdRow.style.display = provider === 'flowith' ? '' : 'none';
+
+  // Extended Thinking — only relevant for Claude accounts
+  const extThinkSec = document.getElementById('extThinkingSection');
+  const extThinkDiv = document.getElementById('extThinkingDivider');
+  const extThinkDivB = document.getElementById('extThinkingDividerBottom');
+  const showThink = provider === 'claude';
+  if (extThinkSec)  extThinkSec.style.display  = showThink ? '' : 'none';
+  if (extThinkDiv)  extThinkDiv.style.display  = showThink ? '' : 'none';
+  if (extThinkDivB) extThinkDivB.style.display = showThink ? '' : 'none';
 }
 
 /* ═══════════════════════════════════════════
@@ -2889,10 +3606,29 @@ function editMsg(uuid) {
   // Extract plain text from message
   const text = msg.text || (msg.content || []).find(b => b.type === 'text')?.text || '';
 
-  // Set branch selector to this message's parent so the resend forks from same point
-  const parentUuid = msg.parent_message_uuid || '00000000-0000-4000-8000-000000000000';
-  const branchSel = document.getElementById('branchSel');
-  if (branchSel) branchSel.value = parentUuid;
+  // For branching providers (Claude, Flowith):
+  // Set parent to this message's OWN parent so the edit creates a fork
+  // that replaces this message at the same level in the tree.
+  const _supBranch = S.tabAccount?._supBranching !== false;
+  if (_supBranch) {
+    const parentUuid = msg.parent_message_uuid || '00000000-0000-4000-8000-000000000000';
+    _setBranchPoint(parentUuid, '— editing from parent —');
+    if (!S.branchVisible) toggleBranchRow();
+  }
+
+  // Re-attach any files from the original message
+  S.attached = [];
+  if (msg.files_v2?.length) {
+    for (const f of msg.files_v2) {
+      S.attached.push({
+        file_uuid: f.file_uuid,
+        _filename: f.file_name || f.filename || 'file',
+        _mime:     f.file_kind || f.content_type || '',
+        _size:     f.file_size || 0,
+      });
+    }
+    renderAttBar();
+  }
 
   // Fill the textarea
   const ta = document.getElementById('msgTa');
@@ -2900,22 +3636,74 @@ function editMsg(uuid) {
   resizeTa(ta);
   updateCount(ta);
   ta.focus();
-  // Put cursor at end
   ta.selectionStart = ta.selectionEnd = ta.value.length;
 
-  // Scroll input into view
   ta.scrollIntoView({ behavior: 'smooth', block: 'end' });
   toast('Message loaded for editing — press ↵ to resend', 'info');
+}
+
+// Re-run: resend the SAME text from the same parent (regenerate with different
+// random seed / same branch point). Works for Claude and Flowith.
+function rerunFromMsg(uuid) {
+  const conv = S.convs[S.convId];
+  if (!conv) return;
+  const msg = (conv.chat_messages || []).find(m => m.uuid === uuid);
+  if (!msg || msg.sender !== 'human') return;
+
+  const text       = msg.text || (msg.content || []).find(b => b.type === 'text')?.text || '';
+  const parentUuid = msg.parent_message_uuid || '00000000-0000-4000-8000-000000000000';
+
+  const _supBranch = S.tabAccount?._supBranching !== false;
+  if (_supBranch) {
+    _setBranchPoint(parentUuid, '— re-running from parent —');
+    if (!S.branchVisible) toggleBranchRow();
+  }
+
+  // Re-attach files
+  S.attached = [];
+  if (msg.files_v2?.length) {
+    for (const f of msg.files_v2) {
+      S.attached.push({
+        file_uuid: f.file_uuid,
+        _filename: f.file_name || f.filename || 'file',
+        _mime:     f.file_kind || f.content_type || '',
+        _size:     f.file_size || 0,
+      });
+    }
+    renderAttBar();
+  }
+
+  const ta = document.getElementById('msgTa');
+  ta.value = text;
+  resizeTa(ta);
+  updateCount(ta);
+
+  // Send immediately — no manual confirmation needed for re-run
+  doSend();
 }
 
 /* ═══════════════════════════════════════════
    MULTI-ACCOUNT
 ═══════════════════════════════════════════ */
-async function refreshAccountState() {
-  const data = await fetch('/api/accounts').then(r => r.json());
-  S.accounts      = data.accounts || [];
-  // Sort by (provider, name) for consistent display order
-  S.accounts.sort((a, b) => {
+let _accountsCache = null;
+let _accountsCacheTs = 0;
+
+async function refreshAccountState(force = false) {
+  const now = Date.now();
+  if (!force && _accountsCache && now - _accountsCacheTs < 10_000) {
+    // Use cached data
+    S.accounts = _accountsCache.accounts || [];
+    S.activeAccount = _accountsCache.active || null;
+  } else {
+    const data = await fetch('/api/accounts').then(r => r.json());
+    _accountsCache = data;
+    _accountsCacheTs = now;
+    S.accounts = data.accounts || [];
+    S.activeAccount = data.active || null;
+  }
+  
+  S.configured = S.accounts.length > 0;
+  S.accounts.sort((a, b) => { /* sort by provider, then name */ 
     const provA = (a.provider || 'claude').toLowerCase();
     const provB = (b.provider || 'claude').toLowerCase();
     if (provA < provB) return -1;
@@ -2926,10 +3714,7 @@ async function refreshAccountState() {
     if (nameA > nameB) return 1;
     return 0;
   });
-  S.activeAccount = data.active   || null;
-  S.configured    = S.accounts.length > 0;
 
-  // Restore or pick tab account
   if (!S.tabAccount) {
     S.tabAccount = S.accounts.find(a => a.active) || S.accounts[0] || null;
   } else {
@@ -2974,6 +3759,11 @@ function applyProviderUI(acct) {
 
   if (thinkBtn)        thinkBtn.style.display        = supThinking  ? '' : 'none';
   if (branchToggleBtn) branchToggleBtn.style.display = supBranching ? '' : 'none';
+  const webSearchBtn = document.getElementById('webSearchBtn');
+  if (webSearchBtn) {
+    const supWebSearch = provider === 'oneminai';
+    webSearchBtn.style.display = supWebSearch ? '' : 'none';
+  }
   if (canvasToggleBtn) canvasToggleBtn.style.display = supCanvas    ? '' : 'none';
 
   // Hide canvas panel entirely if not supported
@@ -2993,6 +3783,7 @@ function applyProviderUI(acct) {
   if (msgTa) {
     if      (provider === 'chatwithai') msgTa.placeholder = 'Message ChatWithAI…';
     else if (provider === 'oneminai')   msgTa.placeholder = 'Message 1min.AI…';
+    else if (provider === 'flowith')    msgTa.placeholder = 'Message Flowith…';
     else                                msgTa.placeholder = 'Message Claude…';
   }
 
@@ -3007,6 +3798,54 @@ function applyProviderUI(acct) {
 
   // ── 1min.AI panel button visibility ──────────────────────────────────────
   _syncOneminaiPanelBtn();
+  if (provider === 'flowith') {
+    _flowithScheduleRefresh();
+    // Fetch models + credits eagerly on account switch (background, no await)
+    _fetchAndCacheFlowithModels().then(models => {
+      if (models.length) {
+        // Update toolbar model selector with text models
+        const textModels = models.filter(
+          m => !m.category || m.category === 'text' || m.category === 'chat'
+        );
+        if (textModels.length) {
+          const sel = document.getElementById('modelSel');
+          if (sel) {
+            const cur = sel.value;
+            sel.innerHTML = '';
+            _fillFlowithSel('modelSel', textModels);
+            if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+            else if (sel.options.length) sel.selectedIndex = 0;
+          }
+        }
+      }
+    }).catch(() => {});
+    // Fetch credits eagerly too
+    apiFetch('/api/flowith/credits').then(d => {
+      const raw = d.credits_total ?? (d.credits?.total) ?? d.credits ?? null;
+      if (raw != null) _cacheFlowith(getTabAccountName(), raw);
+    }).catch(() => {});
+  }
+
+  if (provider === 'oneminai') {
+    // Fetch 1min.AI models eagerly on account switch
+    fetchOneminaiModels(false).catch(() => {});
+    // Fetch credits eagerly
+    apiFetch('/api/usage').then(d => {
+      if (d.provider === 'oneminai') {
+        const cr = d.credits ?? null;
+        if (cr != null) {
+          const name = getTabAccountName();
+          if (name) {
+            quotaCache[name] = { provider: 'oneminai', credits: cr };
+            _renderSidebarBar();
+            renderAccountMenu();
+            _renderOmaiPanelFromCache();
+          }
+        }
+      }
+    }).catch(() => {});
+  }
+
   // Pre-populate omaiTool hint on provider switch
   updateOmaiToolHint();
 
@@ -3093,7 +3932,28 @@ function applyProviderUI(acct) {
   if (msgTa) {
     if (provider === 'chatwithai') msgTa.placeholder = 'Message ChatWithAI…';
     else if (provider === 'oneminai') msgTa.placeholder = 'Message 1min.AI…';
+    else if (provider === 'flowith') msgTa.placeholder = 'Message Flowith…';
     else msgTa.placeholder = 'Message Claude…';
+  }
+
+  // Flowith: filter toolbar model selector to text/chat models only
+  // (image + video models belong in the tools panel)
+  if (provider === 'flowith') {
+    const sel2 = document.getElementById('modelSel');
+    if (sel2) {
+      const textModels = (acct.models || []).filter(
+        m => !m.category || m.category === 'text' || m.category === 'chat'
+      );
+      if (textModels.length) {
+        const cur = sel2.value;
+        sel2.innerHTML = '';
+        _fillFlowithSel('modelSel', textModels);
+        if (cur && [...sel2.options].some(o => o.value === cur)) sel2.value = cur;
+        else if (sel2.options.length) sel2.selectedIndex = 0;
+      }
+    }
+    // Show branching for Flowith (it supports p_id-based branching)
+    if (branchToggleBtn) branchToggleBtn.style.display = '';
   }
   if (quotaWrap) {
     if (provider === 'claude' || provider === 'oneminai') {
@@ -3105,12 +3965,13 @@ function applyProviderUI(acct) {
 }
 
 async function loadModelsForTab(sel, defaultModel) {
-  sel.innerHTML = '';
   try {
     // /api/models uses X-Account-Name header via apiFetch
     const mdata  = await apiFetch('/api/models');
     const models = mdata.models || [];
     const provider = mdata.provider || getTabProvider();
+
+    sel.innerHTML = '';
 
     if (!models.length) {
       // Hardcoded fallback
@@ -3136,7 +3997,7 @@ async function loadModelsForTab(sel, defaultModel) {
     // Group by vendor if multi-vendor (ChatWithAI)
     const byVendor = {};
     models.forEach(m => {
-      const v = m.vendor_slug || m.vendor || '__single__';
+      const v = m.vendor_slug || m.vendor ||  m.provider || '__single__';
       (byVendor[v] = byVendor[v] || []).push(m);
     });
 
@@ -3178,6 +4039,31 @@ async function loadModelsForTab(sel, defaultModel) {
   }
 }
 
+async function refreshModels() {
+  const sel = document.getElementById('modelSel');
+  if (!sel) return;
+  const btn = document.getElementById('refreshModelsBtn');
+  if (btn) btn.style.opacity = '0.4';
+  try {
+    //applyProviderUI(getAcctIdFromUrl() || getTabAccount());
+    loadModelsForTab(sel, sel.value);
+    // Invalidate accounts cache so next load gets fresh models
+    _cache_invalidate_client();
+    toast(`${sel.options.length} models loaded`, 'ok');
+  } catch (e) {
+    console.error('Model refresh failed:', e);
+    toast('Model refresh failed', 'err');
+  } finally {
+    if (btn) btn.style.opacity = '';
+  }
+}
+
+// Client-side cache invalidation
+function _cache_invalidate_client() {
+  // Force next refreshAccountState to bypass cache
+  _accountsCacheTs = 0;
+}
+
 const quotaCache = {};
 
 /* ── Fetch quota/credits for the current tab account ── */
@@ -3193,6 +4079,9 @@ async function fetchQuota() {
     const d = await apiFetch('/api/usage');
     if (d.provider === 'oneminai') {
       _cacheOneminai(acct.name, d.credits);
+      _renderSidebarBar();
+    } else if (d.provider === 'flowith' && d.credits) {
+      _cacheFlowith(acct.name, d.credits);
       _renderSidebarBar();
     } else if (d.provider === 'claude' && d.windows) {
       _cacheClaude(acct.name, d);
@@ -3213,6 +4102,12 @@ async function _pollAllAccounts() {
           _cacheOneminai(name, d.credits);
           changed = true;
         }
+      } else if (d.provider === 'flowith') {
+        const raw = d.credits_total ?? (d.credits?.total) ?? d.credits ?? null;
+        if (raw !== null && raw !== undefined) {
+          _cacheFlowith(name, raw);
+          changed = true;
+        }
       } else if (d.provider === 'claude' && d.quota?.windows) {
         _cacheClaude(name, d.quota);
         changed = true;
@@ -3230,6 +4125,18 @@ async function _pollAllAccounts() {
 /* ── Cache helpers ── */
 function _cacheOneminai(name, credits) {
   quotaCache[name] = { provider: 'oneminai', credits };
+}
+
+function _cacheFlowith(name, credits) {
+  let total = null;
+  if (credits !== null && credits !== undefined) {
+    if (typeof credits === 'object') {
+      total = credits.total ?? credits.credits_total ?? null;
+    } else {
+      total = Number(credits);
+    }
+  }
+  quotaCache[name] = { provider: 'flowith', credits: total };
 }
 
 function _cacheClaude(name, payload) {
@@ -3266,6 +4173,35 @@ function _renderSidebarBar() {
     fill.style.width    = cr > 0 ? '100%' : '0%';
     fill.className      = 'quota-bar-fill';
     detail.textContent  = `${cr.toLocaleString()} credits remaining`;
+    const omaiCr = document.getElementById('omaiCreditsDisplay');
+    if (omaiCr) omaiCr.textContent = `✦ ${cr.toLocaleString()} credits`;
+    return;
+  }
+
+  if (cached.provider === 'flowith') {
+    const cr = cached.credits;
+    if (cr === null || cr === undefined) { wrap.style.display = 'none'; return; }
+    const crNum  = typeof cr === 'number' ? cr : parseFloat(cr);
+    const crFmt2 = isNaN(crNum) ? String(cr) : crNum.toFixed(2);
+    const crFmt1 = isNaN(crNum) ? String(cr) : crNum.toFixed(1);
+
+    wrap.style.display = 'block';
+    label.textContent  = 'Credits (Flowith)';
+    pct.textContent    = crFmt1;
+
+    // Same as oneminai: 100% width if any credits remaining, 0% if none
+    fill.style.width   = crNum > 0 ? '100%' : '0%';
+    fill.className     = 'quota-bar-fill' +
+      (crNum < 1   ? ' crit' :
+       crNum < 5   ? ' warn' : '');
+    detail.textContent = `${crFmt2} credits remaining`;
+
+    // Update panel header badge
+    const fwCr = document.getElementById('flowithCreditsDisplay');
+    if (fwCr) fwCr.textContent = `⋆ ${crFmt1} credits`;
+
+    // Update account switcher mini-badge if visible
+    renderAccountMenu();
     return;
   }
 
@@ -3311,12 +4247,31 @@ function buildMiniQuotaHtml(acctName) {
   if (!cached) return '';
 
   if (provider === 'oneminai') {
-    const { credits } = cached;
-    if (credits === null || credits === undefined) return '';
+    const cr = cached.credits;
+    if (cr === null || cr === undefined) return '';
+    const crFmt = typeof cr === 'number' ? cr.toLocaleString() : String(cr);
     return `<div class="mini-quota">
       <span class="mini-quota-pct"
             style="min-width:auto;font-size:9px;color:var(--oneminai)">
-        ✦ ${credits.toLocaleString()} credits
+        ✦ ${crFmt} credits
+      </span>
+    </div>`;
+  }
+
+  if (provider === 'flowith') {
+    const cr = cached.credits;
+    if (cr === null || cr === undefined) return '';
+    const crFmt = typeof cr === 'number' ? cr.toFixed(2) : String(cr);
+    // Colour-code: green if plenty, yellow if low (<5), red if critical (<1)
+    const crNum  = parseFloat(crFmt);
+    const colour = isNaN(crNum) ? 'var(--flowith)'
+                 : crNum < 1   ? 'var(--red)'
+                 : crNum < 5   ? 'var(--yellow)'
+                 : 'var(--flowith)';
+    return `<div class="mini-quota">
+      <span class="mini-quota-pct"
+            style="min-width:auto;font-size:9px;color:${colour}">
+        ⋆ ${crFmt} credits
       </span>
     </div>`;
   }
@@ -3394,18 +4349,23 @@ function renderAccountMenu(filter = '') {
     const isCWA   = prov === 'chatwithai';
     const isTabActive = acct.name === tabName;
 
-    const is1min = prov === 'oneminai';
+    const is1min   = prov === 'oneminai';
+    const isFlowith = prov === 'flowith';
     const badge = isCWA
       ? `<span class="ami-badge" style="color:#38bdf8;background:rgba(56,189,248,0.10);border-color:rgba(56,189,248,0.18)">⚡ ChatWithAI</span>`
       : is1min
         ? `<span class="ami-badge" style="color:var(--oneminai);background:var(--oneminai-dim);border-color:var(--oneminai-mid)">✦ 1min.AI</span>`
-        : `<span class="ami-badge" style="color:var(--accent)">🔑 Claude</span>`;
+        : isFlowith
+          ? `<span class="ami-badge" style="color:var(--flowith);background:var(--flowith-dim);border-color:var(--flowith-mid)">⋆ Flowith</span>`
+          : `<span class="ami-badge" style="color:var(--accent);background:var(--accent-dim);border-color:var(--accent-mid)">🔑 Claude</span>`;
 
     const subtitle = isCWA
       ? 'No account needed'
       : is1min
         ? (acct.api_key ? 'api key set' : 'no key set')
-        : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
+        : isFlowith
+          ? (acct.api_key ? 'token set' : 'no token set')
+          : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
 
     // Mini quota bar (Claude only)
     const miniBar = buildMiniQuotaHtml(acct.name);
@@ -3459,18 +4419,23 @@ function renderAccountList(filter = '') {
 
   for (const acct of visible) {
     const prov  = (acct.provider || 'claude').toLowerCase();
-    const isCWA = prov === 'chatwithai';
+    const isCWA      = prov === 'chatwithai';
     const is1minList = prov === 'oneminai';
+    const isFlowithList = prov === 'flowith';
     const provBadge = isCWA
       ? `<span style="font-size:10px;padding:1px 6px;background:rgba(56,189,248,0.10);color:#38bdf8;border-radius:4px;font-weight:600;flex-shrink:0">⚡ Free</span>`
       : is1minList
         ? `<span style="font-size:10px;padding:1px 5px;background:var(--oneminai-dim);color:var(--oneminai);border-radius:4px;font-weight:600;flex-shrink:0">✦ 1min.AI</span>`
-        : `<span style="font-size:10px;padding:1px 5px;background:var(--accent-dim);color:var(--accent);border-radius:4px;font-weight:600;flex-shrink:0">🔑 Claude</span>`;
+        : isFlowithList
+          ? `<span style="font-size:10px;padding:1px 5px;background:var(--flowith-dim);color:var(--flowith);border-radius:4px;font-weight:600;flex-shrink:0">⋆ Flowith</span>`
+          : `<span style="font-size:10px;padding:1px 5px;background:var(--accent-dim);color:var(--accent);border-radius:4px;font-weight:600;flex-shrink:0">🔑 Claude</span>`;
     const subtitle = isCWA
       ? 'No account needed'
       : is1minList
         ? (acct.api_key ? 'api key set' : 'no key set')
-        : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
+        : isFlowithList
+          ? (acct.api_key ? 'token set' : 'no token set')
+          : (acct.organization_id ? acct.organization_id.slice(0,8)+'…' : 'session key');
 
     // Mini quota bar (Claude only)
     const miniBar = buildMiniQuotaHtml(acct.name);
@@ -3540,16 +4505,22 @@ async function saveAccount() {
   if (!name) { toast('Account name is required', 'err'); return; }
 
   const oneminaiKey = (document.getElementById('oneminaiKeyInp')?.value || '').trim();
+  const flowithKey  = (document.getElementById('flowithKeyInp')?.value  || '').trim();
+  const flowithUid  = (document.getElementById('flowithUserIdInp')?.value || '').trim();
 
   // Build the request body
   const body = {
     name,
     provider,
     activate: act,
-    session_key:   (document.getElementById('skInp')?.value  || '').trim(),
+    session_key:     (document.getElementById('skInp')?.value  || '').trim(),
     organization_id: (document.getElementById('orgInp')?.value || '').trim(),
-    claude_code:   (document.getElementById('claudeCodeInp')?.value || '').trim(),
-    api_key:       oneminaiKey,
+    claude_code:     (document.getElementById('claudeCodeInp')?.value || '').trim(),
+    api_key:         provider === 'flowith' ? flowithKey : oneminaiKey,
+    user_id:         flowithUid,
+    refresh_token:   provider === 'flowith'
+      ? (document.getElementById('flowithRefreshTokenInp')?.value || '').trim()
+      : '',
   };
 
   const r = await fetch('/api/accounts', {
@@ -3710,7 +4681,12 @@ function _resetAcctForm() {
   document.getElementById('orgInp').value           = '';
   document.getElementById('claudeCodeInp').value    = '';
   document.getElementById('providerSel').value      = 'claude';
-  document.getElementById('oneminaiKeyInp').value       = '';
+  document.getElementById('oneminaiKeyInp').value    = '';
+  const fki = document.getElementById('flowithKeyInp');
+  if (fki) fki.value = '';
+  const fui = document.getElementById('flowithUserIdInp');
+  if (fui) fui.value = '';
+  _flowithResetAuthStatus();
   _oneminaiResetAuthStatus();
   document.getElementById('acctFormTitle').textContent  = 'Add Account';
   document.getElementById('acctSaveBtn').textContent    = 'Add Account';
@@ -3726,7 +4702,13 @@ function editAccount(name) {
   document.getElementById('providerSel').value = acct.provider || 'claude';
   document.getElementById('orgInp').value       = acct.organization_id || '';
   document.getElementById('skInp').value        = acct.session_key     || '';
-  document.getElementById('oneminaiKeyInp').value = acct.api_key || '';
+  document.getElementById('oneminaiKeyInp').value = acct.provider === 'oneminai' ? (acct.api_key || '') : '';
+  const fki2 = document.getElementById('flowithKeyInp');
+  if (fki2) fki2.value = acct.provider === 'flowith' ? (acct.api_key || '') : '';
+  const fui2 = document.getElementById('flowithUserIdInp');
+  if (fui2) fui2.value = acct.provider === 'flowith' ? (acct.user_id || '') : '';
+  // Reset Flowith auth status badge when editing a different account
+  _flowithResetAuthStatus();
   document.getElementById('acctFormTitle').textContent       = 'Edit Account';
   document.getElementById('acctSaveBtn').textContent         = 'Save Changes';
   document.getElementById('acctCancelEditBtn').style.display = '';
@@ -3762,8 +4744,11 @@ async function deleteAccount(e, name) {
 function openSettings() {
   const inp = document.getElementById('acctSearchInp');
   if (inp) inp.value = '';
+  // Reset the form to "Add Account / Claude" state so Extended Thinking
+  // visibility is correct before the user selects or edits any account.
+  _resetAcctForm();
   renderAccountList();
-  toggleProviderFields();
+  // toggleProviderFields() is already called inside _resetAcctForm()
   openOverlay('settingsOverlay');
 }
 
@@ -3791,16 +4776,23 @@ async function newConv() {
   S.convs[d.id] = d;
   S.allConvs.unshift({ uuid:d.id, name:'', created_at:new Date().toISOString(), updated_at:new Date().toISOString() });
   renderSidebar();
-  selectConv(d.id);
+  selectConv(d.id, getAcctIdFromUrl() || getTabAccountName(), true);
 }
 
-async function selectConv(id, skipPush) {
+async function selectConv(id, acct, skipPush) {
   S.convId = id;
   document.getElementById('chat').classList.remove('hidden');
   document.getElementById('chat').style.display = 'flex';
   document.getElementById('splash').classList.add('hidden');
-  if (!skipPush) history.pushState({ convId: id }, '', '/c/' + id);
+  const _urlAcct = acct || getTabAccountName() || 'default';
+  const _urlPath = `/a/${encodeURIComponent(_urlAcct)}/c/${id}`;
+  if (skipPush) history.replaceState({ convId: id }, '', _urlPath);
+  else          history.pushState(   { convId: id }, '', _urlPath);
   renderSidebar();
+  // switch this tab's account if the caller requests one that isn't active yet
+  if (acct && acct !== getTabAccountName()) {
+    await switchTabAccount(acct);
+  }
 
   /* Always fetch full conversation data (with chat_messages) */
   const cached = S.convs[id];
@@ -3814,7 +4806,7 @@ async function selectConv(id, skipPush) {
   if (_scSel && S.canvasOpen && S.canvasTab === 'files') renderCanvasFiles();
   const c = S.convs[id];
   const name = c?.name || 'Conversation';
-  document.title = name + ' — Claude Console';
+  document.title = name + ' — ChatAI Console';
 }
 
 async function delConv(e, id) {
@@ -3859,11 +4851,11 @@ function renderSidebar() {
         <div class="conv-btns">
           <button class="conv-btn pin-btn pinned" onclick="togglePin(event,'${id}')" title="Unpin">📌</button>
           <button class="conv-btn" onclick="renameConv(event,'${id}')" title="Rename" style="font-size:11px">✎</button>
-          <button class="conv-btn del-btn" onclick="delConv(event,'${id}')">✕</button>
+          <button class="conv-btn del-btn" onclick="deleteConvFull(event,'${id}')" title="Delete conversation">✕</button>
         </div>`;
       el.onclick = e => {
         if (e.target.closest('.conv-btns')) return;
-        selectConv(id);
+        selectConv(id, getAcctIdFromUrl() || getTabAccountName(), true);
       };
       list.appendChild(el);
     }
@@ -3903,7 +4895,7 @@ function renderSidebar() {
       </div>`;
     el.onclick = e => {
       if (e.target.closest('.conv-btns')) return;
-      selectConv(id);
+      selectConv(id, getAcctIdFromUrl() || getTabAccountName(), true);
     };
     list.appendChild(el);
   }
@@ -3981,7 +4973,7 @@ async function runOmaiTextTool() {
   const tool   = document.getElementById('omaiTool')?.value;
   const text   = document.getElementById('omaiTextInput')?.value.trim();
   const lang   = document.getElementById('omaiLang')?.value.trim() || 'English';
-  const tone   = document.getElementById('omaiTone')?.value || 'professional';
+  const tone   = document.getElementById('omaiTone')?.value || null;
   const result = document.getElementById('omaiTextResult');
   const output = document.getElementById('omaiTextResultContent');
 
@@ -3991,10 +4983,11 @@ async function runOmaiTextTool() {
   toast('Processing…', 'info');
 
   try {
+    let applyTone = tone && !['grammar', 'summarize', 'expand', 'shorten', 'translate'].includes(tool);
     const r = await apiFetch('/api/oneminai/content-tool', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tool, prompt: text, language: lang, tone }),
+      body: JSON.stringify({ tool, text, language: lang, tone: applyTone ? tone : null }),
     });
     if (r.text !== undefined) {
       if (output) output.textContent = r.text;
@@ -4141,6 +5134,10 @@ function _syncOneminaiPanelBtn() {
   const btn  = document.getElementById('oneminaiPanelBtn');
   const prov = getTabProvider();
   if (btn) btn.style.display = prov === 'oneminai' ? '' : 'none';
+
+  // Flowith panel button
+  const fbtn = document.getElementById('flowithPanelBtn');
+  if (fbtn) fbtn.style.display = prov === 'flowith' ? '' : 'none';
 }
 
 function filterConvs(q) {
@@ -4244,42 +5241,61 @@ function renderMsgs() {
 }
 
 function buildChain(conv) {
-  const map = {};
   const messages = conv.chat_messages || [];
-  
-  // Create map of messages by UUID
-  for (const m of messages) {
-    if (m.uuid) {
-      map[m.uuid] = m;
-    }
-  }
-  
-  const chain = [];
-  let cur = conv.current_leaf_message_uuid;
+  if (!messages.length) return [];
+
   const ROOT = '00000000-0000-4000-8000-000000000000';
-  
-  // If no current_leaf specified, use the last message
-  if (!cur || cur === ROOT) {
-    if (messages.length > 0) {
-      return messages; // Return all messages in order
+
+  // Build UUID → message map
+  const map = {};
+  for (const m of messages) { if (m.uuid) map[m.uuid] = m; }
+
+  // Helper: walk from a leaf uuid backwards, return ordered chain or null
+  function walkFrom(leafUuid) {
+    const chain = [];
+    const visited = new Set();
+    let cur = leafUuid;
+    while (cur && cur !== ROOT && map[cur] && !visited.has(cur)) {
+      visited.add(cur);
+      chain.unshift(map[cur]);
+      cur = map[cur].parent_message_uuid;
     }
-    return [];
+    return chain;
   }
-  
-  // Build chain from leaf backwards
-  const visited = new Set(); // Prevent infinite loops
-  while (cur && cur !== ROOT && map[cur] && !visited.has(cur)) {
-    visited.add(cur);
-    chain.unshift(map[cur]);
-    cur = map[cur].parent_message_uuid;
+
+  // --- Strategy 1: walk from current_leaf_message_uuid ---
+  const leaf = conv.current_leaf_message_uuid;
+  if (leaf && leaf !== ROOT && map[leaf]) {
+    const chain = walkFrom(leaf);
+    // Accept if we got at least half the messages (handles minor gaps)
+    if (chain.length >= Math.ceil(messages.length * 0.5)) return chain;
   }
-  
-  // If chain is empty but we have messages, return them all
-  if (chain.length === 0 && messages.length > 0) {
-    return messages;
+
+  // --- Strategy 2: find the deepest leaf ourselves ---
+  // A leaf is a message that no other message references as a parent.
+  const hasChild = new Set();
+  for (const m of messages) {
+    if (m.parent_message_uuid && m.parent_message_uuid !== ROOT) {
+      hasChild.add(m.parent_message_uuid);
+    }
   }
-  
-  return chain;
+  const leaves = messages.filter(m => m.uuid && !hasChild.has(m.uuid));
+
+  // Pick the leaf that produces the longest chain
+  let best = [];
+  for (const lf of leaves) {
+    const chain = walkFrom(lf.uuid);
+    if (chain.length > best.length) best = chain;
+  }
+  if (best.length >= Math.ceil(messages.length * 0.5)) return best;
+
+  // --- Strategy 3: last resort – sort all messages by index then created_at ---
+  return [...messages].sort((a, b) => {
+    if (a.index != null && b.index != null) return a.index - b.index;
+    const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return ta - tb;
+  });
 }
 
 function buildMsgEl(msg) {
@@ -4357,8 +5373,7 @@ function buildMsgEl(msg) {
     </button>
   </div>` : '';
 
-  const _supBranch = S.tabAccount?._supBranching !== false &&
-                     (S.tabAccount?.provider || 'claude').toLowerCase() === 'claude';
+  const _supBranch = S.tabAccount?._supBranching !== false;
   const utilsBottomHtml = msg.sender === 'assistant' ? `
     <div class="md-utils bottom">
       <button class="md-util-btn" onclick="regenerateMsg('${msg.uuid}')">
@@ -4366,6 +5381,9 @@ function buildMsgEl(msg) {
       </button>
       ${_supBranch ? `<button class="md-util-btn" onclick="forkFromMsg('${msg.uuid}')">
         <span>⎇</span><span>Fork</span>
+      </button>` : ''}
+      ${_supBranch ? `<button class="md-util-btn" onclick="regenerateMsg('${msg.uuid}')">
+        <span>↻</span><span>Regen</span>
       </button>` : ''}
     </div>` : '';
 
@@ -4387,6 +5405,7 @@ function buildMsgEl(msg) {
     </div>
     <div class="msg-actions">
       ${msg.sender === 'human' && (S.tabAccount?._supBranching !== false) ? `<button class="msg-act-btn edit-btn" onclick="editMsg('${msg.uuid}')">✎ Edit</button>` : ''}
+      ${msg.sender === 'human' && (S.tabAccount?._supBranching !== false) ? `<button class="msg-act-btn" onclick="rerunFromMsg('${msg.uuid}')" title="Re-run from this message">↻ Re-run</button>` : ''}
     </div>`;
 
   return el;
@@ -4658,19 +5677,112 @@ function toggleCollapse(bodyId, chevId) {
    BRANCH SELECTOR
 ═══════════════════════════════════════════ */
 function buildBranchSel() {
-  if (!S.convId) return;
-  const conv = S.convs[S.convId];
-  const sel  = document.getElementById('branchSel');
-  sel.innerHTML = '<option value="00000000-0000-4000-8000-000000000000">— root / new thread —</option>';
-  if (!conv?.chat_messages) return;
-  for (const m of conv.chat_messages) {
-    const label = `[${m.sender}] ${(m.text||'').slice(0,55).replace(/\n/g,' ') || m.uuid.slice(0,8)}`;
-    const opt   = document.createElement('option');
-    opt.value   = m.uuid;
-    opt.textContent = label;
-    if (m.uuid === conv.current_leaf_message_uuid) opt.selected = true;
-    sel.appendChild(opt);
+  // With the new overlay UI we don't build a <select>;
+  // just ensure the hidden input and display label are consistent.
+  const sel = document.getElementById('branchSel');
+  if (sel && sel.value === '00000000-0000-4000-8000-000000000000') {
+    _setBranchPoint('00000000-0000-4000-8000-000000000000', '— root / new thread —');
   }
+}
+
+/* ── New branch overlay helpers ── */
+let _branchPendingUuid  = null;
+let _branchPendingLabel = null;
+
+function openBranchOverlay() {
+  const overlay = document.getElementById('branchOverlay');
+  const list    = document.getElementById('branchMsgList');
+  if (!overlay || !list) return;
+
+  _branchPendingUuid  = null;
+  _branchPendingLabel = null;
+  document.getElementById('branchConfirmBar')?.classList.add('hidden');
+
+  list.innerHTML = '';
+
+  // Root option
+  const rootEl = _makeBranchItem(
+    '00000000-0000-4000-8000-000000000000',
+    'root',
+    '— root / new thread —',
+    '',
+    document.getElementById('branchSel')?.value === '00000000-0000-4000-8000-000000000000'
+  );
+  list.appendChild(rootEl);
+
+  const conv = S.convs[S.convId];
+  if (conv?.chat_messages) {
+    for (const m of conv.chat_messages) {
+      const preview = (m.text || (m.content||[]).find(b=>b.type==='text')?.text || '')
+        .slice(0, 90).replace(/\n/g, ' ');
+      const ts = m.created_at ? fmtTime(m.created_at) : '';
+      const selected = document.getElementById('branchSel')?.value === m.uuid;
+      const el = _makeBranchItem(m.uuid, m.sender, preview || m.uuid.slice(0,8)+'…', ts, selected);
+      list.appendChild(el);
+    }
+  }
+
+  overlay.classList.remove('hidden');
+}
+
+function _makeBranchItem(uuid, sender, preview, ts, selected) {
+  const el = document.createElement('div');
+  el.className = `branch-msg-item${uuid === '00000000-0000-4000-8000-000000000000' ? ' root-item' : ''}${selected ? ' selected' : ''}`;
+  el.dataset.uuid = uuid;
+
+  const badgeClass = sender === 'human' ? 'human' : sender === 'root' ? 'root' : 'assistant';
+  const badgeTxt   = sender === 'human' ? 'YOU' : sender === 'root' ? 'ROOT' : 'AI';
+
+  el.innerHTML = `
+    <span class="branch-msg-sender-badge ${badgeClass}">${badgeTxt}</span>
+    <span class="branch-msg-preview" title="${esc(preview)}">${esc(preview)}</span>
+    ${ts ? `<span class="branch-msg-ts">${esc(ts)}</span>` : ''}
+    <span class="branch-select-arrow">⎇</span>`;
+
+  el.addEventListener('click', () => _selectBranchItem(uuid, preview, sender));
+  return el;
+}
+
+function _selectBranchItem(uuid, preview, sender) {
+  // Highlight selected
+  document.querySelectorAll('.branch-msg-item').forEach(el => {
+    el.classList.toggle('selected', el.dataset.uuid === uuid);
+  });
+
+  _branchPendingUuid  = uuid;
+  _branchPendingLabel = uuid === '00000000-0000-4000-8000-000000000000'
+    ? '— root / new thread —'
+    : `[${sender}] ${preview.slice(0, 55)}${preview.length > 55 ? '…' : ''}`;
+
+  const bar = document.getElementById('branchConfirmBar');
+  const lbl = document.getElementById('branchConfirmLabel');
+  if (bar) bar.classList.remove('hidden');
+  if (lbl) lbl.textContent = _branchPendingLabel;
+}
+
+function confirmBranchSelection() {
+  if (!_branchPendingUuid) return;
+  _setBranchPoint(_branchPendingUuid, _branchPendingLabel);
+  closeBranchOverlay();
+  toast(`Branch point set — type your message and send`, 'ok');
+}
+
+function closeBranchOverlay() {
+  document.getElementById('branchOverlay')?.classList.add('hidden');
+  _branchPendingUuid  = null;
+  _branchPendingLabel = null;
+}
+
+function resetBranchPoint() {
+  _setBranchPoint('00000000-0000-4000-8000-000000000000', '— root / new thread —');
+  toast('Branch point reset to root', 'info');
+}
+
+function _setBranchPoint(uuid, label) {
+  const inp = document.getElementById('branchSel');
+  const lbl = document.getElementById('branchSelLabel');
+  if (inp) inp.value       = uuid;
+  if (lbl) lbl.textContent = label || uuid.slice(0,8);
 }
 
 /* ═══════════════════════════════════════════
@@ -5207,7 +6319,28 @@ async function doSend() {
   if (!S.convId)    { toast('No conversation selected', 'err'); return; }
   if (!S.configured){ toast('Not configured', 'err'); openSettings(); return; }
 
-  const parentUuid = document.getElementById('branchSel').value;
+  let parentUuid;
+  const _supBranch = S.tabAccount?._supBranching !== false &&
+                    (S.tabAccount?.provider || 'claude').toLowerCase() === 'claude';
+
+  if (_supBranch) {
+    // Claude with branching: respect the branch selector
+    parentUuid = document.getElementById('branchSel').value;
+  } else {
+    // Non-branching providers: always use the actual last message
+    const conv = S.convs[S.convId];
+    const msgs = conv?.chat_messages || [];
+    if (msgs.length > 0) {
+      // Walk the chain to find the real leaf
+      const chainMsgs = buildChain(conv);
+      parentUuid = chainMsgs.length > 0
+        ? chainMsgs[chainMsgs.length - 1].uuid
+        : '00000000-0000-4000-8000-000000000000';
+    } else {
+      parentUuid = '00000000-0000-4000-8000-000000000000';
+    }
+  }
+
   const model      = document.getElementById('modelSel').value;
 
   const active = S.accounts.find(a => a.active);
@@ -5461,6 +6594,14 @@ document.querySelectorAll('.overlay').forEach(o => {
   o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); });
 });
 
+// Close polling panel on outside click
+document.addEventListener('click', e => {
+  const panel = document.getElementById('pollingPanel');
+  const btn   = document.getElementById('pollingConfigBtn');
+  if (!panel || panel.style.display === 'none') return;
+  if (!panel.contains(e.target) && e.target !== btn) closePollingPanel();
+}, true);
+
 /* ═══════════════════════════════════════════
    INPUT HELPERS
 ═══════════════════════════════════════════ */
@@ -5566,48 +6707,67 @@ function expandMsg(uuid) {
   }
 }
 
-// Regenerate from a specific message
+// Regenerate from a specific assistant message — works for Claude + Flowith
 function regenerateMsg(uuid) {
   const conv = S.convs[S.convId];
   if (!conv) return;
-  
+
   const msg = (conv.chat_messages || []).find(m => m.uuid === uuid);
   if (!msg || msg.sender !== 'assistant') return;
-  
+
   // Find the parent human message
-  const parentMsg = (conv.chat_messages || []).find(m => m.uuid === msg.parent_message_uuid);
+  const parentMsg = (conv.chat_messages || []).find(
+    m => m.uuid === msg.parent_message_uuid
+  );
   if (!parentMsg) return;
-  
-  // Set branch point and resend
-  document.getElementById('branchSel').value = parentMsg.parent_message_uuid || '00000000-0000-4000-8000-000000000000';
-  document.getElementById('msgTa').value = parentMsg.text || '';
-  
-  // Reattach files if any
+
+  const text       = parentMsg.text
+    || (parentMsg.content || []).find(b => b.type === 'text')?.text || '';
+  const grandParent = parentMsg.parent_message_uuid
+    || '00000000-0000-4000-8000-000000000000';
+
+  const _supBranch = S.tabAccount?._supBranching !== false;
+  if (_supBranch) {
+    _setBranchPoint(grandParent, '— regenerating from parent —');
+    if (!S.branchVisible) toggleBranchRow();
+  }
+
+  // Reattach files
   S.attached = [];
-  if (parentMsg.files_v2 && parentMsg.files_v2.length) {
+  if (parentMsg.files_v2?.length) {
     for (const f of parentMsg.files_v2) {
       S.attached.push({
         file_uuid: f.file_uuid,
-        _filename: f.file_name,
-        _mime: f.file_kind
+        _filename: f.file_name || f.filename || 'file',
+        _mime:     f.file_kind || f.content_type || '',
+        _size:     f.file_size || 0,
       });
     }
     renderAttBar();
   }
-  
+
+  const ta = document.getElementById('msgTa');
+  ta.value = text;
+  resizeTa(ta);
+  updateCount(ta);
+  ta.focus();
   toast('Ready to regenerate — press ↵ to send', 'info');
-  document.getElementById('msgTa').focus();
 }
 
 // Fork conversation from a message
 function forkFromMsg(uuid) {
   const conv = S.convs[S.convId];
   if (!conv) return;
-  
-  document.getElementById('branchSel').value = uuid;
+
+  const msg     = (conv.chat_messages || []).find(m => m.uuid === uuid);
+  const preview = msg
+    ? `[${msg.sender}] ${(msg.text || '').slice(0, 55).replace(/\n/g,' ')}`
+    : uuid.slice(0, 8) + '…';
+
+  _setBranchPoint(uuid, preview);
   if (!S.branchVisible) toggleBranchRow();
   document.getElementById('msgTa').focus();
-  toast('Branching from this message — type your alternative response', 'info');
+  toast('Branch point set — type your message and send', 'info');
 }
 
 function toggleCodeBlock(wrapperId, btn) {
@@ -5634,9 +6794,710 @@ function dlUrl(convId, filePath, inline = false) {
 }
 
 /* ═══════════════════════════════════════════
+   POLLING CONFIG PANEL
+═══════════════════════════════════════════ */
+
+let _pollTimer = null;
+let _pollCfg = {
+  auto_poll_credits: true,
+  poll_interval_sec: 90,
+  stagger_delay_sec: 2.5,
+  request_timeout_sec: 30,
+};
+
+async function loadPollingConfig() {
+  try {
+    const cfg = await fetch('/api/settings/polling').then(r => r.json());
+    Object.assign(_pollCfg, cfg);
+    _applyPollingCfgToUI();
+  } catch {}
+}
+
+function _applyPollingCfgToUI() {
+  const t = document.getElementById('pollAutoToggle');
+  const i = document.getElementById('pollIntervalInp');
+  const s = document.getElementById('pollStaggerInp');
+  const x = document.getElementById('pollTimeoutInp');
+  if (t) t.checked = !!_pollCfg.auto_poll_credits;
+  if (i) i.value   = _pollCfg.poll_interval_sec;
+  if (s) s.value   = _pollCfg.stagger_delay_sec;
+  if (x) x.value   = _pollCfg.request_timeout_sec;
+  _reschedulePoller();
+}
+
+function pollingDirty() {
+  const btn = document.getElementById('pollSaveBtn');
+  if (btn) btn.style.background = 'linear-gradient(135deg, #e0943a, #c27a20)';
+}
+
+async function savePollingConfig() {
+  const t = document.getElementById('pollAutoToggle');
+  const i = document.getElementById('pollIntervalInp');
+  const s = document.getElementById('pollStaggerInp');
+  const x = document.getElementById('pollTimeoutInp');
+  const body = {
+    auto_poll_credits:   t ? t.checked : true,
+    poll_interval_sec:   parseFloat(i?.value || 90),
+    stagger_delay_sec:   parseFloat(s?.value || 2.5),
+    request_timeout_sec: parseFloat(x?.value || 30),
+  };
+  const statusEl = document.getElementById('pollStatus');
+  try {
+    const r = await fetch('/api/settings/polling', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    }).then(r => r.json());
+    if (r.success) {
+      Object.assign(_pollCfg, r.config);
+      if (statusEl) { statusEl.textContent = '✓ Saved'; statusEl.className = 'poll-status ok'; }
+      const btn = document.getElementById('pollSaveBtn');
+      if (btn) btn.style.background = '';
+      _reschedulePoller();
+      setTimeout(() => { if (statusEl) { statusEl.textContent = ''; statusEl.className = 'poll-status'; } }, 3000);
+    } else {
+      if (statusEl) { statusEl.textContent = '✕ ' + (r.error || 'Failed'); statusEl.className = 'poll-status err'; }
+    }
+  } catch (err) {
+    if (statusEl) { statusEl.textContent = '✕ ' + err.message; statusEl.className = 'poll-status err'; }
+  }
+}
+
+function _reschedulePoller() {
+  if (_pollTimer) clearInterval(_pollTimer);
+  if (!_pollCfg.auto_poll_credits) return;
+  const ms = Math.max(10_000, (_pollCfg.poll_interval_sec || 90) * 1000);
+  _pollTimer = setInterval(_pollAllAccounts, ms);
+}
+
+function togglePollingPanel() {
+  const panel = document.getElementById('pollingPanel');
+  const btn   = document.getElementById('pollingConfigBtn');
+  if (!panel) return;
+  const isHidden = panel.style.display === 'none' || !panel.style.display;
+  panel.style.display = isHidden ? '' : 'none';
+  if (btn) btn.classList.toggle('active', isHidden);
+  if (isHidden) _applyPollingCfgToUI();
+}
+
+function closePollingPanel() {
+  const panel = document.getElementById('pollingPanel');
+  const btn   = document.getElementById('pollingConfigBtn');
+  if (panel) panel.style.display = 'none';
+  if (btn)   btn.classList.remove('active');
+}
+
+// ── Patched _pollAllAccounts — respects _pollCfg.auto_poll_credits ──────
+async function _pollAllAccounts() {
+  if (!_pollCfg.auto_poll_credits) return;
+  try {
+    const all = await fetch('/api/usage/all').then(r => r.json());
+    let changed = false;
+    for (const [name, d] of Object.entries(all)) {
+      if (d.provider === 'oneminai') {
+        if (d.credits !== null && d.credits !== undefined) {
+          _cacheOneminai(name, d.credits);
+          changed = true;
+        }
+      } else if (d.provider === 'claude' && d.quota?.windows) {
+        _cacheClaude(name, d.quota);
+        changed = true;
+      }
+    }
+    if (changed) {
+      _renderSidebarBar();
+      renderAccountMenu();
+      renderAccountList();
+    }
+  } catch { /* silent */ }
+}
+
+/* ═══════════════════════════════════════════
+   1MIN.AI — MODEL CATALOG FETCH + CACHE
+═══════════════════════════════════════════ */
+
+let _omaiModelCache = { fetched_at: 0, models: [], by_category: {} };
+
+// Called on account switch and background warm-up — NOT on panel open.
+async function fetchOneminaiModels(force = false) {
+  const now = Date.now();
+  if (!force && _omaiModelCache.models.length && now - _omaiModelCache.fetched_at < 900_000) {
+    return _omaiModelCache;
+  }
+  try {
+    const data = await apiFetch('/api/oneminai/models');
+    if (data.models) {
+      _omaiModelCache = {
+        fetched_at:  now,
+        models:      data.models,
+        by_category: data.by_category || {},
+      };
+    }
+  } catch {}
+  return _omaiModelCache;
+}
+
+// Populate image model select from CACHE only — no network call.
+// fetchOneminaiModels() is called on account switch and background warm-up.
+function populateOmaiImageModels() {
+  const sel = document.getElementById('omaiImageModel');
+  if (!sel) return;
+  const acct = getTabAccount();
+  if (!acct || (acct.provider || '').toLowerCase() !== 'oneminai') return;
+
+  const imgModels = (_omaiModelCache.by_category?.image || []).filter(m => m.id);
+  if (!imgModels.length) return;  // keep hardcoded defaults
+
+  const current = sel.value;
+  sel.innerHTML = '';
+  imgModels.forEach(m => {
+    const o = document.createElement('option');
+    o.value = m.id;
+    o.textContent = m.display_name || m.id;
+    sel.appendChild(o);
+  });
+  if (current && [...sel.options].some(o => o.value === current)) sel.value = current;
+}
+
+// Populate TTS model select from CACHE only.
+function populateOmaiAudioModels() {
+  const modelSel = document.getElementById('omaiTTSModel');
+  const acct = getTabAccount();
+  if (!acct || (acct.provider || '').toLowerCase() !== 'oneminai') return;
+
+  const audioModels = (
+    _omaiModelCache.by_category?.audio ||
+    _omaiModelCache.by_category?.tts   || []
+  ).filter(m => m.id);
+  if (!audioModels.length || !modelSel) return;
+
+  const current = modelSel.value;
+  modelSel.innerHTML = '';
+  audioModels.forEach(m => {
+    const o = document.createElement('option');
+    o.value = m.id;
+    o.textContent = m.display_name || m.id;
+    modelSel.appendChild(o);
+  });
+  if (current && [...modelSel.options].some(o => o.value === current)) modelSel.value = current;
+}
+
+/* ═══════════════════════════════════════════
+   1MIN.AI — ENHANCED PANEL INIT
+═══════════════════════════════════════════ */
+
+function _omaiPanelOnOpen() {
+  // Panel open just renders from cache — no fetching.
+  _renderOmaiPanelFromCache();
+  // Model selects read from already-populated cache (no network call)
+  populateOmaiImageModels();
+  populateOmaiAudioModels();
+  updateOmaiToolHint();
+}
+
+function _renderOmaiPanelFromCache() {
+  const name   = getTabAccountName();
+  const cached = name ? quotaCache[name] : null;
+  const el     = document.getElementById('omaiCreditsDisplay');
+  if (!el) return;
+  if (!cached || cached.provider !== 'oneminai' || cached.credits == null) {
+    el.textContent = '';
+    return;
+  }
+  const cr = cached.credits;
+  el.textContent = typeof cr === 'number'
+    ? `✦ ${cr.toLocaleString()} credits`
+    : `✦ ${cr} credits`;
+}
+
+function toggleOneminaiPanel() {
+  const panel = document.getElementById('oneminaiPanel');
+  if (!panel) return;
+  const wasCollapsed = panel.classList.contains('collapsed');
+  panel.classList.toggle('collapsed');
+  const btn = document.getElementById('oneminaiPanelBtn');
+  if (btn) btn.classList.toggle('active', wasCollapsed);
+  if (wasCollapsed) _omaiPanelOnOpen();  // renders from cache only
+}
+
+/* ═══════════════════════════════════════════
+   IMPROVED CONVERSATION DELETE (all providers)
+═══════════════════════════════════════════ */
+
+async function deleteConvFull(e, id) {
+  e.stopPropagation();
+  if (!confirm('Delete this conversation?')) return;
+  const provider = getTabProvider();
+
+  // For oneminai / claude: server-side delete
+  if (provider === 'oneminai' || provider === 'claude') {
+    try {
+      await apiFetch(`/api/conversations/${id}`, { method: 'DELETE' });
+    } catch (err) {
+      toast('Delete error: ' + err.message, 'err');
+      return;
+    }
+  }
+
+  // Local cleanup
+  await removeId(id);
+  delete S.convs[id];
+  S.allConvs = (S.allConvs || []).filter(c => c.uuid !== id);
+  if (S.convId === id) {
+    navToHome();
+    toast('Deleted', 'info');
+    return;
+  }
+  renderSidebar();
+  toast('Deleted', 'info');
+}
+
+function toggleWebSearch() {
+  S.webSearchEnabled = !S.webSearchEnabled;
+  const btn = document.getElementById('webSearchBtn');
+  if (btn) {
+    btn.classList.toggle('on', S.webSearchEnabled);
+    btn.textContent = S.webSearchEnabled ? '🌐 Web Search: On' : '🌐 Web Search: Off';
+  }
+}
+
+
+
+/* ═══════════════════════════════════════════
+   FLOWITH GOOGLE OAUTH
+═══════════════════════════════════════════ */
+
+function _flowithSetAuthStatus(msg, type) {
+  const el = document.getElementById('flowithAuthStatus');
+  if (!el) return;
+  el.textContent = msg;
+  el.className   = 'miniapps-auth-status' + (type ? ' ' + type : '');
+  el.style.display = msg ? '' : 'none';
+}
+
+function _flowithResetAuthStatus() {
+  const el  = document.getElementById('flowithAuthStatus');
+  if (el) { el.style.display = 'none'; el.className = 'miniapps-auth-status'; el.textContent = ''; }
+  const btn = document.getElementById('flowithGoogleBtn');
+  if (btn) btn.disabled = false;
+}
+
+async function flowithGoogleSignIn() {
+  const btn = document.getElementById('flowithGoogleBtn');
+  if (btn) btn.disabled = true;
+  _flowithSetAuthStatus('Starting Flowith sign-in session…', '');
+
+  // Open immediately in the user gesture context to avoid popup blocking.
+  const tab = window.open('about:blank', 'flowith_gis', 'width=600,height=700,left=200,top=80');
+
+  let r;
+  try { r = await fetch('/api/oauth/flowith/begin').then(x => x.json()); }
+  catch (e) { r = null; }
+
+  if (!r?.state) {
+    if (tab && !tab.closed) tab.close();
+    _flowithSetAuthStatus('Failed to start session — check server logs', 'err');
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  // Navigate to flowith.io so the extension content script can intercept the hash token.
+  if (tab && !tab.closed) tab.location.href = 'https://flowith.io/';
+  _flowithSetAuthStatus(
+    tab
+      ? 'Google sign-in prompt opening on flowith.io — complete it there…'
+      : 'Visit flowith.io and complete the Google sign-in prompt…',
+    ''
+  );
+
+  const iv = setInterval(async () => {
+    let s;
+    try { s = await fetch(`/api/oauth/flowith/status?state=${encodeURIComponent(r.state)}`).then(x => x.json()); }
+    catch { return; }
+    if (!s?.done) return;
+    clearInterval(iv);
+    if (tab && !tab.closed) tab.close();
+    if (s.access_token) {
+      const keyInp = document.getElementById('flowithKeyInp');
+      const uidInp = document.getElementById('flowithUserIdInp');
+      if (keyInp) keyInp.value = s.access_token;
+      if (uidInp && s.user_id) uidInp.value = s.user_id;
+      // Store refresh_token in a hidden field so saveAccount() picks it up
+      let rtInp = document.getElementById('flowithRefreshTokenInp');
+      if (!rtInp) {
+        rtInp = document.createElement('input');
+        rtInp.type = 'hidden';
+        rtInp.id   = 'flowithRefreshTokenInp';
+        document.body.appendChild(rtInp);
+      }
+      if (s.refresh_token) rtInp.value = s.refresh_token;
+      _flowithSetAuthStatus('✓ Authenticated' + (s.user_id ? ' (user: ' + s.user_id.slice(0,8) + '…)' : '') + ' — ready', 'ok');
+    } else {
+      _flowithSetAuthStatus('Sign-in failed: ' + (s.error || 'unknown error'), 'err');
+    }
+    if (btn) btn.disabled = false;
+  }, 1000);
+
+  // Safety timeout after 2 minutes
+  setTimeout(() => {
+    clearInterval(iv);
+    if (tab && !tab.closed) tab.close();
+    if (btn) btn.disabled = false;
+    _flowithSetAuthStatus('Timed out — try again or paste token manually', 'err');
+  }, 120_000);
+}
+
+/* ═══════════════════════════════════════════
+   FLOWITH PANEL
+═══════════════════════════════════════════ */
+
+function toggleFlowithPanel() {
+  const panel = document.getElementById('flowithPanel');
+  const btn   = document.getElementById('flowithPanelBtn');
+  if (!panel) return;
+  const wasCollapsed = panel.classList.contains('collapsed');
+  panel.classList.toggle('collapsed');
+  if (btn) btn.classList.toggle('active', wasCollapsed);
+  if (wasCollapsed) _flowithPanelOnOpen();  // renders from cache only
+}
+
+function _renderFlowithPanelFromCache() {
+  const name   = getTabAccountName();
+  const cached = name ? quotaCache[name] : null;
+  const el     = document.getElementById('flowithCreditsDisplay');
+  if (!el) return;
+  if (!cached || cached.provider !== 'flowith' || cached.credits == null) {
+    el.textContent = '';
+    return;
+  }
+  const cr   = cached.credits;
+  const crN  = typeof cr === 'number' ? cr : parseFloat(cr);
+  const disp = isNaN(crN) ? String(cr) : crN.toFixed(2);
+  el.textContent = `⋆ ${disp} credits`;
+}
+
+function _flowithPanelOnOpen() {
+  // Render from cache immediately for zero-latency open.
+  _renderFlowithPanelFromCache();
+  // Model selects read from already-populated cache (no network call)
+  _populateFlowithModelSelects();
+  // Trigger a background session-cycle to get fresh credit balance.
+  // Use setTimeout so the panel animation isn't blocked.
+  setTimeout(() => _flowithRefreshCredits(false), 300);
+}
+
+/* ── Flowith model catalog with tier badges ── */
+let _flowithModelCache = { fetched_at: 0, models: [] };
+
+// Reads from cache only — no network call.
+// Cache is populated by _fetchAndCacheFlowithModels() on account switch.
+function _populateFlowithModelSelects() {
+  const models = _flowithModelCache.models;
+  if (!models.length) return;
+
+  const imageModels = models.filter(m => m.category === 'image');
+  const videoModels = models.filter(m => m.category === 'video');
+  _fillFlowithSel('flowithImageModel', imageModels);
+  _fillFlowithSel('flowithVideoModel', videoModels);
+}
+
+// Called on account switch and background warm-up — NOT on panel open.
+async function _fetchAndCacheFlowithModels() {
+  const now = Date.now();
+  if (_flowithModelCache.models.length &&
+      now - _flowithModelCache.fetched_at < 900_000) {
+    return _flowithModelCache.models;
+  }
+  try {
+    const data = await apiFetch('/api/flowith/models');
+    if (data.models?.length) {
+      _flowithModelCache = { fetched_at: now, models: data.models };
+    }
+  } catch { /* keep cached */ }
+  return _flowithModelCache.models;
+}
+
+function _fillFlowithSel(selId, models) {
+  const sel = document.getElementById(selId);
+  if (!sel || !models.length) return;
+  const current = sel.value;
+  sel.innerHTML = '';
+
+  // Sort: paid (t1) first, then free (t2)
+  const sorted = [...models].sort((a, b) => {
+    const ta = a.tier ?? 2, tb = b.tier ?? 2;
+    return ta - tb;  // 1 (paid) before 2 (free)
+  });
+
+  let free = [];
+  let paid = [];
+  for (const m of sorted) {
+    if ((m.tier ?? "t2") === "t1") paid.push(m);
+    else free.push(m);
+  }
+
+  // Optgroup for free models (if any)
+  if (free.length) {
+    const ogFree = document.createElement('optgroup');
+    ogFree.label = '🆓 Free tier';
+    sel.appendChild(ogFree);
+  }
+
+  for (const m of free) {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = '🆓 ' + (m.display_name || m.id);
+    opt.dataset.tier = String(m.tier ?? 2);
+    sel.lastElementChild.appendChild(opt);
+  }
+
+  // Optgroup divider for free models
+  if (paid.length) {
+    const ogPaid = document.createElement('optgroup');
+    ogPaid.label = '💎 Paid tier' 
+    sel.appendChild(ogPaid);
+  }
+
+  for (const m of paid) {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = '💎 ' + (m.display_name || m.id);
+    opt.dataset.tier = String(m.tier ?? 2);
+    sel.lastElementChild.appendChild(opt);
+  }
+
+  // Restore previous selection if still available
+  if (current && [...sel.options].some(o => o.value === current)) {
+    sel.value = current;
+  } else if (sel.options.length) {
+    sel.selectedIndex = 0;
+  }
+}
+
+// ── Flowith token auto-refresh ────────────────────────────────────────────────
+// Parse expiry from the stored JWT and schedule a refresh 5 minutes before
+// it expires. Called whenever the active account changes to a Flowith account.
+let _flowithRefreshTimer = null;
+
+function _flowithScheduleRefresh() {
+  if (_flowithRefreshTimer) { clearTimeout(_flowithRefreshTimer); _flowithRefreshTimer = null; }
+  const acct = getTabAccount();
+  if (!acct || acct.provider !== 'flowith' || !acct.api_key) return;
+  if (!acct.refresh_token) return;  // nothing to rotate with
+
+  let expiresAt = 0;
+  try {
+    const parts   = acct.api_key.split('.');
+    const payload = JSON.parse(atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')));
+    expiresAt     = (payload.exp || 0) * 1000;  // ms
+  } catch (_) { return; }
+
+  const now    = Date.now();
+  const margin = 5 * 60 * 1000;  // refresh 5 min before expiry
+  const delay  = expiresAt - now - margin;
+
+  if (delay <= 0) {
+    // Already expired or very close — refresh immediately
+    _flowithDoRefresh();
+    return;
+  }
+
+  _flowithRefreshTimer = setTimeout(_flowithDoRefresh, delay);
+  const mins = Math.round(delay / 60000);
+  console.debug(`[Flowith] token refresh scheduled in ~${mins} min`);
+}
+
+// ── Flowith session-cycle credit refresh ─────────────────────────────────────
+async function _flowithCycleSession(opts = {}) {
+  const acct = getTabAccount();
+  if (!acct || acct.provider !== 'flowith') return null;
+  const { cycles = 3, delay_sec = 1.0 } = opts;
+  try {
+    const r = await apiFetch('/api/flowith/session-cycle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cycles, delay_sec }),
+    });
+    if (r.credits !== undefined) {
+      const raw = r.credits?.total ?? r.credits ?? null;
+      if (raw !== null) {
+        _cacheFlowith(acct.name, raw);
+        _renderSidebarBar();
+        renderAccountMenu();
+        // Update panel header badge immediately
+        const el = document.getElementById('flowithCreditsDisplay');
+        if (el) {
+          const n = typeof raw === 'number' ? raw : parseFloat(raw);
+          el.textContent = isNaN(n) ? `⋆ ${raw} credits` : `⋆ ${n.toFixed(2)} credits`;
+        }
+      }
+    }
+    return r;
+  } catch (err) {
+    console.warn('[Flowith] session-cycle failed:', err.message);
+    return null;
+  }
+}
+
+// Convenience: cycle then fetch credits — called from toolbar button and timer.
+async function _flowithRefreshCredits(showToast = false) {
+  const acct = getTabAccount();
+  if (!acct || acct.provider !== 'flowith') return;
+  if (showToast) toast('Refreshing Flowith credits…', 'info');
+  const r = await _flowithCycleSession({ cycles: 3, delay_sec: 1.0 });
+  if (!r) return;
+  if (showToast) {
+    const raw = r.credits?.total ?? r.credits ?? null;
+    const display = raw != null
+      ? (typeof raw === 'number' ? raw.toFixed(2) : String(raw))
+      : '?';
+    toast(`Flowith credits: ${display}`, 'ok');
+  }
+}
+
+async function _flowithDoRefresh() {
+  _flowithRefreshTimer = null;
+  const acct = getTabAccount();
+  if (!acct || acct.provider !== 'flowith') return;
+  try {
+    const r = await apiFetch('/api/flowith/refresh', { method: 'POST' });
+    if (r.access_token) {
+      // Update the in-memory account so the new token is used immediately
+      if (S.tabAccount) {
+        S.tabAccount.api_key      = r.access_token;
+        S.tabAccount.refresh_token = r.refresh_token || S.tabAccount.refresh_token;
+        S.tabAccount.user_id      = r.user_id || S.tabAccount.user_id;
+      }
+      // Also update S.accounts cache
+      const cached = S.accounts.find(a => a.name === acct.name);
+      if (cached) {
+        cached.api_key       = r.access_token;
+        cached.refresh_token = r.refresh_token || cached.refresh_token;
+        cached.user_id       = r.user_id || cached.user_id;
+      }
+      console.debug('[Flowith] token refreshed successfully');
+      // Schedule the next refresh
+      _flowithScheduleRefresh();
+    } else {
+      console.warn('[Flowith] token refresh returned no access_token:', r);
+    }
+  } catch (err) {
+    console.warn('[Flowith] token refresh failed:', err.message);
+  }
+}
+
+function flowithSwitchTab(tab) {
+  // Chat tab removed — Flowith chat uses main interface
+  ['image', 'video'].forEach(t => {
+    const btn     = document.getElementById(`flowith-tab-${t}`);
+    const content = document.getElementById(`flowith-content-${t}`);
+    const isActive = t === tab;
+    if (btn)     btn.classList.toggle('active', isActive);
+    if (content) content.classList.toggle('active', isActive);
+  });
+}
+
+// Flowith chat is handled via the main conversation interface.
+// runFlowithChat / flowithCopyResult / flowithInsertResult removed.
+
+async function runFlowithImage() {
+  const prompt  = document.getElementById('flowithImagePrompt')?.value.trim();
+  const model   = document.getElementById('flowithImageModel')?.value;
+  const ratio   = document.getElementById('flowithImageRatio')?.value;
+  const result  = document.getElementById('flowithImageResult');
+  const grid    = document.getElementById('flowithImageGrid');
+  const runBtn  = document.getElementById('flowithImageRunBtn');
+
+  if (!prompt) { toast('Enter a prompt first', 'err'); return; }
+  if (result) result.classList.remove('visible');
+  if (grid)   grid.innerHTML = '';
+  if (runBtn) runBtn.disabled = true;
+  toast('Generating image… (may take 20–60 s)', 'info');
+
+  try {
+    const r = await apiFetch('/api/flowith/image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt,
+        model,
+        aspect_ratio: ratio,
+        timeout: 120,
+      }),
+    });
+    if (r.images && r.images.length) {
+      if (result) result.classList.add('visible');
+      r.images.forEach(img => {
+        if (!img.url) return;
+        const wrap = document.createElement('div');
+        wrap.className = 'flowith-img-item';
+        const im = document.createElement('img');
+        im.src = img.url; im.alt = 'Generated';
+        im.title = 'Click to open in canvas';
+        im.onclick = () => openInCanvas(img.url, 'flowith-image.png', 'image/png');
+        const dl = document.createElement('a');
+        dl.href = img.url; dl.download = 'flowith-image.png';
+        dl.className = 'flowith-img-save'; dl.textContent = '⬇ Save';
+        wrap.appendChild(im); wrap.appendChild(dl);
+        grid.appendChild(wrap);
+      });
+      toast(`Generated ${r.images.length} image(s)`, 'ok');
+    } else {
+      toast('Error: ' + (r.error || 'no images returned'), 'err');
+    }
+  } catch (err) {
+    toast('Error: ' + err.message, 'err');
+  } finally {
+    if (runBtn) runBtn.disabled = false;
+  }
+}
+
+async function runFlowithVideo() {
+  const prompt  = document.getElementById('flowithVideoPrompt')?.value.trim();
+  const model   = document.getElementById('flowithVideoModel')?.value;
+  const ratio   = document.getElementById('flowithVideoRatio')?.value;
+  const result  = document.getElementById('flowithVideoResult');
+  const wrap    = document.getElementById('flowithVideoWrap');
+  const videoEl = document.getElementById('flowithVideo');
+  const dlEl    = document.getElementById('flowithVideoDl');
+  const runBtn  = document.getElementById('flowithVideoRunBtn');
+
+  if (!prompt) { toast('Enter a prompt first', 'err'); return; }
+  if (wrap) wrap.style.display = 'none';
+  if (runBtn) runBtn.disabled = true;
+  toast('Generating video… (may take 1–5 minutes)', 'info');
+
+  try {
+    const r = await apiFetch('/api/flowith/video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt,
+        model,
+        aspect_ratio: ratio,
+        timeout: 300,
+      }),
+    });
+    if (r.video_url) {
+      if (videoEl) { videoEl.src = r.video_url; videoEl.load(); }
+      if (dlEl)    { dlEl.href = r.video_url; dlEl.download = 'flowith-video.mp4'; }
+      if (wrap)    wrap.style.display = 'flex';
+      if (result)  result.classList.add('visible');
+      toast('Video ready!', 'ok');
+    } else {
+      toast('Error: ' + (r.error || 'no video returned'), 'err');
+    }
+  } catch (err) {
+    toast('Error: ' + err.message, 'err');
+  } finally {
+    if (runBtn) runBtn.disabled = false;
+  }
+}
+/* ═══════════════════════════════════════════
    BOOT
 ═══════════════════════════════════════════ */
 init();
+loadPollingConfig();
 </script>
 </body>
 </html>

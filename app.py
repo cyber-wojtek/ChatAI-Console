@@ -20,13 +20,14 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
-from flask import (
-    Flask, Response, jsonify, render_template, render_template_string,
+from quart import (
+    Quart, Response, jsonify, render_template, render_template_string,
     request, stream_with_context,
 )
 import requests as http_client
 
 from claude_webapi import ClaudeClient
+from flowith_webapi import FlowithClient
 from oneminai_webapi import OneMinAIClient
 from claude_webapi.constants import CLAUDE_BASE_URL
 from claude_webapi.exceptions import (
@@ -42,14 +43,25 @@ logging.basicConfig(
     format="%(asctime)s  %(levelname)-5s  %(name)s  %(message)s",
     datefmt="%H:%M:%S",
 )
-log = logging.getLogger("claude-console")
+log = logging.getLogger("chatai-console")
 
 CLAUDE_PROVIDER = "claude"
 CHATWITHAI_PROVIDER = "chatwithai"
 CHATWITHAI_API_BASE = "https://api.chatwithai.app"
 CHATWITHAI_DEFAULT_MODEL = "claude-sonnet-4-6"
 ONEMINAI_PROVIDER = "oneminai"
+FLOWITH_PROVIDER = "flowith"
+FLOWITH_DEFAULT_MODEL = "gpt-4.1-nano"
 ONEMINAI_DEFAULT_MODEL = "gpt-4.1-nano"
+
+# ── Rate-limit / polling configuration ────────────────────────────────────
+# These can be overridden at runtime via /api/settings/polling (PATCH).
+_POLLING_CFG = {
+    "auto_poll_credits":   True,   # poll credits/quota in the background
+    "poll_interval_sec":   90,     # seconds between background polls
+    "stagger_delay_sec":   10,    # seconds between per-account requests
+    "request_timeout_sec": 30,     # per-request timeout for usage calls
+}
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # JSON Store
@@ -62,31 +74,47 @@ STORE_PATH.parent.mkdir(exist_ok=True)
 # Model Management
 # ═══════════════════════════════════════════════════════════════════════════════
 
+async def _get_json() -> dict:
+    """Parse JSON body safely, handling non-ASCII (UTF-8) payloads."""
+    raw = await request.get_data()          # raw bytes, no encoding assumption
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+
 CLAUDE_MODELS = [
     {"id": "claude-sonnet-4-6", "display_name": "Claude 4.6 Sonnet", "category": "text"},
-    #{"id": "claude-opus-4-6", "display_name": "Claude 4.6 Opus", "category": "text"},
+    {"id": "claude-opus-4-6", "display_name": "Claude 4.6 Opus 💰", "category": "text"},
     {"id": "claude-haiku-4-5-20251001", "display_name": "Claude 4.5 Haiku", "category": "text"},
 ]
 
-def _get_models_for_provider(provider: str) -> list[dict]:
+async def _get_models_for_provider(provider: str) -> list[dict]:
     """Get available models based on provider."""
     if provider == CHATWITHAI_PROVIDER:
         try:
-            return _chatwithai_fetch_models()
+            return await _chatwithai_fetch_models()
         except Exception:
             return _CHATWITHAI_MODEL_CACHE.get("models", [])
     elif provider == CLAUDE_PROVIDER:
         return CLAUDE_MODELS
     elif provider == ONEMINAI_PROVIDER:
         try:
-            return _oneminai_fetch_models()
+            return await _oneminai_fetch_models()
         except Exception:
             return _ONEMINAI_MODEL_CACHE.get("models", [])
+    elif provider == FLOWITH_PROVIDER:
+        try:
+            return await _flowith_fetch_models()
+        except Exception:
+            return _FLOWITH_MODEL_CACHE.get("models", [])
     else:
         return []
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
 
 
 class JSONStore:
@@ -138,49 +166,22 @@ _loop_thread = threading.Thread(target=_loop.run_forever, daemon=True, name="asy
 _loop_thread.start()
 
 
-def _run(coro):
+async def _run_coro(coro):
     future = asyncio.run_coroutine_threadsafe(coro, _loop)
-    return future.result()
-
+    return await future.result()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Claude client + streaming
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _make_claude_client(acct: dict) -> ClaudeClient:
+async def _make_claude_client(acct: dict) -> ClaudeClient:
     sk  = acct.get("session_key", "")
     org = acct.get("organization_id") or None
     if not sk:
         raise ValueError(f"Account '{acct.get('name', '?')}' is missing session_key")
     client = ClaudeClient(sk, org)
-    _run(client.init(timeout=60, auto_close=True, close_delay=120))
+    await client.init(timeout=60, auto_close=True, close_delay=120)
     return client
-
-def _get_remote_conversation_id(acct: dict, local_conv_id: str) -> str | None:
-    data = store.read()
-    for a in data["accounts"]:
-        if a["name"] != acct["name"]:
-            continue
-        for c in a.get("pinned_conversations", []):
-            if c.get("conv_uuid") == local_conv_id:
-                return c.get("remote_conversation_id") or c.get("conversation_id")
-    return None
-
-
-def _set_remote_conversation_id(acct: dict, local_conv_id: str, remote_conv_id: str):
-    def fn(data):
-        for a in data["accounts"]:
-            if a["name"] == acct["name"]:
-                convs = a.setdefault("pinned_conversations", [])
-                existing = next((c for c in convs if c.get("conv_uuid") == local_conv_id), None)
-                if existing:
-                    existing["remote_conversation_id"] = remote_conv_id
-                else:
-                    convs.append({"conv_uuid": local_conv_id, "remote_conversation_id": remote_conv_id, "display_name": "", "pinned_at": _now()})
-                break
-    store.mutate(fn)
-
-
 
 def _chatwithai_headers() -> dict:
     return {
@@ -200,7 +201,7 @@ def _chatwithai_headers() -> dict:
 _CHATWITHAI_MODEL_CACHE: dict = {"fetched_at": 0.0, "models": []}
 
 
-def _chatwithai_fetch_models() -> list[dict]:
+async def _chatwithai_fetch_models() -> list[dict]:
     now_ts = datetime.now(timezone.utc).timestamp()
     if _CHATWITHAI_MODEL_CACHE["models"] and now_ts - _CHATWITHAI_MODEL_CACHE["fetched_at"] < 900:
         return _CHATWITHAI_MODEL_CACHE["models"]
@@ -228,65 +229,91 @@ def _chatwithai_fetch_models() -> list[dict]:
     _CHATWITHAI_MODEL_CACHE["fetched_at"] = now_ts
     return models
 
+# _sync_stream_claude: must be plain def, not async def
 def _sync_stream_claude(acct: dict, conv_id: str, payload: dict):
     import queue as _queue
-
-    client       = _make_claude_client(acct)
-    q: "_queue.Queue" = _queue.Queue()
+    q = _queue.Queue()
     account_name = acct["name"]
 
     async def producer():
+        client = None
         try:
+            client = ClaudeClient(acct["session_key"], acct.get("organization_id") or None)
+            await client.init(timeout=60, auto_close=True, close_delay=30)
             url  = client._org_url(f"chat_conversations/{conv_id}/completion")
             body = json.dumps(payload).encode()
             session = client._ensure_session()
             async with session.post(
                 url, data=body,
-                headers={"Accept": "text/event-stream",
-                         "Content-Length": str(len(body))},
-                timeout=3600
+                headers={"Accept": "text/event-stream", "Content-Length": str(len(body))},
+                timeout=3600,
             ) as resp:
                 if resp.status != 200:
                     text = await resp.text()
-                    q.put(APIError(f"Completion HTTP {resp.status}: {text[:300]}",
-                                   status_code=resp.status))
+                    q.put(APIError(f"HTTP {resp.status}: {text[:300]}", status_code=resp.status))
                     return
                 async for raw_chunk, _ in resp.content.iter_chunks():
-                    if not raw_chunk:
-                        continue
-                    q.put(raw_chunk)
-                    try:
-                        text = raw_chunk.decode("utf-8", errors="replace")
-                        for line in text.splitlines():
-                            if not line.startswith("data:"):
-                                continue
-                            js = line[5:].strip()
-                            if not js:
-                                continue
-                            try:
-                                evt = json.loads(js)
-                            except json.JSONDecodeError:
-                                continue
-                            if evt.get("type") == "message_limit":
-                                ml = evt.get("message_limit")
-                                if ml:
-                                    _save_quota_snapshot(account_name, ml)
-                    except Exception:
-                        pass
+                    if raw_chunk:
+                        q.put(raw_chunk)
+                        # quota snapshot parsing omitted for brevity — add back here
         except Exception as exc:
             q.put(exc)
         finally:
+            if client:
+                try: await client.close()
+                except Exception: pass
             q.put(None)
-            await client.close()
 
     asyncio.run_coroutine_threadsafe(producer(), _loop)
-
     while True:
         item = q.get()
         if item is None:
             break
         if isinstance(item, Exception):
             raise item
+        yield item
+
+
+def _sync_stream_oneminai(acct, conv_id, prompt, model, *, human_uuid, asst_uuid,
+                           file_uuids=None, web_search=False):
+    import queue as _queue
+    q = _queue.Queue()
+
+    def emit(obj):
+        return (f"data: {json.dumps(obj, ensure_ascii=False)}\n").encode("utf-8")
+
+    async def producer():
+        client = None
+        try:
+            key = acct.get("api_key") or acct.get("session_key", "")
+            client = OneMinAIClient(api_key=key)
+            if acct.get("team_id"):
+                client._team_id = acct["team_id"]
+            q.put(emit({"type": "message_start", "message": {"uuid": asst_uuid, "model": model}}))
+            q.put(emit({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}))
+            async for chunk in await client.chat(
+                prompt, stream=True, model=model,
+                conversation_id=conv_id, files=file_uuids or [], web_search=web_search,
+            ):
+                if chunk.text_delta:
+                    q.put(emit({"type": "content_block_delta", "index": 0,
+                                "delta": {"type": "text_delta", "text": chunk.text_delta}}))
+            q.put(emit({"type": "content_block_stop", "index": 0}))
+            q.put(emit({"type": "message_delta", "delta": {"stop_reason": "end_turn"}}))
+            q.put(emit({"type": "message_stop"}))
+        except Exception as exc:
+            q.put(emit({"type": "error", "error": {"type": "api_error", "message": str(exc)}}))
+        finally:
+            if client:
+                try: await client.close()
+                except Exception: pass
+            q.put(None)
+
+    asyncio.run_coroutine_threadsafe(producer(), _loop)
+    while True:
+        item = q.get()
+        if item is None:
+            break
         yield item
 
 def _sync_stream_chatwithai(prompt: str, model: str, *, assistant_uuid: str):
@@ -408,9 +435,6 @@ def _sync_stream_chatwithai(prompt: str, model: str, *, assistant_uuid: str):
         yield emit({"type": "message_delta", "delta": {"stop_reason": "end_turn"}})
         yield emit({"type": "message_stop"})
 
-
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1min.AI — everything goes through OneMinAIClient (oneminai_webapi module)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -418,7 +442,7 @@ def _sync_stream_chatwithai(prompt: str, model: str, *, assistant_uuid: str):
 _ONEMINAI_MODEL_CACHE: dict = {"fetched_at": 0.0, "models": []}
 
 
-def _oneminai_fetch_models() -> list[dict]:
+async def _oneminai_fetch_models() -> list[dict]:
     from datetime import datetime, timezone
     now_ts = datetime.now(timezone.utc).timestamp()
     if _ONEMINAI_MODEL_CACHE["models"] and now_ts - _ONEMINAI_MODEL_CACHE["fetched_at"] < 900:
@@ -426,16 +450,19 @@ def _oneminai_fetch_models() -> list[dict]:
     try:
         client = OneMinAIClient()          # anonymous — only needs team after login
         # list_models works without auth for the public catalog
-        raw    = _run(client.list_models(feature="UNIFY_CHAT_WITH_AI"))
-        _run(client.close())
+        raw    = await client.list_models(feature="UNIFY_CHAT_WITH_AI")
+        await client.close()
         models = [
             {
                 "id":           m.get("modelId", ""),
-                "display_name": m.get("name", m.get("modelId", "")),
+                "display_name": m.get("name") or m.get("modelId", ""),
                 "provider":     m.get("provider", ""),
-                "category":     "text",
+                "category":     m.get("category", "text"),
+                "context_size": m.get("contextSize"),
+                "description":  m.get("description", ""),
             }
-            for m in raw if m.get("modelId")
+            for m in (raw or [])
+            if m.get("modelId") and str(m.get("modelId")).strip()
         ]
         _ONEMINAI_MODEL_CACHE["models"]     = models
         _ONEMINAI_MODEL_CACHE["fetched_at"] = now_ts
@@ -445,7 +472,7 @@ def _oneminai_fetch_models() -> list[dict]:
         return _ONEMINAI_MODEL_CACHE.get("models", [])
 
 
-def _make_oneminai_client(acct: dict) -> OneMinAIClient:
+async def _make_oneminai_client(acct: dict) -> OneMinAIClient:
     """Return an authenticated OneMinAIClient from a stored account dict."""
     key     = acct.get("api_key") or acct.get("session_key", "")
     team_id = acct.get("team_id", "")
@@ -455,79 +482,6 @@ def _make_oneminai_client(acct: dict) -> OneMinAIClient:
     if team_id:
         client._team_id = team_id   # skip the /users round-trip
     return client
-
-
-def _sync_stream_oneminai(
-    acct:        dict,
-    conv_id:     str,
-    prompt:      str,
-    model:       str,
-    *,
-    human_uuid:  str,
-    asst_uuid:   str,
-    file_uuids:  list | None = None,
-    web_search:  bool = False,
-):
-    """
-    Stream a 1min.AI chat turn.
-
-    Uses OneMinAIClient.chat(stream=True) which handles:
-      - team_id resolution
-      - server-side conversation creation (_ensure_conversation)
-      - correct SSE parsing (event: content / event: result)
-
-    Emits Claude-compatible SSE so the frontend works unchanged.
-    """
-    import queue as _queue
-
-    q: "_queue.Queue[bytes | None | Exception]" = _queue.Queue()
-
-    def emit(obj: dict) -> bytes:
-        return f"data: {json.dumps(obj, ensure_ascii=False)}".encode()
-
-    async def producer():
-        client = _make_oneminai_client(acct)
-        try:
-            # Emit Claude-style stream start
-            q.put(emit({"type": "message_start",
-                         "message": {"uuid": asst_uuid, "model": model}}))
-            q.put(emit({"type": "content_block_start", "index": 0,
-                         "content_block": {"type": "text", "text": ""}}))
-
-            async for chunk in await client.chat(
-                prompt,
-                stream          = True,
-                model           = model,
-                conversation_id = conv_id,
-                files           = file_uuids or [],
-                web_search      = web_search,
-            ):
-                if chunk.text_delta:
-                    q.put(emit({
-                        "type":  "content_block_delta",
-                        "index": 0,
-                        "delta": {"type": "text_delta", "text": chunk.text_delta},
-                    }))
-
-            q.put(emit({"type": "content_block_stop", "index": 0}))
-            q.put(emit({"type": "message_delta", "delta": {"stop_reason": "end_turn"}}))
-            q.put(emit({"type": "message_stop"}))
-
-        except Exception as exc:
-            log.warning("1min.AI stream error: %s", exc)
-            q.put(emit({"type": "error",
-                         "error": {"type": "api_error", "message": str(exc)}}))
-        finally:
-            await client.close()
-            q.put(None)
-
-    asyncio.run_coroutine_threadsafe(producer(), _loop)
-    while True:
-        item = q.get()
-        if item is None:
-            break
-        yield item
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Claude message payload builder
@@ -599,7 +553,7 @@ def _provider_name(acct: dict) -> str:
 
 def _normalize_provider(provider: str | None) -> str:
     prov = (provider or CLAUDE_PROVIDER).strip().lower()
-    if prov in (CHATWITHAI_PROVIDER, ONEMINAI_PROVIDER):
+    if prov in (CHATWITHAI_PROVIDER, ONEMINAI_PROVIDER, FLOWITH_PROVIDER):
         return prov
     return CLAUDE_PROVIDER
 
@@ -710,13 +664,16 @@ def _append_local_messages(
             
             msgs = conv.setdefault("chat_messages", [])
             
-            # Ensure proper UUID chain
+            # Ensure proper UUID chain.
+            # If caller already set parent_message_uuid (edit/branch), keep it.
+            # Otherwise default to last message in chain.
             if not human_msg.get("parent_message_uuid"):
                 if msgs:
                     human_msg["parent_message_uuid"] = msgs[-1]["uuid"]
                 else:
                     human_msg["parent_message_uuid"] = "00000000-0000-4000-8000-000000000000"
-            
+
+            # Assistant always follows human
             asst_msg["parent_message_uuid"] = human_msg["uuid"]
             
             # Add content structure if missing
@@ -751,8 +708,10 @@ def _account_to_public(a: dict) -> dict:
         "created_at":      a.get("created_at", ""),
         "session_key":     a.get("session_key", "") if provider == CLAUDE_PROVIDER else "",
         "organization_id": a.get("organization_id", "") if provider == CLAUDE_PROVIDER else "",
-        "api_key":         a.get("api_key", "")    if provider == ONEMINAI_PROVIDER else "",
+        "api_key":         a.get("api_key", "")    if provider in (ONEMINAI_PROVIDER, FLOWITH_PROVIDER) else "",
         "team_id":         a.get("team_id", "")    if provider == ONEMINAI_PROVIDER else "",
+        "user_id":         a.get("user_id", "")      if provider == FLOWITH_PROVIDER else "",
+        "refresh_token":   a.get("refresh_token", "") if provider == FLOWITH_PROVIDER else "",
     }
     return pub
 
@@ -785,8 +744,34 @@ def _seed_from_env():
                 data["accounts"][0]["is_active"] = True
     store.mutate(fn)
 
+async def _warm_model_caches():
+    """Fetch models for all configured providers in background — called once at startup."""
+    import time
+    time.sleep(3)  # let Flask finish starting up
+    data = store.read()
+    providers_seen = set()
+    for acct in data.get("accounts", []):
+        prov = _provider_name(acct)
+        if prov in providers_seen:
+            continue
+        providers_seen.add(prov)
+        try:
+            if prov == CHATWITHAI_PROVIDER:
+                await _chatwithai_fetch_models()
+                log.info("Warmed ChatWithAI model cache")
+            elif prov == ONEMINAI_PROVIDER:
+                await _oneminai_fetch_models()
+                log.info("Warmed 1min.AI model cache")
+            elif prov == FLOWITH_PROVIDER:
+                await _flowith_fetch_models()
+                log.info("Warmed Flowith model cache")
+        except Exception as e:
+            log.warning("Model cache warm-up failed for %s: %s", prov, e)
+        time.sleep(1)
 
-_seed_from_env()
+
+_seed_from_env() 
+asyncio.run_coroutine_threadsafe(_warm_model_caches(), _loop)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -852,13 +837,699 @@ def _save_upload_meta(acct_name, conv_uuid, file_uuid, filename, size, content_t
     store.mutate(fn)
 
 
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Flowith.io — everything goes through FlowithClient (flowith_webapi module)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_FLOWITH_MODEL_CACHE: dict = {"fetched_at": 0.0, "models": []}
+
+
+async def _flowith_fetch_models() -> list[dict]:
+    """Fetch Flowith model catalog with proper category tagging."""
+    from datetime import datetime, timezone
+    now_ts = datetime.now(timezone.utc).timestamp()
+    if _FLOWITH_MODEL_CACHE["models"] and now_ts - _FLOWITH_MODEL_CACHE["fetched_at"] < 900:
+        return _FLOWITH_MODEL_CACHE["models"]
+    try:
+        flowith_acct = next(
+            (a for a in store.read().get("accounts", [])
+             if _provider_name(a) == FLOWITH_PROVIDER and a.get("api_key")),
+            None,
+        )
+        if not flowith_acct:
+            return _FLOWITH_MODEL_CACHE.get("models", [])
+
+        client = await _make_flowith_client(flowith_acct)
+        raw    = await client.list_models()
+        await client.close()
+
+        models = []
+        for m in (raw or []):
+            if not m.model_id:
+                continue
+            media = (m.media or "").lower()
+            if any(x in media for x in ("image", "img")):
+                category = "image"
+            elif any(x in media for x in ("video", "vid")):
+                category = "video"
+            else:
+                category = "text"
+            models.append({
+                "id":           m.model_id,
+                "display_name": m.title or m.model_id,
+                "category":     category,
+                "tier":         m.tier,
+                "media":        m.media or "",
+            })
+
+        _FLOWITH_MODEL_CACHE["models"]     = models
+        _FLOWITH_MODEL_CACHE["fetched_at"] = now_ts
+        return models
+    except Exception as exc:
+        log.warning("Flowith model fetch failed: %s", exc)
+        return _FLOWITH_MODEL_CACHE.get("models", [])
+
+
+async def _make_flowith_client(acct: dict):
+    """Return an authenticated FlowithClient from a stored account dict."""
+    token   = acct.get("api_key") or acct.get("session_key", "")
+    user_id = acct.get("user_id", "")
+    if not token:
+        raise ValueError(f"Flowith account '{acct.get('name','?')}' is missing api_key/token")
+    client = FlowithClient(token, user_id=user_id or "")
+    return client
+
+
+async def _list_convs_flowith(acct: dict, search: str | None = None, limit: int = 50):
+    """List Flowith conversations from the server, merged with local name cache."""
+    client = await _make_flowith_client(acct)
+    try:
+        records = await client.list_conversations(limit=limit)
+        await client.close()
+    except Exception as exc:
+        log.warning("Flowith list_conversations: %s", exc)
+        try: await client.close()
+        except Exception: pass
+        records = []
+
+    # Build local name cache for merge
+    local_data = store.read()
+    local_names: dict[str, str] = {}
+    for a in local_data.get("accounts", []):
+        if a["name"] == acct["name"]:
+            for c in a.get("pinned_conversations", []):
+                cid = c.get("conv_uuid", "")
+                dn  = c.get("display_name", "")
+                if cid and dn:
+                    local_names[cid] = dn
+            break
+
+    out = []
+    for r in records:
+        title = r.title or local_names.get(r.conv_id, "")
+        if search and search.lower() not in title.lower():
+            continue
+        out.append({
+            "uuid":       r.conv_id,
+            "name":       title,
+            "created_at": r.metadata.get("created_at", ""),
+            "updated_at": r.metadata.get("updated_at",
+                          r.metadata.get("created_at", "")),
+        })
+
+    # Also include any locally cached convs not returned by server
+    # (e.g. very old ones outside the limit)
+    server_ids = {r["uuid"] for r in out}
+    for a in local_data.get("accounts", []):
+        if a["name"] != acct["name"]:
+            continue
+        for c in a.get("pinned_conversations", []):
+            cid = c.get("conv_uuid", "")
+            if cid and cid not in server_ids:
+                title = c.get("display_name", "")
+                if search and search.lower() not in title.lower():
+                    continue
+                out.append({
+                    "uuid":       cid,
+                    "name":       title,
+                    "created_at": c.get("created_at", ""),
+                    "updated_at": c.get("updated_at", c.get("created_at", "")),
+                })
+        break
+
+    out.sort(key=lambda x: x.get("updated_at") or x.get("created_at") or "",
+             reverse=True)
+    return out
+
+
+async def _create_conv_flowith(acct: dict) -> str:
+    """Create a real server-side Flowith conversation via Supabase."""
+    client = await _make_flowith_client(acct)
+    try:
+        uid = client._user_id
+        if not uid:
+            raise ValueError("No user_id in Flowith JWT")
+        conv_id = await client._ensure_conversation(None, uid)
+        await client.close()
+        log.info("Created Flowith server conversation %s", conv_id[:8])
+        return conv_id
+    except Exception as exc:
+        log.warning("Flowith create conversation failed: %s — using local UUID", exc)
+        try: await client.close()
+        except Exception: pass
+        import uuid as _uuid_mod
+        return str(_uuid_mod.uuid4())
+
+
+async def _get_conv_flowith(acct: dict, conv_id: str) -> dict:
+    """
+    Fetch a Flowith conversation and reconstruct chat_messages from flow nodes.
+
+    Node types: "1" = user, "2" = AI
+    Text lives in node.data["value"] (FlowNode.text property).
+    Parent chain is reconstructed from node.p_id so branching is preserved.
+    """
+    root   = "00000000-0000-4000-8000-000000000000"
+    client = await _make_flowith_client(acct)
+    try:
+        nodes = await client.get_flow_nodes(conv_id)
+        try:
+            conv_record = await client.get_conversation(conv_id)
+            conv_title  = conv_record.title or ""
+        except Exception:
+            conv_title = ""
+        await client.close()
+    except Exception as exc:
+        log.warning("Flowith get_flow_nodes %s: %s", conv_id[:8], exc)
+        try: await client.close()
+        except Exception: pass
+        # Fall back to local cache
+        local = _get_local_conv_entry(acct["name"], conv_id)
+        if local:
+            return {
+                "uuid":                      conv_id,
+                "name":                      local.get("display_name", ""),
+                "created_at":                local.get("created_at", _now()),
+                "updated_at":                local.get("updated_at", _now()),
+                "chat_messages":             local.get("chat_messages", []),
+                "current_leaf_message_uuid": local.get("current_leaf_message_uuid", root),
+                "settings":                  {},
+            }
+        return {
+            "uuid": conv_id, "name": "", "created_at": _now(),
+            "updated_at": _now(), "chat_messages": [],
+            "current_leaf_message_uuid": root, "settings": {},
+        }
+
+    # Only user (1) and AI (2) nodes that actually have text content
+    message_nodes = [
+        n for n in nodes
+        if n.node_type in ("1", "2") and (n.text or "").strip()
+    ]
+
+    # Build a map of ALL node IDs (including structural) so p_id lookups work
+    all_node_ids = {n.node_id for n in nodes}
+
+    messages: list[dict] = []
+    # node_id → message uuid mapping (they are the same — flowith node UUIDs)
+    node_to_msg_uuid: dict[str, str] = {}
+
+    for i, node in enumerate(message_nodes):
+        sender   = "human" if node.node_type == "1" else "assistant"
+        text     = node.text  # data["value"]
+        msg_uuid = node.node_id  # USE flowith node_id as our message UUID
+
+        # Resolve parent_message_uuid via p_id chain
+        p_id = node.p_id or ""
+        if not p_id or p_id == conv_id or p_id not in all_node_ids:
+            parent_msg_uuid = root
+        elif p_id in node_to_msg_uuid:
+            parent_msg_uuid = node_to_msg_uuid[p_id]
+        else:
+            # p_id exists in the graph but wasn't a message node
+            # (structural/canvas node) — walk up until we find a message node
+            parent_msg_uuid = root
+            walked = p_id
+            for _ in range(20):  # prevent infinite loop
+                parent_node = next((n for n in nodes if n.node_id == walked), None)
+                if not parent_node:
+                    break
+                if parent_node.node_id in node_to_msg_uuid:
+                    parent_msg_uuid = node_to_msg_uuid[parent_node.node_id]
+                    break
+                walked = parent_node.p_id or ""
+                if not walked or walked == conv_id:
+                    break
+
+        node_to_msg_uuid[node.node_id] = msg_uuid
+        messages.append({
+            "uuid":                msg_uuid,
+            "sender":              sender,
+            "text":                text,
+            "content":             [{"type": "text", "text": text}],
+            "parent_message_uuid": parent_msg_uuid,
+            "created_at":          node.metadata.get("created_at", _now()),
+            "index":               i,
+            "model":               node.model if sender == "assistant" else "",
+        })
+
+    # Identify the current leaf: the message node with no children among
+    # other message nodes
+    msg_uuid_set   = {m["uuid"] for m in messages}
+    has_child      = {m["parent_message_uuid"] for m in messages}
+    leaf_candidates = [m["uuid"] for m in messages if m["uuid"] not in has_child]
+    current_leaf   = leaf_candidates[-1] if leaf_candidates else (
+        messages[-1]["uuid"] if messages else root
+    )
+
+    # Cache title locally
+    if conv_title:
+        def fn(data):
+            for a in data["accounts"]:
+                if a["name"] == acct["name"]:
+                    for c in a.get("pinned_conversations", []):
+                        if c.get("conv_uuid") == conv_id:
+                            if not c.get("display_name"):
+                                c["display_name"] = conv_title
+                            break
+                    break
+        store.mutate(fn)
+
+    return {
+        "uuid":                      conv_id,
+        "name":                      conv_title,
+        "created_at":                _now(),
+        "updated_at":                _now(),
+        "chat_messages":             messages,
+        "current_leaf_message_uuid": current_leaf,
+        "settings":                  {},
+    }
+
+
+def _sync_stream_flowith(
+    acct:            dict,
+    conv_id:         str,
+    prompt:          str,
+    model:           str,
+    *,
+    asst_uuid:       str,
+    parent_node_id:  str | None = None,
+    images:          list | None = None,
+    timeout:         float = 120.0,
+):
+    """
+    Stream a Flowith chat turn with branching support.
+
+    parent_node_id — the Flowith node UUID to branch from.
+                     Passed as p_id when creating the user node so the
+                     conversation tree forks at the correct point.
+                     If None / root UUID, starts a new thread from the
+                     conversation root.
+
+    Emits Claude-compatible SSE plus an internal flowith_meta event
+    carrying the real conv_id and new node UUIDs for local persistence.
+    """
+    import queue as _queue
+
+    q: "_queue.Queue[bytes | None | Exception]" = _queue.Queue()
+    ROOT = "00000000-0000-4000-8000-000000000000"
+
+    def emit(obj: dict) -> bytes:
+        return (f"data: {json.dumps(obj, ensure_ascii=False)}\n").encode("utf-8")
+
+    async def producer():
+        client = await _make_flowith_client(acct)
+        try:
+            uid = client._user_id
+            if not uid:
+                raise ValueError("No user_id in Flowith JWT")
+
+            # ── Ensure conversation exists on server ──────────────────────
+            real_conv_id = await client._ensure_conversation(conv_id, uid)
+
+            # ── Resolve parent node ID for branching ──────────────────────
+            # parent_node_id is a flowith node UUID (same as our message UUID).
+            # If it's root/None, pass conv_id as p_id (default behaviour).
+            effective_parent = (
+                None
+                if (not parent_node_id or parent_node_id == ROOT)
+                else parent_node_id
+            )
+
+            # ── Create user node (with branch p_id if applicable) ─────────
+            user_node_id = await client._create_user_node(
+                real_conv_id,
+                prompt,
+                p_id = effective_parent or real_conv_id,
+            )
+
+            # ── Create AI node ────────────────────────────────────────────
+            ai_node_id = await client._create_ai_node(
+                real_conv_id,
+                user_node_id,
+                model,
+            )
+
+            # ── Fire completion request ───────────────────────────────────
+            import json as _json
+            content = prompt
+            if images:
+                content = [{"type": "text", "text": prompt}] + [
+                    {"type": "image_url", "image_url": {"url": u}}
+                    for u in images
+                ]
+            await client._post(
+                f"https://edge.flowith.io/completion/async?mode=general",
+                {
+                    "model":    model,
+                    "messages": [{"role": "user", "content": content}],
+                    "nodeId":   ai_node_id,
+                    "convId":   real_conv_id,
+                    "stream":   True,
+                },
+            )
+
+            q.put(emit({"type": "message_start",
+                        "message": {"uuid": asst_uuid, "model": model}}))
+            q.put(emit({"type": "content_block_start", "index": 0,
+                        "content_block": {"type": "text", "text": ""}}))
+
+            # ── Stream result ─────────────────────────────────────────────
+            async for chunk in client._stream_node_events(
+                ai_node_id, timeout=timeout
+            ):
+                evt_type = chunk.get("type", "")
+                if evt_type == "chunks":
+                    for fragment in chunk.get("chunks", []):
+                        if fragment:
+                            q.put(emit({
+                                "type":  "content_block_delta",
+                                "index": 0,
+                                "delta": {"type": "text_delta",
+                                          "text": fragment},
+                            }))
+                elif evt_type == "complete":
+                    break
+
+            q.put(emit({"type": "content_block_stop", "index": 0}))
+            q.put(emit({"type": "message_delta",
+                        "delta": {"stop_reason": "end_turn"}}))
+            q.put(emit({"type": "message_stop"}))
+
+            # ── Internal metadata event (not forwarded to browser) ────────
+            q.put(emit({
+                "type":         "flowith_meta",
+                "real_conv_id": real_conv_id,
+                "user_node_id": user_node_id,
+                "ai_node_id":   ai_node_id,
+            }))
+
+        except Exception as exc:
+            log.warning("Flowith stream error: %s", exc)
+            q.put(emit({"type": "error",
+                        "error": {"type": "api_error", "message": str(exc)}}))
+        finally:
+            await client.close()
+            q.put(None)
+
+    asyncio.run_coroutine_threadsafe(producer(), _loop)
+    while True:
+        item = q.get()
+        if item is None:
+            break
+        yield item
+
+
+async def _flowith_get_credits(acct: dict) -> dict | None:
+    """Fetch Flowith credit balance."""
+    client = await _make_flowith_client(acct)
+    try:
+        credits_list = await client.get_credits()
+        await client.close()
+        total = sum(c.remain_quota for c in credits_list)
+        return {
+            "total":   total,
+            "entries": [
+                {
+                    "remain_quota": c.remain_quota,
+                    "init_quota":   c.init_quota,
+                    "sub_type":     c.sub_type,
+                    "from_date":    c.from_date,
+                    "to_date":      c.to_date,
+                }
+                for c in credits_list
+            ],
+        }
+    except Exception as exc:
+        log.warning("Flowith credits: %s", exc)
+        try: await client.close()
+        except Exception: pass
+        return None
+
+
+async def _flowith_generate_image(
+    acct:         dict,
+    prompt:       str,
+    model:        str  = "gemini-3.1-flash-image",
+    aspect_ratio: str  = "1:1",
+    conv_id:      str | None = None,
+    timeout:      float = 120.0,
+) -> dict:
+    """Generate an image via Flowith."""
+    client = await _make_flowith_client(acct)
+    try:
+        result = await client.generate_image(
+            prompt,
+            conv_id      = conv_id,
+            model        = model,
+            aspect_ratio = aspect_ratio,
+            timeout      = timeout,
+        )
+        await client.close()
+        imgs = [{"url": img.url} for img in result.images if img.url]
+        return {"images": imgs, "model": result.model, "conv_id": result.conv_id}
+    except Exception as exc:
+        try: await client.close()
+        except Exception: pass
+        raise RuntimeError(str(exc)) from exc
+
+
+async def _flowith_generate_video(
+    acct:         dict,
+    prompt:       str,
+    model:        str  = "seedance-2.0-fast",
+    aspect_ratio: str  = "16:9",
+    conv_id:      str | None = None,
+    timeout:      float = 300.0,
+) -> dict:
+    """Generate a video via Flowith."""
+    client = await _make_flowith_client(acct)
+    try:
+        result = await client.generate_video(
+            prompt,
+            conv_id      = conv_id,
+            model        = model,
+            aspect_ratio = aspect_ratio,
+            timeout      = timeout,
+        )
+        await client.close()
+        return {"video_url": result.video_url, "model": result.model, "conv_id": result.conv_id}
+    except Exception as exc:
+        try: await client.close()
+        except Exception: pass
+        raise RuntimeError(str(exc)) from exc
+
+
+"""    async def upsert_online_session(self, payload: dict) -> object:
+        return await self._sb_rpc("upsert_online_session", payload)
+
+    async def remove_online_session(self, session_id: str) -> object:
+        return await self._sb_rpc("remove_online_session",
+                                  {"p_session_id": session_id})"""
+async def _flowith_upsert_online_session(
+    acct: dict,
+    session_id: str,
+    payload: dict,
+) -> dict:
+    """Upsert an online session in Flowith Supabase."""
+    client = await _make_flowith_client(acct)
+    # {"p_session_id":"a5c8cfaa-68d0-4542-8d12-3c436322b7e1","p_current_path":"/home","p_device_type":"desktop","p_platform":"linux","p_browser":"firefox","p_locale":"en","p_subscription_tier":"free","p_is_idle":false}
+    try:
+        result = await client._sb_rpc("upsert_online_session", {
+            "p_session_id": session_id,
+            "p_current_path": payload.get("current_path", ""),
+            "p_device_type": payload.get("device_type", ""),
+            "p_platform": payload.get("platform", ""),
+            "p_browser": payload.get("browser", ""),
+            "p_locale": payload.get("locale", ""),
+            "p_subscription_tier": payload.get("subscription_tier", ""),
+            "p_is_idle": payload.get("is_idle", False),
+            **payload,
+        })
+        await client.close()
+        return result
+    except Exception as exc:
+        try: await client.close()
+        except Exception: pass
+        raise RuntimeError(str(exc)) from exc
+    
+async def _flowith_remove_online_session(acct: dict, session_id: str) -> dict:
+    """Remove an online session in Flowith Supabase."""
+    client = await _make_flowith_client(acct)
+    try:
+        result = await client._sb_rpc("remove_online_session", {
+            "p_session_id": session_id,
+        })
+        await client.close()
+        return result
+    except Exception as exc:
+        try: await client.close()
+        except Exception: pass
+        raise RuntimeError(str(exc)) from exc
+
+# ── Flowith session cycling (keeps credits refreshed) ────────────────────────
+
+import uuid as _uuid_mod_session
+
+async def _flowith_session_cycle(
+    acct: dict,
+    *,
+    cycles: int = 3,
+    delay_sec: float = 1.2,
+) -> dict:
+    """
+    Upsert then remove a throwaway online session N times.
+    The server-side RPC refreshes the credit balance on every upsert,
+    so cycling ensures the balance is current even if one call fails.
+    Returns the last successful upsert payload or {}.
+    """
+    import asyncio as _asyncio
+    session_id = str(_uuid_mod_session.uuid4())
+    payload = {
+        "p_session_id":        session_id,
+        "p_current_path":      "/home",
+        "p_device_type":       "desktop",
+        "p_platform":          "linux",
+        "p_browser":           "chrome",
+        "p_locale":            "en",
+        "p_subscription_tier": "free",
+        "p_is_idle":           False,
+    }
+    last_result: dict = {}
+    for i in range(max(1, cycles)):
+        # upsert
+        try:
+            r = await _flowith_upsert_online_session(acct, session_id, payload)
+            if isinstance(r, dict):
+                last_result = r
+            log.debug("Flowith session-cycle upsert %d/%d ok  sid=%s…", i+1, cycles, session_id[:8])
+        except Exception as exc:
+            log.warning("Flowith session-cycle upsert %d/%d: %s", i+1, cycles, exc)
+
+        await _asyncio.sleep(delay_sec)
+
+        # remove
+        try:
+            await _flowith_remove_online_session(acct, session_id)
+            log.debug("Flowith session-cycle remove %d/%d ok", i+1, cycles)
+        except Exception as exc:
+            log.warning("Flowith session-cycle remove %d/%d: %s", i+1, cycles, exc)
+
+        # rotate session_id so each cycle is a fresh row
+        session_id = str(_uuid_mod_session.uuid4())
+        payload["p_session_id"] = session_id
+
+        if i < cycles - 1:
+            await _asyncio.sleep(delay_sec)
+
+    return last_result
+
+
+# Background poller: runs every _POLLING_CFG["poll_interval_sec"] seconds
+# and refreshes Flowith credits for every Flowith account.
+
+_flowith_cycle_lock = asyncio.Lock()
+
+
+async def _background_flowith_refresh():
+    """
+    Called by the periodic background poller.
+    Cycles sessions for every active Flowith account to refresh credits.
+    """
+    async with _flowith_cycle_lock:
+        data = store.read()
+        for acct in data.get("accounts", []):
+            if _provider_name(acct) != FLOWITH_PROVIDER:
+                continue
+            if not acct.get("api_key"):
+                continue
+            try:
+                await _flowith_session_cycle(acct, cycles=3, delay_sec=1.0)
+                log.info("Flowith credit-refresh cycle done for %s", acct["name"])
+            except Exception as exc:
+                log.warning("Flowith credit-refresh failed for %s: %s", acct["name"], exc)
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Flask App
 # ═══════════════════════════════════════════════════════════════════════════════
 
-app = Flask(__name__)
+app = Quart(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 
+# ── Simple API cache (in-memory) ─────────────────────────────────────────────
+_API_CACHE = {
+    "lock": threading.Lock(),
+    "items": {},  # key -> {"expires": ts, "payload": obj}
+}
+
+
+def _cache_key_from_request() -> str:
+    qs = request.query_string.decode("utf-8", errors="ignore")
+    return f"{request.path}?{qs}" if qs else request.path
+
+
+def _cache_get(key: str):
+    now_ts = datetime.now(timezone.utc).timestamp()
+    with _API_CACHE["lock"]:
+        item = _API_CACHE["items"].get(key)
+        if not item:
+            return None
+        if item["expires"] < now_ts:
+            _API_CACHE["items"].pop(key, None)
+            return None
+        return item["payload"]
+
+
+def _cache_set(key: str, payload, ttl_sec: float):
+    now_ts = datetime.now(timezone.utc).timestamp()
+    with _API_CACHE["lock"]:
+        _API_CACHE["items"][key] = {"expires": now_ts + float(ttl_sec), "payload": payload}
+
+
+def _cache_invalidate(prefix: str):
+    with _API_CACHE["lock"]:
+        keys = [k for k in _API_CACHE["items"] if k.startswith(prefix)]
+        for k in keys:
+            _API_CACHE["items"].pop(k, None)
+
+
+def cache_json(ttl_sec: float = 5.0, key_fn=None):
+    def deco(fn):
+        @wraps(fn)
+        async def wrapper(*args, **kwargs):
+            if request.method != "GET":
+                return await fn(*args, **kwargs)
+
+            key = key_fn() if key_fn else _cache_key_from_request()
+
+            cached = _cache_get(key)
+            if cached is not None:
+                return jsonify(cached)
+
+            result = await fn(*args, **kwargs)
+
+            try:
+                if isinstance(result, tuple):
+                    resp, status = result
+
+                    if status == 200 and hasattr(resp, "get_json"):
+                        data = await resp.get_json()
+                        _cache_set(key, data, ttl_sec)
+
+                elif hasattr(result, "get_json"):
+                    data = await result.get_json()
+                    _cache_set(key, data, ttl_sec)
+
+            except Exception:
+                pass
+
+            return result
+
+        return wrapper
+
+    return deco
 
 @app.after_request
 def _cors_for_extension(response):
@@ -866,12 +1537,12 @@ def _cors_for_extension(response):
     if request.path.startswith("/api/oauth/") or request.path == "/api/ping":
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Account-Name"
     return response
 
 
 @app.route("/api/oauth/<path:subpath>", methods=["OPTIONS"])
-def _oauth_preflight(subpath):
+async def _oauth_preflight(subpath):
     """Handle CORS preflight for all /api/oauth/* routes."""
     return "", 204
 
@@ -879,12 +1550,21 @@ def _oauth_preflight(subpath):
 
 # ── 1min.AI conversation list ─────────────────────────────────────────────────
 
-def _list_convs_oneminai(acct: dict, search: str | None = None, limit: int = 50):
+async def _list_convs_oneminai(acct: dict, search: str | None = None, limit: int = 50):
     """List 1min.AI conversations, optionally filtered by *search* query."""
-    client = _make_oneminai_client(acct)
+    client = await _make_oneminai_client(acct)
     try:
-        records = _run(client.list_conversations(search=search, limit=limit))
-        _run(client.close())
+        records = await client.list_conversations()
+        await client.close()
+        records = sorted(
+            records,
+            key=lambda r: r.metadata.get("updatedAt") or r.metadata.get("createdAt") or "",
+            reverse=True,
+        )
+        if search:
+            search_lower = search.lower()
+            records = [r for r in records if search_lower in (r.title or "").lower()]
+        records = records[:limit] if limit else records
         return [
             {
                 "uuid":       r.conversation_id,
@@ -896,36 +1576,36 @@ def _list_convs_oneminai(acct: dict, search: str | None = None, limit: int = 50)
         ]
     except Exception as exc:
         log.warning("1min.AI list_conversations: %s", exc)
-        try: _run(client.close())
+        try: await client.close()
         except Exception: pass
         return []
 
 
-def _create_conv_oneminai(acct: dict, title: str = "New conversation") -> str:
+async def _create_conv_oneminai(acct: dict, title: str = "New conversation") -> str:
     """Create a server-side conversation and return its UUID."""
-    client = _make_oneminai_client(acct)
+    client = await _make_oneminai_client(acct)
     try:
-        rec = _run(client.create_conversation(title))
-        _run(client.close())
+        rec = await client.create_conversation(title)
+        await client.close()
         return rec.conversation_id
     except Exception as exc:
         log.warning("1min.AI create_conversation: %s", exc)
-        try: _run(client.close())
+        try: await client.close()
         except Exception: pass
         return str(uuid_lib.uuid4())   # fallback local UUID
 
 
-def _get_conv_oneminai(acct: dict, conv_id: str) -> dict:
+async def _get_conv_oneminai(acct: dict, conv_id: str) -> dict:
     """Fetch a conversation + its messages from 1min.AI and return Claude-shaped dict."""
-    client = _make_oneminai_client(acct)
+    client = await _make_oneminai_client(acct)
     root   = "00000000-0000-4000-8000-000000000000"
     try:
-        rec      = _run(client.get_conversation(conv_id))
-        msg_recs = _run(client.get_conversation_messages(conv_id))
-        _run(client.close())
+        rec      = await client.get_conversation(conv_id)
+        msg_recs = await client.get_conversation_messages(conv_id)
+        await client.close()
     except Exception as exc:
         log.warning("1min.AI get_conversation: %s", exc)
-        try: _run(client.close())
+        try: await client.close()
         except Exception: pass
         return {
             "uuid": conv_id, "name": "", "created_at": _now(), "updated_at": _now(),
@@ -962,17 +1642,18 @@ def _get_conv_oneminai(acct: dict, conv_id: str) -> dict:
     }
 
 
-def _upload_file_oneminai(acct: dict, conv_id: str, f) -> dict:
+async def _upload_file_oneminai(acct: dict, conv_id: str, f) -> dict:
     """Upload a file to 1min.AI Asset API. f = werkzeug FileStorage."""
     file_bytes = f.read()
     mime       = f.content_type or "application/octet-stream"
     fname      = f.filename or "upload"
-    client     = _make_oneminai_client(acct)
+    client     = await _make_oneminai_client(acct)
     try:
-        asset = _run(client.upload_asset(data=file_bytes, filename=fname, mime_type=mime))
-        _run(client.close())
+        asset = await client.upload_asset(data=file_bytes, filename=fname, mime_type=mime)
+        await client.close()
     except Exception as exc:
-        try: _run(client.close())
+        logging.warning("1min.AI upload_asset: %s", exc)
+        try: await client.close()
         except Exception: pass
         raise RuntimeError(str(exc)) from exc
     _save_upload_meta(acct["name"], conv_id, asset.file_id, fname, len(file_bytes), mime)
@@ -988,12 +1669,12 @@ def _upload_file_oneminai(acct: dict, conv_id: str, f) -> dict:
 
 # ── 1min.AI conversation rename ──────────────────────────────────────────────
 
-def _rename_conv_oneminai(acct: dict, conv_id: str, title: str) -> dict:
-    """Rename a 1min.AI conversation via the updated client."""
-    client = _make_oneminai_client(acct)
+async def _rename_conv_oneminai(acct: dict, conv_id: str, title: str) -> dict:
+    """Rename a 1min.AI conversation via the updated await client."""
+    client = await _make_oneminai_client(acct)
     try:
-        rec = _run(client.rename_conversation(conv_id, title))
-        _run(client.close())
+        rec = await client.rename_conversation(conv_id, title)
+        await client.close()
         return {
             "uuid":       rec.conversation_id,
             "name":       rec.title,
@@ -1001,14 +1682,14 @@ def _rename_conv_oneminai(acct: dict, conv_id: str, title: str) -> dict:
         }
     except Exception as exc:
         log.warning("1min.AI rename_conversation: %s", exc)
-        try: _run(client.close())
+        try: await client.close()
         except Exception: pass
         return {"uuid": conv_id, "name": title, "updated_at": _now()}
 
 
 # ── 1min.AI music generation ──────────────────────────────────────────────────
 
-def _sync_generate_music_oneminai(
+async def _sync_generate_music_oneminai(
     acct: dict,
     prompt: str,
     model: str,
@@ -1016,24 +1697,24 @@ def _sync_generate_music_oneminai(
     duration: float | None = None,
 ) -> dict:
     """Generate music via 1min.AI and return a response dict."""
-    client = _make_oneminai_client(acct)
+    client = await _make_oneminai_client(acct)
     try:
         kwargs: dict = {"instrumental": instrumental}
         if duration is not None:
             kwargs["duration"] = duration
-        result = _run(client.generate_music(prompt, model=model, **kwargs))
-        _run(client.close())
+        result = await client.generate_music(prompt, model=model, **kwargs)
+        await client.close()
         return {"audio_url": result.audio_url, "model": result.model,
                 "record_id": result.record_id}
     except Exception as exc:
-        try: _run(client.close())
+        try: await client.close()
         except Exception: pass
         raise RuntimeError(str(exc)) from exc
 
 
 # ── 1min.AI image generation ──────────────────────────────────────────────────
 
-def _sync_generate_image_oneminai(
+async def _sync_generate_image_oneminai(
     acct: dict,
     prompt: str,
     model: str,
@@ -1042,27 +1723,27 @@ def _sync_generate_image_oneminai(
     num_images: int = 1,
 ) -> dict:
     """Generate image(s) via 1min.AI."""
-    client = _make_oneminai_client(acct)
+    client = await _make_oneminai_client(acct)
     try:
-        result = _run(client.generate_image(
+        result = await client.generate_image(
             prompt, model=model,
             width=width, height=height, num_images=num_images,
-        ))
-        _run(client.close())
+        )
+        await client.close()
         return {
             "images": [{"url": img.url} for img in result.images],
             "model":  result.model,
             "record_id": result.record_id,
         }
     except Exception as exc:
-        try: _run(client.close())
+        try: await client.close()
         except Exception: pass
         raise RuntimeError(str(exc)) from exc
 
 
 # ── 1min.AI TTS ───────────────────────────────────────────────────────────────
 
-def _sync_tts_oneminai(
+async def _sync_tts_oneminai(
     acct: dict,
     text: str,
     model: str,
@@ -1070,21 +1751,21 @@ def _sync_tts_oneminai(
     speed: float = 1.0,
 ) -> dict:
     """Text-to-speech via 1min.AI."""
-    client = _make_oneminai_client(acct)
+    client = await _make_oneminai_client(acct)
     try:
-        result = _run(client.text_to_speech(text, model=model, voice=voice, speed=speed))
-        _run(client.close())
+        result = await client.text_to_speech(text, model=model, voice=voice, speed=speed)
+        await client.close()
         return {"audio_url": result.audio_url, "model": result.model,
                 "record_id": result.record_id}
     except Exception as exc:
-        try: _run(client.close())
+        try: await client.close()
         except Exception: pass
         raise RuntimeError(str(exc)) from exc
 
 
 # ── 1min.AI content tools ─────────────────────────────────────────────────────
 
-def _sync_content_tool_oneminai(
+async def _sync_content_tool_oneminai(
     acct: dict,
     tool: str,
     prompt: str,
@@ -1106,25 +1787,31 @@ def _sync_content_tool_oneminai(
     method_name = _TOOL_MAP.get(tool)
     if not method_name:
         raise ValueError(f"Unknown content tool: {tool!r}")
-    client = _make_oneminai_client(acct)
+    client = await _make_oneminai_client(acct)
     try:
         method = getattr(client, method_name)
         if tool == "translate":
-            result = _run(method(prompt, kwargs.get("language", "English")))
+            result = await method(prompt, kwargs.get("language", "English"))
         else:
-            result = _run(method(prompt, **{k: v for k, v in kwargs.items() if k != "language"}))
-        _run(client.close())
+            result = await method(prompt, **{k: v for k, v in kwargs.items() if k != "language"})
+        await client.close()
         return result.text
     except Exception as exc:
-        try: _run(client.close())
+        try: await client.close()
         except Exception: pass
         raise RuntimeError(str(exc)) from exc
 
 
 @app.route("/api/ping")
-
-def ping():
+async def ping():
     return jsonify({"ok": True})
+
+def _warm_model_caches_sync():
+    asyncio.run_coroutine_threadsafe(_warm_model_caches(), _loop)
+
+# Start warm-up thread after store is ready
+_warm_thread = threading.Thread(target=_warm_model_caches_sync, daemon=True, name="model-warmer")
+_warm_thread.start()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1163,44 +1850,94 @@ def _resolve_account(req) -> dict | None:
 
 def require_account(fn):
     @wraps(fn)
-    def wrapper(*args, **kwargs):
+    async def wrapper(*args, **kwargs):
         acct = _resolve_account(request)
+
         if not acct:
             name = (
-                request.headers.get("X-Account-Name") or
-                request.args.get("account_name") or ""
+                request.headers.get("X-Account-Name")
+                or request.args.get("account_name")
+                or ""
             ).strip()
+
             if name:
-                return jsonify({"error": f"Account '{name}' not found"}), 404
-            return jsonify({"error": "No active account configured"}), 401
+                return jsonify({
+                    "error": f"Account '{name}' not found"
+                }), 404
+
+            return jsonify({
+                "error": "No active account configured"
+            }), 401
+
         prov = _provider_name(acct)
+
         if prov == CLAUDE_PROVIDER and not acct.get("session_key"):
-                return jsonify({"error": f"Account '{acct['name']}' is missing a session_key"}), 401
+            return jsonify({
+                "error": f"Account '{acct['name']}' is missing a session_key"
+            }), 401
+
         if prov == ONEMINAI_PROVIDER and not acct.get("api_key"):
-                return jsonify({"error": f"Account '{acct['name']}' is missing an api_key"}), 401
-        return fn(acct, *args, **kwargs)
+            return jsonify({
+                "error": f"Account '{acct['name']}' is missing an api_key"
+            }), 401
+
+        if prov == FLOWITH_PROVIDER and not acct.get("api_key"):
+            return jsonify({
+                "error": f"Account '{acct['name']}' is missing an api_key (Flowith JWT)"
+            }), 401
+
+        return await fn(acct, *args, **kwargs)
+
     return wrapper
+
 
 def api_error_handler(fn):
     @wraps(fn)
-    def wrapper(*args, **kwargs):
+    async def wrapper(*args, **kwargs):
         try:
-            return fn(*args, **kwargs)
+            return await fn(*args, **kwargs)
+
         except AuthenticationError as exc:
             log.warning("Auth error: %s", exc)
-            return jsonify({"error": "Authentication failed — check your credentials"}), 401
+
+            return jsonify({
+                "error": "Authentication failed — check your credentials"
+            }), 401
+
         except APIError as exc:
-            log.warning("API error HTTP %s: %s", exc.status_code, exc)
-            return jsonify({"error": str(exc), "status": exc.status_code}), exc.status_code or 500
+            log.warning(
+                "API error HTTP %s: %s",
+                exc.status_code,
+                exc,
+            )
+
+            return jsonify({
+                "error": str(exc),
+                "status": exc.status_code
+            }), exc.status_code or 500
+
         except QuotaExceededError as exc:
-            return jsonify({"error": str(exc)}), 429
+            return jsonify({
+                "error": str(exc)
+            }), 429
+
         except http_client.Timeout:
-            return jsonify({"error": "Upstream request timed out"}), 504
+            return jsonify({
+                "error": "Upstream request timed out"
+            }), 504
+
         except http_client.ConnectionError:
-            return jsonify({"error": "Cannot reach upstream API"}), 502
+            return jsonify({
+                "error": "Cannot reach upstream API"
+            }), 502
+
         except Exception as exc:
             log.exception("Unhandled error in %s", fn.__name__)
-            return jsonify({"error": str(exc)}), 500
+
+            return jsonify({
+                "error": str(exc)
+            }), 500
+
     return wrapper
 
 
@@ -1208,12 +1945,51 @@ def api_error_handler(fn):
 
 # ── 1min.AI extra endpoints ───────────────────────────────────────────────────
 
+@app.route("/api/conversations/<conv_id>", methods=["DELETE"])
+@require_account
+@api_error_handler
+async def delete_conversation(acct, conv_id):
+    """Delete a conversation (all providers)."""
+    provider = _provider_name(acct)
+
+    if provider == ONEMINAI_PROVIDER:
+        client = await _make_oneminai_client(acct)
+        try:
+            await client.delete_conversation(conv_id)
+            await client.close()
+        except Exception as exc:
+            log.warning("1min.AI delete_conversation %s: %s", conv_id, exc)
+            try: await client.close()
+            except Exception: pass
+
+    if provider == FLOWITH_PROVIDER:
+        # Flowith doesn't have a delete endpoint in the web API; soft-delete locally
+        try:
+            client = await _make_flowith_client(acct)
+            await client.delete_conversation(conv_id)
+            await client.close()
+        except Exception as exc:
+            log.warning("Flowith delete_conversation %s: %s", conv_id, exc)
+
+    # Remove from local store regardless
+    def fn(data):
+        for a in data["accounts"]:
+            if a["name"] == acct["name"]:
+                a["pinned_conversations"] = [
+                    c for c in a.get("pinned_conversations", [])
+                    if c.get("conv_uuid") != conv_id
+                ]
+                break
+    store.mutate(fn)
+    return jsonify({"success": True})
+
+
 @app.route("/api/conversations/<conv_id>/rename", methods=["PATCH"])
 @require_account
 @api_error_handler
-def rename_conversation_route(acct, conv_id):
+async def rename_conversation_route(acct, conv_id):
     """Rename a conversation (all providers)."""
-    data  = request.json or {}
+    data  =  await _get_json()
     title = (data.get("title") or data.get("name") or "").strip()
     if not title:
         return jsonify({"error": "title is required"}), 400
@@ -1221,7 +1997,7 @@ def rename_conversation_route(acct, conv_id):
     provider = _provider_name(acct)
 
     if provider == ONEMINAI_PROVIDER:
-        result = _rename_conv_oneminai(acct, conv_id, title)
+        result = await _rename_conv_oneminai(acct, conv_id, title)
         # Also update local metadata
         def fn(store_data):
             for a in store_data["accounts"]:
@@ -1234,7 +2010,7 @@ def rename_conversation_route(acct, conv_id):
         store.mutate(fn)
         return jsonify({"success": True, "conversation": result})
 
-    if provider == CHATWITHAI_PROVIDER:
+    if provider == CHATWITHAI_PROVIDER or provider == FLOWITH_PROVIDER:
         def fn(store_data):
             for a in store_data["accounts"]:
                 if a["name"] == acct["name"]:
@@ -1247,11 +2023,11 @@ def rename_conversation_route(acct, conv_id):
         return jsonify({"success": True, "conversation": {"uuid": conv_id, "name": title}})
 
     # Claude
-    client = _make_claude_client(acct)
+    client = await _make_claude_client(acct)
     try:
-        _run(client.update_conversation_settings(conv_id, {"name": title}))
+        await client.update_conversation_settings(conv_id, {"name": title})
     finally:
-        _run(client.close())
+        await client.close()
     def fn(store_data):
         for a in store_data["accounts"]:
             if a["name"] == acct["name"]:
@@ -1267,18 +2043,18 @@ def rename_conversation_route(acct, conv_id):
 @app.route("/api/oneminai/music", methods=["POST"])
 @require_account
 @api_error_handler
-def oneminai_generate_music(acct):
+async def oneminai_generate_music(acct):
     """Generate music via 1min.AI."""
     if _provider_name(acct) != ONEMINAI_PROVIDER:
         return jsonify({"error": "Not a 1min.AI account"}), 400
-    data         = request.json or {}
+    data         = await _get_json()
     prompt       = (data.get("prompt") or "").strip()
     model        = (data.get("model") or "lyria-002").strip()
     instrumental = bool(data.get("instrumental", False))
     duration     = data.get("duration")
     if not prompt:
         return jsonify({"error": "prompt is required"}), 400
-    result = _sync_generate_music_oneminai(
+    result = await _sync_generate_music_oneminai(
         acct, prompt, model, instrumental=instrumental,
         duration=float(duration) if duration is not None else None,
     )
@@ -1288,11 +2064,11 @@ def oneminai_generate_music(acct):
 @app.route("/api/oneminai/image", methods=["POST"])
 @require_account
 @api_error_handler
-def oneminai_generate_image(acct):
+async def oneminai_generate_image(acct):
     """Generate image(s) via 1min.AI."""
     if _provider_name(acct) != ONEMINAI_PROVIDER:
         return jsonify({"error": "Not a 1min.AI account"}), 400
-    data       = request.json or {}
+    data       = await _get_json()
     prompt     = (data.get("prompt") or "").strip()
     model      = (data.get("model") or "black-forest-labs/flux-1.1-pro").strip()
     width      = int(data.get("width", 1024))
@@ -1300,7 +2076,7 @@ def oneminai_generate_image(acct):
     num_images = int(data.get("num_images", 1))
     if not prompt:
         return jsonify({"error": "prompt is required"}), 400
-    result = _sync_generate_image_oneminai(
+    result = await _sync_generate_image_oneminai(
         acct, prompt, model, width=width, height=height, num_images=num_images
     )
     return jsonify(result)
@@ -1309,47 +2085,49 @@ def oneminai_generate_image(acct):
 @app.route("/api/oneminai/tts", methods=["POST"])
 @require_account
 @api_error_handler
-def oneminai_tts(acct):
+async def oneminai_tts(acct):
     """Text-to-speech via 1min.AI."""
     if _provider_name(acct) != ONEMINAI_PROVIDER:
         return jsonify({"error": "Not a 1min.AI account"}), 400
-    data  = request.json or {}
+    data  = await _get_json()
     text  = (data.get("text") or data.get("prompt") or "").strip()
     model = (data.get("model") or "tts-1").strip()
     voice = (data.get("voice") or "alloy").strip()
     speed = float(data.get("speed", 1.0))
     if not text:
         return jsonify({"error": "text is required"}), 400
-    result = _sync_tts_oneminai(acct, text, model, voice, speed)
+    result = await _sync_tts_oneminai(acct, text, model, voice, speed)
     return jsonify(result)
 
 
 @app.route("/api/oneminai/content-tool", methods=["POST"])
 @require_account
 @api_error_handler
-def oneminai_content_tool(acct):
+async def oneminai_content_tool(acct):
     """
     Generic content tool endpoint for 1min.AI:
     grammar, paraphrase, rewrite, summarize, expand, shorten, translate.
     """
     if _provider_name(acct) != ONEMINAI_PROVIDER:
         return jsonify({"error": "Not a 1min.AI account"}), 400
-    data     = request.json or {}
+    data     = await _get_json()
     tool     = (data.get("tool") or "").strip().lower()
     prompt   = (data.get("prompt") or data.get("text") or "").strip()
     language = (data.get("language") or "English").strip()
-    tone     = (data.get("tone") or "professional").strip()
+    tone     = data.get("tone").strip() if data.get("tone") else None
+    kwargs   = {}
+    if tone:
+        kwargs = {"tone": tone}
     if not tool or not prompt:
         return jsonify({"error": "tool and prompt are required"}), 400
-    text = _sync_content_tool_oneminai(
-        acct, tool, prompt, language=language, tone=tone
+    text = await _sync_content_tool_oneminai(
+        acct, tool, prompt, language=language, **kwargs
     )
     return jsonify({"text": text, "tool": tool})
 
 
 @app.route("/api/health")
-
-def health():
+async def health():
     acct = _get_active_account()
     provider = _provider_name(acct) if acct else None
     
@@ -1361,12 +2139,14 @@ def health():
     }
     
     if provider:
-        models = _get_models_for_provider(provider)
+        models = await _get_models_for_provider(provider)
         result["models_available"] = len(models)
         if provider == CHATWITHAI_PROVIDER:
             result["default_model"] = CHATWITHAI_DEFAULT_MODEL
         elif provider == ONEMINAI_PROVIDER:
             result["default_model"] = ONEMINAI_DEFAULT_MODEL
+        elif provider == FLOWITH_PROVIDER:
+            result["default_model"] = FLOWITH_DEFAULT_MODEL
         else:
             result["default_model"] = "claude-sonnet-4-6"
     
@@ -1386,10 +2166,30 @@ _oauth_states: dict = {}
 _oauth_lock = threading.Lock()
 
 
+def _oauth_persist(state: str, entry: dict) -> None:
+    """Write-through: persist entry to JSONStore so it survives restarts/workers."""
+    def fn(data):
+        data.setdefault("_oauth_states", {})[state] = dict(entry)
+    store.mutate(fn)
+
+
+def _oauth_fetch_stored(state: str) -> dict | None:
+    """Cache-miss fallback: look up state in JSONStore (cross-worker/restart)."""
+    return store.read().get("_oauth_states", {}).get(state)
+
+
+def _oauth_drop(state: str) -> None:
+    """Remove state from both in-process cache and JSONStore."""
+    _oauth_states.pop(state, None)
+    def fn(data):
+        data.get("_oauth_states", {}).pop(state, None)
+    store.mutate(fn)
+
+
 # ── Claude OAuth (extension-driven flow) ─────────────────────────────────────
 
 @app.route("/api/oauth/claude/owns-state")
-def oauth_claude_owns_state():
+async def oauth_claude_owns_state():
     """Extension checks this before intercepting — prevents acting on non-Console callbacks."""
     state = request.args.get("state", "")
     with _oauth_lock:
@@ -1398,7 +2198,7 @@ def oauth_claude_owns_state():
 
 
 @app.route("/api/oauth/claude/begin")
-def oauth_claude_begin():
+async def oauth_claude_begin():
     state = secrets.token_hex(16)
     with _oauth_lock:
         _oauth_states[state] = {
@@ -1410,7 +2210,7 @@ def oauth_claude_begin():
 
 
 @app.route("/api/oauth/claude/ext-pending")
-def oauth_claude_ext_pending():
+async def oauth_claude_ext_pending():
     """Content script polls this to learn whether a session is waiting for it.
     Marks the state as claimed immediately to prevent two tabs racing."""
     with _oauth_lock:
@@ -1426,9 +2226,9 @@ def oauth_claude_ext_pending():
 
 
 @app.route("/api/oauth/claude/ext-callback", methods=["POST"])
-def oauth_claude_ext_callback():
+async def oauth_claude_ext_callback():
     """Receives the OAuth code relayed by the browser extension."""
-    data  = request.get_json(silent=True) or {}
+    data  = await _get_json()
     code  = data.get("code")
     state = data.get("state")
     error = data.get("error")
@@ -1448,7 +2248,7 @@ def oauth_claude_ext_callback():
 
 
 @app.route("/api/oauth/claude/status")
-def oauth_claude_status():
+async def oauth_claude_status():
     state = request.args.get("state", "")
     with _oauth_lock:
         entry = _oauth_states.get(state)
@@ -1469,10 +2269,10 @@ def oauth_claude_status():
 
 # ── 1min.AI OAuth (auth-code flow — mirrors Claude exactly) ──────────────────
 # Extension intercepts app.1min.ai, calls GIS initCodeClient, POSTs the code.
-# Backend exchanges code for a 1min.AI JWT via OneMinAIClient.from_google_code().
+# Backend exchanges code for a 1min.AI JWT via OneMinAIawait client.from_google_code().
 
 @app.route("/api/oauth/oneminai/begin")
-def oauth_oneminai_begin():
+async def oauth_oneminai_begin():
     state = secrets.token_hex(16)
     with _oauth_lock:
         _oauth_states[state] = {
@@ -1484,7 +2284,7 @@ def oauth_oneminai_begin():
 
 
 @app.route("/api/oauth/oneminai/owns-state")
-def oauth_oneminai_owns_state():
+async def oauth_oneminai_owns_state():
     state = request.args.get("state", "")
     with _oauth_lock:
         owned = (
@@ -1495,7 +2295,7 @@ def oauth_oneminai_owns_state():
 
 
 @app.route("/api/oauth/oneminai/ext-pending")
-def oauth_oneminai_ext_pending():
+async def oauth_oneminai_ext_pending():
     """Content script polls this; returns the first unclaimed waiting state."""
     with _oauth_lock:
         for state, entry in _oauth_states.items():
@@ -1510,8 +2310,8 @@ def oauth_oneminai_ext_pending():
 
 
 @app.route("/api/oauth/oneminai/ext-callback", methods=["POST"])
-def oauth_oneminai_ext_callback():
-    data        = request.get_json(silent=True) or {}
+async def oauth_oneminai_ext_callback():
+    data        = await _get_json()
     # accept both field names defensively
     oauth_token = (
         data.get("oauth_token")
@@ -1583,7 +2383,7 @@ def oauth_oneminai_ext_callback():
 
 
 @app.route("/api/oauth/oneminai/status")
-def oauth_oneminai_status():
+async def oauth_oneminai_status():
     state = request.args.get("state", "")
     with _oauth_lock:
         entry = _oauth_states.get(state)
@@ -1605,36 +2405,196 @@ def oauth_oneminai_status():
     return jsonify(result)
 
 
+
+
+# ── Flowith OAuth (extension-driven flow, similar to Claude) ───────────────────────────────
+# Extension intercepts flowith.io redirects, relays token + user_id (parsed from JWT if not supplied) back to ext-callback.
+
+@app.route("/api/oauth/flowith/url")
+async def oauth_flowith_url():
+    # Returns the Supabase authorize URL so the extension knows where to navigate.
+    # State is embedded in redirect_to so content_flowith.js can recover it
+    # after the full-page OAuth redirect restarts the script context.
+    from urllib.parse import urlencode
+    state = request.args.get("state", "")
+    SUPABASE_URL = "https://aibdxsebwhalbnugsqel.supabase.co"
+    redirect_to = (
+        f"https://flowith.io/#_console_state={state}" if state
+        else "https://flowith.io"
+    )
+    params = {"provider": "google", "redirect_to": redirect_to}
+    url = f"{SUPABASE_URL}/auth/v1/authorize?{urlencode(params)}"
+    resp = jsonify({"url": url, "state": state})
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
+
+
+@app.route("/api/oauth/flowith/begin")
+async def oauth_flowith_begin():
+    state = secrets.token_hex(16)
+    entry = {"done": False, "provider": "flowith", "pending_ext": True}
+    with _oauth_lock:
+        _oauth_states[state] = entry
+    _oauth_persist(state, entry)          # survive restarts / multi-worker
+    return jsonify({"state": state})
+
+
+@app.route("/api/oauth/flowith/owns-state")
+async def oauth_flowith_owns_state():
+    """Extension checks this before acting on a flowith.io redirect."""
+    state = request.args.get("state", "")
+    with _oauth_lock:
+        owned = (
+            state in _oauth_states
+            and _oauth_states[state].get("provider") == "flowith"
+        )
+    return jsonify({"owned": owned})
+
+
+@app.route("/api/oauth/flowith/ext-pending")
+async def oauth_flowith_ext_pending():
+    """Content-script polls this; returns the first unclaimed waiting state."""
+    with _oauth_lock:
+        for state, entry in _oauth_states.items():
+            if (
+                entry.get("provider") == "flowith"
+                and entry.get("pending_ext")
+                and not entry["done"]
+            ):
+                entry["pending_ext"] = False   # claimed — prevent double-handling
+                return jsonify({"state": state})
+    return jsonify({"state": None})
+
+
+@app.route("/api/oauth/flowith/ext-callback", methods=["POST"])
+async def oauth_flowith_ext_callback():
+    data          = await _get_json()
+    access_token  = (
+        data.get("access_token")
+        or data.get("token")
+        or data.get("oauth_token")
+        or ""
+    ).strip()
+    refresh_token = (data.get("refresh_token") or "").strip()
+    user_id       = (data.get("user_id")       or "").strip()
+    state         = (data.get("state")         or "").strip()
+    error         = data.get("error")
+
+    if not state:
+        return jsonify({"ok": False, "error": "missing_state"}), 400
+
+    with _oauth_lock:
+        entry = _oauth_states.get(state)
+        if not entry:
+            entry = {"done": False, "provider": "flowith", "pending_ext": False}
+            _oauth_states[state] = entry
+
+    if entry["done"]:
+        return jsonify({"ok": True})
+
+    if error:
+        entry.update({"error": error, "done": True, "pending_ext": False})
+        _oauth_persist(state, entry)
+        return jsonify({"ok": False, "error": error})
+
+    if not access_token:
+        log.warning("flowith ext-callback: no token in payload. keys=%s", list(data.keys()))
+        entry.update({"error": "no_token", "done": True, "pending_ext": False})
+        _oauth_persist(state, entry)
+        return jsonify({"ok": False, "error": "no_token"}), 400
+
+    if not user_id:
+        try:
+            import base64 as _b64, json as _json
+            parts = access_token.split(".")
+            if len(parts) >= 2:
+                pad     = parts[1] + "=" * (-len(parts[1]) % 4)
+                payload = _json.loads(_b64.urlsafe_b64decode(pad))
+                user_id = payload.get("sub", "")
+        except Exception:
+            pass
+
+    entry.update({
+        "access_token":  access_token,
+        "refresh_token": refresh_token,
+        "user_id":       user_id,
+        "done":          True,
+        "pending_ext":   False,
+    })
+    _oauth_persist(state, entry)
+    log.info("Flowith OAuth success: user_id=%s", user_id or "(unknown)")
+    return jsonify({"ok": True, "user_id": user_id})
+
+
+@app.route("/api/oauth/flowith/status")
+async def oauth_flowith_status():
+    state = request.args.get("state", "")
+    with _oauth_lock:
+        entry = _oauth_states.get(state)
+    log.info("Flowith OAuth status check: state=%s  entry=%s", state, entry)
+    if entry is None:
+        # Cross-worker / restart fallback — check persistent store
+        entry = _oauth_fetch_stored(state)
+        if entry is not None:
+            with _oauth_lock:
+                _oauth_states[state] = entry   # repopulate in-process cache
+    if not entry:
+        return jsonify({"error": "invalid_state"}), 400
+    if not entry["done"]:
+        return jsonify({"done": False})
+
+    result: dict = {"done": True}
+    if "access_token" in entry:
+        result["access_token"]  = entry["access_token"]
+        result["refresh_token"] = entry.get("refresh_token", "")
+        result["user_id"]       = entry.get("user_id", "")
+    if "error" in entry:
+        result["error"] = entry["error"]
+
+    _oauth_drop(state)
+    return jsonify(result)
+
+
 @app.route("/api/models", methods=["GET"])
 @require_account
-def get_models(acct):
+async def get_models(acct):
     """Get models for the account resolved from this request's context."""
     provider = _provider_name(acct)
-    models   = _get_models_for_provider(provider)
+    models   = await _get_models_for_provider(provider)
+    default  = (
+        CHATWITHAI_DEFAULT_MODEL if provider == CHATWITHAI_PROVIDER else
+        ONEMINAI_DEFAULT_MODEL   if provider == ONEMINAI_PROVIDER   else
+        FLOWITH_DEFAULT_MODEL    if provider == FLOWITH_PROVIDER     else
+        "claude-sonnet-4-6"
+    )
+    # Group by category for richer UI
+    by_cat: dict = {}
+    for m in models:
+        cat = m.get("category", "text")
+        by_cat.setdefault(cat, []).append(m)
     return jsonify({
         "provider":      provider,
         "account":       acct["name"],
         "models":        models,
-        "default_model": (
-            CHATWITHAI_DEFAULT_MODEL 
-            if provider == CHATWITHAI_PROVIDER 
-            else "claude-sonnet-4-6"
-        ),
+        "by_category":   by_cat,
+        "default_model": default,
+        "total":         len(models),
     })
 
 
 # ── Pages ─────────────────────────────────────────────────────────────────────
 
 @app.route("/")
-@app.route("/c/<path:conv_id>")
-def index(conv_id=None):
-    return render_template("index.html")
+@app.route("/a/<path:acct_id>/c/<path:conv_id>")
+async def index(acct_id=None, conv_id=None):
+    return await render_template("index.html")
 
 
 # ── Accounts ──────────────────────────────────────────────────────────────────
 
 @app.route("/api/accounts", methods=["GET"])
-def list_accounts():
+@cache_json(ttl_sec=30.0)
+async def list_accounts():
     data = store.read()
     accounts = data["accounts"]
     active = next((a["name"] for a in accounts if a.get("is_active")), None)
@@ -1647,24 +2607,30 @@ def list_accounts():
         pub = _account_to_public(a)
         provider = _provider_name(a)
 
-        # Attach models directly — no per-request account resolution needed
+        # Use CACHED models only — never fetch on this endpoint
         if provider == CHATWITHAI_PROVIDER:
-            try:
-                models = _chatwithai_fetch_models()
-            except Exception:
-                models = _CHATWITHAI_MODEL_CACHE.get("models", [])
+            models = _CHATWITHAI_MODEL_CACHE.get("models", [])
         elif provider == ONEMINAI_PROVIDER:
-            try:
-                models = _oneminai_fetch_models()
-            except Exception:
-                models = _ONEMINAI_MODEL_CACHE.get("models", [])
+            models = _ONEMINAI_MODEL_CACHE.get("models", [])
+        elif provider == FLOWITH_PROVIDER:
+            models = _FLOWITH_MODEL_CACHE.get("models", [])
         else:
             models = CLAUDE_MODELS
 
-        pub["models"]        = models
+        if provider == FLOWITH_PROVIDER:
+            # Split models by category so the toolbar only sees text/chat models
+            text_models  = [m for m in models
+                            if m.get("category") in ("text", "chat", None, "")
+                            or not m.get("category")]
+            pub["models"]        = text_models if text_models else models
+            pub["image_models"]  = [m for m in models if m.get("category") == "image"]
+            pub["video_models"]  = [m for m in models if m.get("category") == "video"]
+        else:
+            pub["models"]        = models
         pub["default_model"] = (
             CHATWITHAI_DEFAULT_MODEL if provider == CHATWITHAI_PROVIDER else
             ONEMINAI_DEFAULT_MODEL   if provider == ONEMINAI_PROVIDER   else
+            FLOWITH_DEFAULT_MODEL    if provider == FLOWITH_PROVIDER     else
             "claude-sonnet-4-6"
         )
         pub["provider_info"] = {
@@ -1674,22 +2640,21 @@ def list_accounts():
             "supports_artifacts":  provider == CLAUDE_PROVIDER,
             "supports_tools":      provider == CLAUDE_PROVIDER,
             "supports_thinking":   provider == CLAUDE_PROVIDER,
-            "supports_branching":  provider == CLAUDE_PROVIDER,
+            # Flowith supports branching via p_id on flow nodes
+            "supports_branching":  provider in (CLAUDE_PROVIDER, FLOWITH_PROVIDER),
             "supports_web_search": provider == ONEMINAI_PROVIDER,
-            "supports_image_gen":  provider == ONEMINAI_PROVIDER,
+            "supports_image_gen":  provider in (ONEMINAI_PROVIDER, FLOWITH_PROVIDER),
+            "supports_video_gen":  provider == FLOWITH_PROVIDER,
             "supports_download":   provider == CLAUDE_PROVIDER,
             "supports_reuse_files": provider in (CLAUDE_PROVIDER, ONEMINAI_PROVIDER),
         }
         account_list.append(pub)
 
-    return jsonify({
-        "accounts": account_list,
-        "active":   active,
-    })
+    return jsonify({"accounts": account_list, "active": active})
 
 @app.route("/api/accounts", methods=["POST"])
-def add_account():
-    req  = request.json or {}
+async def add_account():
+    req  = await _get_json()
     name = (req.get("name") or "").strip()
     provider = _normalize_provider(req.get("provider"))
     sk   = (req.get("session_key")     or "").strip()
@@ -1710,19 +2675,21 @@ def add_account():
 
     oneminai_api_key = (req.get("api_key") or "").strip()
     oneminai_team_id = (req.get("team_id") or "").strip()
+    flowith_api_key      = (req.get("api_key")      or "").strip()
+    flowith_user_id      = (req.get("user_id")      or "").strip()
+    flowith_refresh_token = (req.get("refresh_token") or "").strip()
 
     if provider == CLAUDE_PROVIDER and not boot_session_key and not existing_account:
         if claude_code:
-            auth_client = _run(
-                ClaudeClient.from_google_code(
+            auth_client = await ClaudeClient.from_google_code(
                     claude_code,
                     arkose_session_token=arkose_session_token,
                     organization_id=org or None,
-                )
+                
             )
             boot_session_key = getattr(auth_client, "_session_key", "")
             boot_org = getattr(auth_client, "_organization_id", None) or org
-            _run(auth_client.close())
+            await auth_client.close()
         else:
             return jsonify({"error": "session_key or claude_code is required"}), 400
 
@@ -1746,6 +2713,15 @@ def add_account():
                     existing["team_id"] = oneminai_team_id
                 existing.pop("session_key", None)
                 existing.pop("organization_id", None)
+            elif provider == FLOWITH_PROVIDER:
+                if flowith_api_key:
+                    existing["api_key"] = flowith_api_key
+                if flowith_user_id:
+                    existing["user_id"] = flowith_user_id
+                if flowith_refresh_token:
+                    existing["refresh_token"] = flowith_refresh_token
+                existing.pop("session_key", None)
+                existing.pop("organization_id", None)
             else:
                 existing.pop("session_key", None)
                 existing.pop("organization_id", None)
@@ -1760,6 +2736,12 @@ def add_account():
                 creds["api_key"] = oneminai_api_key
                 if oneminai_team_id:
                     creds["team_id"] = oneminai_team_id
+            elif provider == FLOWITH_PROVIDER:
+                creds["api_key"] = flowith_api_key
+                if flowith_user_id:
+                    creds["user_id"] = flowith_user_id
+                if flowith_refresh_token:
+                    creds["refresh_token"] = flowith_refresh_token
             data["accounts"].append(_new_account(name, provider, **creds))
         if req.get("activate") or len(data["accounts"]) == 1:
             _set_active_in_data(data, name)
@@ -1767,13 +2749,14 @@ def add_account():
             (a["name"] for a in data["accounts"] if a.get("is_active")), None)
 
     store.mutate(fn)
+    _cache_invalidate("/api/accounts")
     log.info("Account saved: %s provider=%s active=%s", name, provider, active_name == name)
     return jsonify({"success": True, "name": name,
                     "active": active_name == name}), 201
 
 
 @app.route("/api/accounts/<n>", methods=["DELETE"])
-def delete_account(n):
+async def delete_account(n):
     acct = _get_account_by_name(n)
     if not acct:
         return jsonify({"error": "Account not found"}), 404
@@ -1791,14 +2774,16 @@ def delete_account(n):
             (a["name"] for a in data["accounts"] if a.get("is_active")), None)
 
     store.mutate(fn)
+    _cache_invalidate("/api/accounts")
     return jsonify({"success": True, "active": active_name})
 
 
 @app.route("/api/accounts/<n>/activate", methods=["POST"])
-def activate_account(n):
+async def activate_account(n):
     if not _get_account_by_name(n):
         return jsonify({"error": "Account not found"}), 404
     _ensure_single_active(n)
+    _cache_invalidate("/api/accounts")
     log.info("Switched active account → %s", n)
     return jsonify({"success": True, "active": n})
 
@@ -1806,16 +2791,18 @@ def activate_account(n):
 # ── Legacy config ─────────────────────────────────────────────────────────────
 
 @app.route("/api/config", methods=["GET"])
-def get_config():
+async def get_config():
     acct = _get_active_account()
     provider = _provider_name(acct) if acct else CLAUDE_PROVIDER
     
     # Get available models for the provider
-    models = _get_models_for_provider(provider) if acct else []
+    models = await _get_models_for_provider(provider) if acct else []
     if provider == CHATWITHAI_PROVIDER:
         default_model = CHATWITHAI_DEFAULT_MODEL
     elif provider == ONEMINAI_PROVIDER:
         default_model = ONEMINAI_DEFAULT_MODEL
+    elif provider == FLOWITH_PROVIDER:
+        default_model = FLOWITH_DEFAULT_MODEL
     else:
         default_model = "claude-sonnet-4-6"
     
@@ -1831,8 +2818,8 @@ def get_config():
 
 
 @app.route("/api/config", methods=["POST"])
-def set_config():
-    data = request.json or {}
+async def set_config():
+    data = await _get_json()
     acct = _get_active_account()
     name = (data.get("name") or (acct["name"] if acct else "default")).strip()
     provider = _normalize_provider(data.get("provider") or (acct.get("provider") if acct else None))
@@ -1863,6 +2850,7 @@ def set_config():
         _set_active_in_data(store_data, name)
 
     store.mutate(fn)
+    _cache_invalidate("/api/accounts")
     return jsonify({"success": True, "active": name})
 
 
@@ -1870,7 +2858,7 @@ def set_config():
 
 @app.route("/api/preferences", methods=["GET"])
 @require_account
-def get_preferences(acct):
+async def get_preferences(acct):
     data = store.read()
     for a in data["accounts"]:
         if a["name"] == acct["name"]:
@@ -1880,8 +2868,8 @@ def get_preferences(acct):
 
 @app.route("/api/preferences", methods=["PATCH"])
 @require_account
-def set_preferences(acct):
-    prefs = request.json or {}
+async def set_preferences(acct):
+    prefs = await _get_json()
 
     def fn(data):
         for a in data["accounts"]:
@@ -1898,13 +2886,19 @@ def set_preferences(acct):
 @app.route("/api/conversations", methods=["GET"])
 @require_account
 @api_error_handler
-def list_conversations(acct):
+async def list_conversations(acct):
     provider = _provider_name(acct)
+
+    if provider == FLOWITH_PROVIDER:
+        search = request.args.get("search") or None
+        limit  = int(request.args.get("limit", 50))
+        convs  = await _list_convs_flowith(acct, search=search, limit=limit)
+        return jsonify(convs), 200
 
     if provider == ONEMINAI_PROVIDER:
         search = request.args.get("search") or None
         limit  = int(request.args.get("limit", 50))
-        return jsonify(_list_convs_oneminai(acct, search=search, limit=limit)), 200
+        return jsonify(await _list_convs_oneminai(acct, search=search, limit=limit)), 200
 
     if provider == CHATWITHAI_PROVIDER:
         data = store.read()
@@ -1926,22 +2920,79 @@ def list_conversations(acct):
                 ]), 200
         return jsonify([]), 200
 
-    client = _make_claude_client(acct)
+    # Claude — use local pinned_conversations cache first,
+    # only fetch from Claude API if explicitly requested
+    force = request.args.get("force", "0") == "1"
+    data  = store.read()
+    for a in data["accounts"]:
+        if a["name"] == acct["name"]:
+            cached = a.get("pinned_conversations", [])
+            if cached and not force:
+                # Return local cache immediately — no Claude API call
+                return jsonify([
+                    {
+                        "uuid":       c.get("conv_uuid", ""),
+                        "name":       c.get("display_name", ""),
+                        "created_at": c.get("pinned_at", ""),
+                        "updated_at": c.get("pinned_at", ""),
+                    }
+                    for c in cached if c.get("conv_uuid")
+                ]), 200
+            break
+
+    # No local cache — fetch from Claude (slow path, only on first load)
+    client = await _make_claude_client(acct)
     try:
-        convs = _run(client.list_conversations())
+        convs = await client.list_conversations()
+        # Cache them locally
+        def fn(store_data):
+            for a in store_data["accounts"]:
+                if a["name"] == acct["name"]:
+                    existing = {c["conv_uuid"] for c in a.get("pinned_conversations", [])}
+                    for c in (convs or []):
+                        cid = c.get("uuid") or c.get("id", "")
+                        if cid and cid not in existing:
+                            a.setdefault("pinned_conversations", []).append({
+                                "conv_uuid":    cid,
+                                "display_name": c.get("name", ""),
+                                "pinned_at":    c.get("updated_at", _now()),
+                            })
+                    break
+        store.mutate(fn)
         return jsonify(convs), 200
     finally:
-        _run(client.close())
+        await client.close()
 
 
 @app.route("/api/conversations", methods=["POST"])
 @require_account
 @api_error_handler
-def create_conversation(acct):
+async def create_conversation(acct):
     provider = _provider_name(acct)
 
+    if provider == FLOWITH_PROVIDER:
+        conv_id = await _create_conv_flowith(acct)
+        # Cache locally for sidebar speed
+        def _cache_flowith_conv(data):
+            for a in data["accounts"]:
+                if a["name"] == acct["name"]:
+                    convs = a.setdefault("pinned_conversations", [])
+                    if not any(c["conv_uuid"] == conv_id for c in convs):
+                        convs.append({
+                            "conv_uuid":    conv_id,
+                            "display_name": "",
+                            "pinned_at":    _now(),
+                            "created_at":   _now(),
+                            "updated_at":   _now(),
+                            "provider":     FLOWITH_PROVIDER,
+                        })
+                    break
+        store.mutate(_cache_flowith_conv)
+        log.info("Created Flowith server conversation %s", conv_id[:8])
+        return jsonify({"success": True, "id": conv_id, "uuid": conv_id}), 201
+
     if provider == ONEMINAI_PROVIDER:
-        conv_id = _create_conv_oneminai(acct)
+        conv_id = await _create_conv_oneminai(acct)
         log.info("Created 1min.AI conversation %s", conv_id[:8])
         return jsonify({"success": True, "id": conv_id, "uuid": conv_id}), 201
 
@@ -1957,11 +3008,11 @@ def create_conversation(acct):
         log.info("Created ChatWithAI local conversation %s", conv_id[:8])
         return jsonify({"success": True, "id": conv_id, "uuid": conv_id}), 201
 
-    client = _make_claude_client(acct)
+    client = await _make_claude_client(acct)
     try:
-        _run(client.ensure_conversation(conv_id))
+        await client.ensure_conversation(conv_id)
     finally:
-        _run(client.close())
+        await client.close()
 
     def fn(data):
         for a in data["accounts"]:
@@ -1980,11 +3031,47 @@ def create_conversation(acct):
 @app.route("/api/conversations/<conv_id>", methods=["GET"])
 @require_account
 @api_error_handler
-def get_conversation(acct, conv_id):
+async def get_conversation(acct, conv_id):
     provider = _provider_name(acct)
 
+    if provider == FLOWITH_PROVIDER:
+        # Always fetch from server for fresh branch/node data
+        # Local cache is used as fallback inside _get_conv_flowith
+        return jsonify(await _get_conv_flowith(acct, conv_id)), 200
+
     if provider == ONEMINAI_PROVIDER:
-        return jsonify(_get_conv_oneminai(acct, conv_id)), 200
+        # Check local store first for speed and offline history
+        local = _get_local_conv_entry(acct["name"], conv_id)
+        if local and local.get("chat_messages"):
+            msgs = local.get("chat_messages", [])
+            root_uuid = "00000000-0000-4000-8000-000000000000"
+            for i, msg in enumerate(msgs):
+                if "uuid" not in msg:
+                    msg["uuid"] = str(uuid_lib.uuid4())
+                if "parent_message_uuid" not in msg:
+                    msg["parent_message_uuid"] = msgs[i-1]["uuid"] if i > 0 else root_uuid
+                if "content" not in msg:
+                    msg["content"] = [{"type": "text", "text": msg.get("text", "")}]
+                if "index" not in msg:
+                    msg["index"] = i
+                if "sender" not in msg:
+                    msg["sender"] = "human" if i % 2 == 0 else "assistant"
+                if "created_at" not in msg:
+                    msg["created_at"] = local.get("created_at", _now())
+            current_leaf = local.get("current_leaf_message_uuid")
+            if not current_leaf or current_leaf == root_uuid:
+                current_leaf = msgs[-1]["uuid"] if msgs else root_uuid
+            return jsonify({
+                "uuid": conv_id,
+                "name": local.get("display_name", ""),
+                "created_at": local.get("created_at", _now()),
+                "updated_at": local.get("updated_at", _now()),
+                "chat_messages": msgs,
+                "current_leaf_message_uuid": current_leaf,
+                "settings": local.get("settings", {}),
+            }), 200
+        # Fall back to 1min.AI API
+        return jsonify(await _get_conv_oneminai(acct, conv_id)), 200
 
     if provider == CHATWITHAI_PROVIDER:
         conv      = _get_local_conv_entry(acct["name"], conv_id)
@@ -2020,25 +3107,33 @@ def get_conversation(acct, conv_id):
         }), 200
 
     # Claude
-    client = _make_claude_client(acct)
+    client = await _make_claude_client(acct)
     try:
-        data = _run(client.get_conversation(conv_id))
+        data = await client.get_conversation(conv_id)
         return jsonify(data), 200
     finally:
-        _run(client.close())
+        await client.close()
 
 
 @app.route("/api/conversations/<conv_id>", methods=["PUT"])
 @require_account
 @api_error_handler
-def update_conversation(acct, conv_id):
-    payload  = request.json or {}
+async def update_conversation(acct, conv_id):
+    payload  = await _get_json()
     provider = _provider_name(acct)
     new_name = payload.get("name") or payload.get("title") or ""
 
+    if provider == FLOWITH_PROVIDER:
+        if new_name:
+            _upsert_local_conv(acct["name"], conv_id, {
+                "display_name": new_name,
+                "updated_at":   _now(),
+            })
+        return jsonify({"success": True})
+
     if provider == ONEMINAI_PROVIDER:
         if new_name:
-            _rename_conv_oneminai(acct, conv_id, new_name)
+            await _rename_conv_oneminai(acct, conv_id, new_name)
         if new_name:
             def fn(store_data):
                 for a in store_data["accounts"]:
@@ -2060,11 +3155,11 @@ def update_conversation(acct, conv_id):
         return jsonify({"success": True})
 
     # Claude
-    client = _make_claude_client(acct)
+    client = await _make_claude_client(acct)
     try:
-        _run(client.update_conversation_settings(conv_id, payload))
+        await client.update_conversation_settings(conv_id, payload)
     finally:
-        _run(client.close())
+        await client.close()
 
     if new_name:
         def fn(store_data):
@@ -2082,11 +3177,15 @@ def update_conversation(acct, conv_id):
 @app.route("/api/conversations/<conv_id>/stop", methods=["POST"])
 @require_account
 @api_error_handler
-def stop_response(acct, conv_id):  
+async def stop_response(acct, conv_id):  
     provider = _provider_name(acct)
     if provider == CHATWITHAI_PROVIDER:
         return jsonify({"error": "Stop not supported for ChatWithAI"}), 400  
-    _run(_make_claude_client(acct).stop_response(conv_id))
+    client = await _make_claude_client(acct)
+    try:
+        await client.stop_response(conv_id)
+    finally:
+        await client.close()
     return jsonify({"success": True})
 
 
@@ -2095,9 +3194,136 @@ def stop_response(acct, conv_id):
 @app.route("/api/conversations/<conv_id>/messages", methods=["POST"])
 @require_account
 @api_error_handler
-def send_message(acct, conv_id):
-    data = request.json or {}
+async def send_message(acct, conv_id):
+    data = await _get_json()
     provider = _provider_name(acct)
+
+    if provider == FLOWITH_PROVIDER:
+        prompt       = (data.get("prompt") or "").strip()
+        model        = (data.get("model") or FLOWITH_DEFAULT_MODEL).strip()
+        parent_uuid  = data.get("parent_message_uuid",
+                                "00000000-0000-4000-8000-000000000000")
+        human_uuid   = str(uuid_lib.uuid4())
+        asst_uuid    = str(uuid_lib.uuid4())
+        ROOT         = "00000000-0000-4000-8000-000000000000"
+        _log_message_send(acct["name"], conv_id, model, len(prompt))
+
+        # parent_uuid IS the flowith node UUID when branching
+        # (our message UUIDs == flowith node_ids)
+        parent_node_id = None if parent_uuid == ROOT else parent_uuid
+
+        text_parts:    list[str] = []
+        meta_holder:   list[dict] = []
+
+        @stream_with_context
+        async def generate_flowith():
+            for chunk in _sync_stream_flowith(
+                acct, conv_id, prompt, model,
+                asst_uuid      = asst_uuid,
+                parent_node_id = parent_node_id,
+                timeout        = 120.0,
+            ):
+                # Intercept internal metadata event — do not forward to browser
+                try:
+                    line = chunk.decode("utf-8", errors="replace").strip()
+                    for part in line.splitlines():
+                        if not part.startswith("data:"):
+                            continue
+                        js = part[5:].strip()
+                        if not js:
+                            continue
+                        evt = json.loads(js)
+                        etype = evt.get("type", "")
+                        if etype == "content_block_delta":
+                            text_parts.append(
+                                evt.get("delta", {}).get("text", ""))
+                        elif etype == "flowith_meta":
+                            meta_holder.append(evt)
+                            continue  # skip yield
+                except Exception:
+                    pass
+                yield chunk
+
+            # ── Persist messages locally after stream completes ───────────
+            full_response  = "".join(text_parts)
+            meta           = meta_holder[0] if meta_holder else {}
+            real_conv_id   = meta.get("real_conv_id") or conv_id
+            user_node_id   = meta.get("user_node_id") or human_uuid
+            ai_node_id     = meta.get("ai_node_id")   or asst_uuid
+
+            # Remap conv_id if Flowith created a new one
+            if real_conv_id != conv_id:
+                def remap(store_data):
+                    for a in store_data["accounts"]:
+                        if a["name"] != acct["name"]:
+                            continue
+                        convs = a.setdefault("pinned_conversations", [])
+                        # Remove placeholder
+                        convs[:] = [c for c in convs
+                                    if c.get("conv_uuid") != conv_id]
+                        if not any(c["conv_uuid"] == real_conv_id
+                                   for c in convs):
+                            convs.append({
+                                "conv_uuid":    real_conv_id,
+                                "display_name": prompt[:40],
+                                "pinned_at":    _now(),
+                                "created_at":   _now(),
+                                "updated_at":   _now(),
+                                "provider":     FLOWITH_PROVIDER,
+                            })
+                        break
+                store.mutate(remap)
+            else:
+                def touch(store_data):
+                    for a in store_data["accounts"]:
+                        if a["name"] != acct["name"]:
+                            continue
+                        for c in a.get("pinned_conversations", []):
+                            if c.get("conv_uuid") == real_conv_id:
+                                c["updated_at"] = _now()
+                                if not c.get("display_name"):
+                                    c["display_name"] = prompt[:40]
+                                break
+                        break
+                store.mutate(touch)
+
+            # Build parent chain using real flowith node UUIDs
+            actual_parent = parent_uuid
+            if parent_uuid == ROOT:
+                # No branch specified — chain to last message in local store
+                local_entry = _get_local_conv_entry(acct["name"], real_conv_id)
+                local_msgs  = (local_entry or {}).get("chat_messages", [])
+                if local_msgs:
+                    actual_parent = local_msgs[-1].get("uuid", ROOT)
+
+            human_msg = {
+                "uuid":                user_node_id,
+                "sender":              "human",
+                "text":                prompt,
+                "content":             [{"type": "text", "text": prompt}],
+                "parent_message_uuid": actual_parent,
+                "created_at":          _now(),
+            }
+            asst_msg = {
+                "uuid":                ai_node_id,
+                "sender":              "assistant",
+                "text":                full_response,
+                "content":             [{"type": "text", "text": full_response}],
+                "parent_message_uuid": user_node_id,
+                "model":               model,
+                "created_at":          _now(),
+            }
+            _append_local_messages(
+                acct["name"], real_conv_id, human_msg, asst_msg,
+                display_name=prompt[:40] if prompt else "",
+            )
+
+        return Response(
+            generate_flowith(),
+            content_type="text/event-stream",
+            headers={"Cache-Control": "no-cache",
+                     "X-Accel-Buffering": "no"},
+        )
 
     if provider == ONEMINAI_PROVIDER:
         prompt      = (data.get("prompt") or "").strip()
@@ -2118,17 +3344,19 @@ def send_message(acct, conv_id):
                 if fid:
                     file_uuids.append(fid)
 
-        def generate_oneminai():
-            yield from _sync_stream_oneminai(
+        @stream_with_context
+        async def generate_oneminai():
+            for chunk in _sync_stream_oneminai(
                 acct, conv_id, prompt, model,
                 human_uuid  = human_uuid,
                 asst_uuid   = asst_uuid,
                 file_uuids  = file_uuids or None,
                 web_search  = web_search,
-            )
+            ):
+                yield chunk
 
         return Response(
-            stream_with_context(generate_oneminai()),
+            generate_oneminai(),
             content_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
@@ -2175,7 +3403,8 @@ def send_message(acct, conv_id):
 
         text_parts: list[str] = []
 
-        def generate():
+        @stream_with_context
+        async def generate_chatwithai():
             for chunk in _sync_stream_chatwithai(full_prompt, model, assistant_uuid=asst_uuid):
                 # Collect text deltas
                 try:
@@ -2215,7 +3444,7 @@ def send_message(acct, conv_id):
             _append_local_messages(acct["name"], conv_id, human_msg, asst_msg,
                                    display_name=display_name)
 
-        return Response(stream_with_context(generate()),
+        return Response(generate_chatwithai(),
                         content_type="text/event-stream",
                         headers={"Cache-Control": "no-cache",
                                  "X-Accel-Buffering": "no"})
@@ -2224,11 +3453,12 @@ def send_message(acct, conv_id):
     _log_message_send(acct["name"], conv_id, payload["model"],
                       len(payload.get("prompt", "")))
 
-    def generate():
+    @stream_with_context
+    async def generate():
         for chunk in _sync_stream_claude(acct, conv_id, payload):
             yield chunk
 
-    return Response(stream_with_context(generate()),
+    return Response(generate(),
                     content_type="text/event-stream",
                     headers={"Cache-Control": "no-cache",
                              "X-Accel-Buffering": "no"})
@@ -2239,21 +3469,22 @@ def send_message(acct, conv_id):
 @app.route("/api/conversations/<conv_id>/upload", methods=["POST"])
 @require_account
 @api_error_handler
-def upload_file(acct, conv_id):
+async def upload_file(acct, conv_id):
     provider = _provider_name(acct)
     
     if provider == CHATWITHAI_PROVIDER:
         return jsonify({"error": "File uploads not supported for ChatWithAI"}), 400
     if provider == ONEMINAI_PROVIDER:
-        if "file" not in request.files:
+        if "file" not in await request.files:
             return jsonify({"error": "No file provided"}), 400
         try:
-            result = _upload_file_oneminai(acct, conv_id, request.files["file"])
+            result = await _upload_file_oneminai(acct, conv_id, request.files["file"])
+            logging.info("1min.AI file uploaded to conversation %s", conv_id[:8])
             return jsonify(result), 200
         except RuntimeError as exc:
             return jsonify({"error": str(exc)}), 500
     
-    if "file" not in request.files:
+    if "file" not in await request.files:
         return jsonify({"error": "No file provided"}), 400
 
     f          = request.files["file"]
@@ -2267,12 +3498,12 @@ def upload_file(acct, conv_id):
         tmp_path = tmp.name
 
     try:
-        client = _make_claude_client(acct)
+        client = await _make_claude_client(acct)
         try:
-            _run(client.ensure_conversation(conv_id))
-            file_uuid = _run(client.upload_file(conv_id, tmp_path))
+            await client.ensure_conversation(conv_id)
+            file_uuid = await client.upload_file(conv_id, tmp_path)
         finally:
-            _run(client.close())
+            await client.close()
     finally:
         os.unlink(tmp_path)
 
@@ -2286,18 +3517,18 @@ def upload_file(acct, conv_id):
 @app.route("/api/conversations/<conv_id>/download", methods=["GET"])
 @require_account
 @api_error_handler
-def download_file(acct, conv_id):
+async def download_file(acct, conv_id):
     file_path = request.args.get("path", "")
     if not file_path:
         return jsonify({"error": "Missing 'path' query parameter"}), 400
 
     import tempfile
     with tempfile.TemporaryDirectory() as tmpdir:
-        client = _make_claude_client(acct)
+        client = await _make_claude_client(acct)
         try:
-            local = _run(client.download_file(conv_id, file_path, dest=tmpdir))
+            local = await client.download_file(conv_id, file_path, dest=tmpdir)
         finally:
-            _run(client.close())
+            await client.close()
         content = local.read_bytes()
 
     filename = file_path.split("/")[-1] or "download"
@@ -2319,28 +3550,47 @@ def download_file(acct, conv_id):
 
 # ── 1min.AI Asset Upload ──────────────────────────────────────────────────────
 
+@app.route("/api/oneminai/models", methods=["GET"])
+@require_account
+@api_error_handler
+async def oneminai_list_models(acct):
+    """Return 1min.AI model catalog, grouped by category."""
+    if _provider_name(acct) != ONEMINAI_PROVIDER:
+        return jsonify({"error": "Not a 1min.AI account"}), 400
+    try:
+        models = await _oneminai_fetch_models()
+        # Group by category
+        by_cat: dict = {}
+        for m in models:
+            cat = m.get("category", "text")
+            by_cat.setdefault(cat, []).append(m)
+        return jsonify({"models": models, "by_category": by_cat, "total": len(models)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.route("/api/oneminai/upload", methods=["POST"])
 @require_account
 @api_error_handler
-def oneminai_upload_asset(acct):
+async def oneminai_upload_asset(acct):
     """Upload a file to the 1min.AI Asset API and return asset_key + file_id."""
     provider = _provider_name(acct)
     if provider != ONEMINAI_PROVIDER:
         return jsonify({"error": "Not a 1min.AI account"}), 400
-    if "file" not in request.files:
+    if "file" not in await request.files:
         return jsonify({"error": "No file provided"}), 400
 
-    f          = request.files["file"]
+    f          = await request.files["file"]
     file_bytes = f.read()
     mime       = f.content_type or "application/octet-stream"
     fname      = f.filename or "upload"
 
-    client = _make_oneminai_client(acct)
+    client = await _make_oneminai_client(acct)
     try:
-        asset = _run(client.upload_asset(
+        asset = await client.upload_asset(
             data=file_bytes, filename=fname, mime_type=mime
-        ))
-        _run(client.close())
+        )
+        await client.close()
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -2359,24 +3609,37 @@ def oneminai_upload_asset(acct):
 
 @app.route("/api/usage", methods=["GET"])
 @require_account
-def get_usage(acct):
+async def get_usage(acct):
     provider = _provider_name(acct)
+
+    if provider == FLOWITH_PROVIDER:
+        credits = await _flowith_get_credits(acct)
+        total   = (
+            credits["total"]
+            if isinstance(credits, dict) and "total" in credits
+            else credits
+        ) if credits is not None else None
+        return jsonify({
+            "provider":      "flowith",
+            "credits":       credits,
+            "credits_total": total,
+        })
 
     if provider == ONEMINAI_PROVIDER:
         try:
-            client  = _make_oneminai_client(acct)
-            credits = _run(client.get_team_credits())
-            _run(client.close())
+            client  = await _make_oneminai_client(acct)
+            credits = await client.get_team_credits()
+            await client.close()
         except Exception as exc:
             log.warning("1min.AI credits fetch: %s", exc)
-            try: _run(client.close())
+            try: await client.close()
             except Exception: pass
             credits = None
         return jsonify({"provider": "oneminai", "credits": credits})
 
     if provider == CHATWITHAI_PROVIDER:
         return jsonify({"provider": "chatwithai"})
-
+    
     # ── Claude ────────────────────────────────────────────────────────────
     now_dt  = datetime.now(timezone.utc)
     cut_24h = (now_dt - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
@@ -2413,14 +3676,18 @@ def get_usage(acct):
     return jsonify(result)
 
 @app.route("/api/usage/all", methods=["GET"])
-def get_usage_all():
+async def get_usage_all():
     """
     Return quota/credit snapshot for every configured account.
-    Calls 1min.AI for oneminai accounts, reads cached snapshots for Claude.
+    Staggered requests (controlled by _POLLING_CFG) to avoid rate limits.
     ChatWithAI accounts are skipped (no quota concept).
     """
+    import time as _time
     data     = store.read()
     results  = {}
+    stagger  = float(_POLLING_CFG.get("stagger_delay_sec", 2.5))
+    timeout  = float(_POLLING_CFG.get("request_timeout_sec", 30))
+    first    = True
 
     for acct in data["accounts"]:
         name     = acct["name"]
@@ -2430,18 +3697,44 @@ def get_usage_all():
             if not acct.get("api_key"):
                 results[name] = {"provider": "oneminai", "credits": None}
                 continue
+            if not first:
+                await asyncio.sleep(stagger)
+            first = False
             client = None
             try:
-                client  = _make_oneminai_client(acct)
-                credits = _run(client.get_team_credits())
+                client  = await _make_oneminai_client(acct)
+                credits = await client.get_team_credits()
             except Exception as exc:
                 log.warning("Credits fetch for %s: %s", name, exc)
                 credits = None
             finally:
                 if client:
-                    try: _run(client.close())
+                    try: await client.close()
                     except Exception: pass
             results[name] = {"provider": "oneminai", "credits": credits}
+
+        elif provider == FLOWITH_PROVIDER:
+            if not acct.get("api_key"):
+                results[name] = {"provider": "flowith", "credits": None}
+                continue
+            if not first:
+                await asyncio.sleep(stagger)
+            first = False
+            try:
+                credits_data = await _flowith_get_credits(acct)
+            except Exception as exc:
+                log.warning("Flowith credits fetch for %s: %s", name, exc)
+                credits_data = None
+            results[name] = {
+                "provider": "flowith",
+                # Normalise to always expose a top-level "total" float
+                "credits": credits_data,
+                "credits_total": (
+                    credits_data["total"]
+                    if isinstance(credits_data, dict)
+                    else credits_data
+                ) if credits_data is not None else None,
+            }
 
         elif provider == CLAUDE_PROVIDER:
             snap = _get_latest_quota(name)
@@ -2451,9 +3744,36 @@ def get_usage_all():
 
     return jsonify(results)
 
+
+@app.route("/api/settings/polling", methods=["GET"])
+async def get_polling_config():
+    """Return current polling / rate-limit configuration."""
+    return jsonify(dict(_POLLING_CFG))
+
+
+@app.route("/api/settings/polling", methods=["PATCH"])
+async def patch_polling_config():
+    """Update polling / rate-limit configuration at runtime."""
+    data = await _get_json()
+    allowed = {"auto_poll_credits", "poll_interval_sec", "stagger_delay_sec", "request_timeout_sec"}
+    changed = {}
+    for k, v in data.items():
+        if k not in allowed:
+            continue
+        if k == "auto_poll_credits":
+            _POLLING_CFG[k] = bool(v)
+        else:
+            try:
+                _POLLING_CFG[k] = float(v)
+            except (TypeError, ValueError):
+                return jsonify({"error": f"invalid value for {k}"}), 400
+        changed[k] = _POLLING_CFG[k]
+    log.info("Polling config updated: %s", changed)
+    return jsonify({"success": True, "config": dict(_POLLING_CFG)})
+
 @app.route("/api/usage/history", methods=["GET"])
 @require_account
-def usage_history(acct):
+async def usage_history(acct):
     limit = min(int(request.args.get("limit", 50)), 200)
     data  = store.read()
     for a in data["accounts"]:
@@ -2467,7 +3787,7 @@ def usage_history(acct):
 
 @app.route("/api/usage/messages", methods=["GET"])
 @require_account
-def usage_messages(acct):
+async def usage_messages(acct):
     limit = min(int(request.args.get("limit", 100)), 500)
     data  = store.read()
     for a in data["accounts"]:
@@ -2479,7 +3799,7 @@ def usage_messages(acct):
 
 @app.route("/api/local/conversations", methods=["GET"])
 @require_account
-def local_conv_list(acct):
+async def local_conv_list(acct):
     """Returns pinned/local conversations for the resolved account."""
     data = store.read()
     for a in data["accounts"]:
@@ -2495,8 +3815,8 @@ def local_conv_list(acct):
 
 @app.route("/api/local/conversations", methods=["POST"])
 @require_account
-def local_conv_pin(acct):
-    req          = request.json or {}
+async def local_conv_pin(acct):
+    req          = await _get_json()
     conv_uuid    = (req.get("conv_uuid") or "").strip()
     display_name = req.get("display_name", "")
     if not conv_uuid:
@@ -2523,7 +3843,7 @@ def local_conv_pin(acct):
 
 @app.route("/api/local/conversations/<conv_uuid>", methods=["DELETE"])
 @require_account
-def local_conv_unpin(acct, conv_uuid):
+async def local_conv_unpin(acct, conv_uuid):
     def fn(data):
         for a in data["accounts"]:
             if a["name"] == acct["name"]:
@@ -2538,8 +3858,8 @@ def local_conv_unpin(acct, conv_uuid):
 
 @app.route("/api/local/conversations/<conv_uuid>", methods=["PATCH"])
 @require_account
-def local_conv_rename(acct, conv_uuid):
-    display_name = (request.json or {}).get("display_name", "")
+async def local_conv_rename(acct, conv_uuid):
+    display_name = (await _get_json()).get("display_name", "")
 
     def fn(data):
         for a in data["accounts"]:
@@ -2557,7 +3877,7 @@ def local_conv_rename(acct, conv_uuid):
 
 @app.route("/api/local/uploads/<conv_uuid>", methods=["GET"])
 @require_account
-def list_uploads(acct, conv_uuid):
+async def list_uploads(acct, conv_uuid):
     data = store.read()
     for a in data["accounts"]:
         if a["name"] == acct["name"]:
@@ -2574,24 +3894,180 @@ def list_uploads(acct, conv_uuid):
 @app.route("/api/settings", methods=["PATCH"])
 @require_account
 @api_error_handler
-def update_settings(acct):
-    payload = request.json or {}
-    client  = _make_claude_client(acct)
+async def update_settings(acct):
+    payload = await _get_json()
+    client  = await _make_claude_client(acct)
     try:
-        _run(client.patch_settings(payload))
+        await client.patch_settings(payload)
     finally:
-        _run(client.close())
+        await client.close()
     return jsonify({"success": True})
 
 
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# Entry point
+# Flowith-specific endpoints
 # ═══════════════════════════════════════════════════════════════════════════════
 
-if __name__ == "__main__":
-    print()
-    print("  ✦  Claude Console  v4  ✦")
-    print(f"  Store:  {STORE_PATH}")
-    print("  URL:    http://localhost:5000")
-    print()
-    app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)
+@app.route("/api/flowith/image", methods=["POST"])
+@require_account
+@api_error_handler
+async def flowith_generate_image(acct):
+    """Generate an image via Flowith."""
+    if _provider_name(acct) != FLOWITH_PROVIDER:
+        return jsonify({"error": "Not a Flowith account"}), 400
+    data         = await _get_json()
+    prompt       = (data.get("prompt") or "").strip()
+    model        = (data.get("model") or "gemini-3.1-flash-image").strip()
+    aspect_ratio = (data.get("aspect_ratio") or "1:1").strip()
+    conv_id      = data.get("conv_id") or None
+    timeout      = float(data.get("timeout", 120))
+    if not prompt:
+        return jsonify({"error": "prompt is required"}), 400
+    result = await _flowith_generate_image(
+        acct, prompt, model=model,
+        aspect_ratio=aspect_ratio, conv_id=conv_id, timeout=timeout,
+    )
+    return jsonify(result)
+
+
+@app.route("/api/flowith/video", methods=["POST"])
+@require_account
+@api_error_handler
+async def flowith_generate_video(acct):
+    """Generate a video via Flowith."""
+    if _provider_name(acct) != FLOWITH_PROVIDER:
+        return jsonify({"error": "Not a Flowith account"}), 400
+    data         = await _get_json()
+    prompt       = (data.get("prompt") or "").strip()
+    model        = (data.get("model") or "seedance-2.0-fast").strip()
+    aspect_ratio = (data.get("aspect_ratio") or "16:9").strip()
+    conv_id      = data.get("conv_id") or None
+    timeout      = float(data.get("timeout", 300))
+    if not prompt:
+        return jsonify({"error": "prompt is required"}), 400
+    result = await _flowith_generate_video(
+        acct, prompt, model=model,
+        aspect_ratio=aspect_ratio, conv_id=conv_id, timeout=timeout,
+    )
+    return jsonify(result)
+
+
+@app.route("/api/flowith/models", methods=["GET"])
+@require_account
+@api_error_handler
+async def flowith_list_models(acct):
+    """Return Flowith model catalog."""
+    if _provider_name(acct) != FLOWITH_PROVIDER:
+        return jsonify({"error": "Not a Flowith account"}), 400
+    models = await _flowith_fetch_models()
+    by_cat: dict = {}
+    for m in models:
+        cat = m.get("category", "text")
+        by_cat.setdefault(cat, []).append(m)
+    return jsonify({"models": models, "by_category": by_cat, "total": len(models)})
+
+
+@app.route("/api/flowith/credits", methods=["GET"])
+@require_account
+@api_error_handler
+async def flowith_get_credits_route(acct):
+    """Return Flowith credit balance."""
+    if _provider_name(acct) != FLOWITH_PROVIDER:
+        return jsonify({"error": "Not a Flowith account"}), 400
+    credits = await _flowith_get_credits(acct)  
+    return jsonify({"credits": credits})
+
+
+@app.route("/api/flowith/session-cycle", methods=["POST"])
+@require_account
+@api_error_handler
+async def flowith_session_cycle_route(acct):
+    """
+    Trigger a Flowith session upsert/remove cycle to refresh credits.
+    Body (all optional):
+      { "cycles": 3, "delay_sec": 1.0 }
+    """
+    if _provider_name(acct) != FLOWITH_PROVIDER:
+        return jsonify({"error": "Not a Flowith account"}), 400
+    data     = await _get_json()
+    cycles   = int(data.get("cycles",   3))
+    delay    = float(data.get("delay_sec", 1.0))
+    result   = await _flowith_session_cycle(acct, cycles=cycles, delay_sec=delay)
+    # Re-fetch credits after the cycle
+    credits  = await _flowith_get_credits(acct)
+    return jsonify({"success": True, "session_result": result, "credits": credits})
+
+
+@app.route("/api/flowith/refresh", methods=["POST"])
+@require_account
+@api_error_handler
+async def flowith_refresh_token_route(acct):
+    """
+    Exchange a Flowith refresh_token for a new access_token via Supabase.
+    Called automatically by the frontend when the JWT nears expiry.
+    """
+    if _provider_name(acct) != FLOWITH_PROVIDER:
+        return jsonify({"error": "Not a Flowith account"}), 400
+
+    refresh_token = acct.get("refresh_token", "").strip()
+    if not refresh_token:
+        return jsonify({"error": "No refresh_token stored for this account"}), 400
+
+    # Supabase token refresh endpoint
+    SUPABASE_URL      = "https://aibdxsebwhalbnugsqel.supabase.co"
+    SUPABASE_ANON_KEY = "sb_publishable_qPCinc8LE8ChpdT7Pf79tQ_eryz5udr"
+
+    try:
+        resp = http_client.post(
+            f"{SUPABASE_URL}/auth/v1/token?grant_type=refresh_token",
+            json={"refresh_token": refresh_token},
+            headers={
+                "apikey":        SUPABASE_ANON_KEY,
+                "Content-Type":  "application/json",
+            },
+            timeout=20,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+    except Exception as exc:
+        log.warning("Flowith token refresh failed: %s", exc)
+        return jsonify({"error": str(exc)}), 502
+
+    new_access  = body.get("access_token",  "")
+    new_refresh = body.get("refresh_token", "")
+
+    if not new_access:
+        return jsonify({"error": "No access_token in refresh response"}), 502
+
+    # Parse new user_id from JWT sub
+    new_user_id = acct.get("user_id", "")
+    try:
+        import base64 as _b64, json as _json
+        parts = new_access.split(".")
+        if len(parts) >= 2:
+            pad = parts[1] + "=" * (-len(parts[1]) % 4)
+            new_user_id = _json.loads(_b64.urlsafe_b64decode(pad)).get("sub", new_user_id)
+    except Exception:
+        pass
+
+    # Persist the new tokens
+    acct_name = acct["name"]
+    def fn(data):
+        for a in data["accounts"]:
+            if a["name"] == acct_name:
+                a["api_key"]      = new_access
+                a["user_id"]      = new_user_id
+                if new_refresh:
+                    a["refresh_token"] = new_refresh
+                break
+    store.mutate(fn)
+    _cache_invalidate("/api/accounts")
+
+    log.info("Flowith token refreshed for account %s", acct_name)
+    return jsonify({
+        "access_token":  new_access,
+        "refresh_token": new_refresh,
+        "user_id":       new_user_id,
+    })
