@@ -1484,6 +1484,42 @@ a:hover { text-decoration:underline; }
   opacity: 0.3; cursor: not-allowed; pointer-events: none;
 }
 
+/* ── Flowith chat media (generated images/videos) ── */
+.flowith-chat-media {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-l);
+  overflow: hidden;
+  background: var(--bg-2);
+  max-width: 520px;
+  box-shadow: var(--shadow-sm);
+}
+/* header reuses .code-header — no extra CSS needed */
+.flowith-gen-img {
+  width: 100%;
+  max-height: 420px;
+  display: block;
+  cursor: pointer;
+  transition: opacity .15s;
+  object-fit: contain;
+  background: #0a0a14;
+}
+.flowith-gen-img:hover { opacity: .92; }
+.flowith-gen-video {
+  width: 100%;
+  display: block;
+  max-height: 420px;
+  background: #000;
+}
+.flowith-media-err {
+  padding: 10px 14px;
+  color: var(--red);
+  font-size: 12px;
+  background: var(--red-dim);
+  line-height: 1.5;
+}
+.flowith-media-err a { color: var(--red); text-decoration: underline; }
+
 /* ═══════════════════ UTIL ═══════════════════ */
 .hidden { display:none !important; }
 
@@ -2371,7 +2407,7 @@ select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
           <button class="tb-icon" id="chatSearchBtn" onclick="toggleChatSearch()" title="Search messages">⌕</button>
           <button class="tb-icon" id="canvasToggleBtn" onclick="toggleCanvas()" title="Files &amp; Canvas">⊞</button>
           <button class="tb-icon" id="oneminaiPanelBtn" onclick="toggleOneminaiPanel()" title="1min.AI Tools" style="display:none">✦</button>
-          <button class="tb-icon" id="flowithPanelBtn" onclick="toggleFlowithPanel()" title="Flowith Tools" style="display:none">⋆</button>
+          <button class="tb-icon" id="flowithPanelBtn" onclick="toggleFlowithPanel()" title="Flowith Tools — Image &amp; Video Generation" style="display:none">⋆</button>
           <button class="tb-icon" onclick="openSettings()" title="Settings">⚙</button>
         </div>
       </div>
@@ -3202,8 +3238,8 @@ async function init() {
     if (_initProv === 'flowith') {
       _fetchAndCacheFlowithModels().catch(() => {});
       apiFetch('/api/flowith/credits').then(d => {
-        const raw = d.credits_total ?? (d.credits?.total) ?? d.credits ?? null;
-        if (raw != null) _cacheFlowith(_initAcct.name, raw);
+        const raw = d.credits?.total ?? d.credits?.credits_total ?? d.credits_total ?? null;
+        if (raw != null) { _cacheFlowith(_initAcct.name, raw); _renderSidebarBar(); }
       }).catch(() => {});
     } else if (_initProv === 'oneminai') {
       fetchOneminaiModels(false).catch(() => {});
@@ -3766,17 +3802,22 @@ function applyProviderUI(acct) {
   }
   if (canvasToggleBtn) canvasToggleBtn.style.display = supCanvas    ? '' : 'none';
 
-  // Hide canvas panel entirely if not supported
+  // Canvas panel: hide only if truly unsupported (keep for flowith image preview)
   const canvasPanel = document.getElementById('canvasPanel');
   if (canvasPanel) {
-    if (!supCanvas) {
+    // Allow canvas for flowith (image preview) even though artifacts unsupported
+    const canvasAllowed = supCanvas || provider === 'flowith';
+    if (!canvasAllowed) {
       canvasPanel.classList.add('collapsed');
       S.canvasOpen = false;
     }
-    canvasPanel.style.display = supCanvas ? '' : 'none';
+    canvasPanel.style.display = canvasAllowed ? '' : 'none';
   }
+  if (canvasToggleBtn) canvasToggleBtn.style.display = (supCanvas || provider === 'flowith') ? '' : 'none';
 
-  if (fileInpBtn) fileInpBtn.style.display = supFiles      ? '' : 'none';
+  // Flowith supports image uploads for inline image chat
+  const showFileBtn = supFiles || provider === 'flowith';
+  if (fileInpBtn) fileInpBtn.style.display = showFileBtn   ? '' : 'none';
   if (efpBtn)     efpBtn.style.display     = supReuseFiles ? '' : 'none';
 
   // ── Placeholder text ──────────────────────────────────────────────────────
@@ -4103,7 +4144,7 @@ async function _pollAllAccounts() {
           changed = true;
         }
       } else if (d.provider === 'flowith') {
-        const raw = d.credits_total ?? (d.credits?.total) ?? d.credits ?? null;
+        const raw = d.credits?.total ?? d.credits?.credits_total ?? d.credits_total ?? null;
         if (raw !== null && raw !== undefined) {
           _cacheFlowith(name, raw);
           changed = true;
@@ -4132,11 +4173,20 @@ function _cacheFlowith(name, credits) {
   if (credits !== null && credits !== undefined) {
     if (typeof credits === 'object') {
       total = credits.total ?? credits.credits_total ?? null;
+      if (total !== null) total = Number(total);
     } else {
       total = Number(credits);
     }
   }
-  quotaCache[name] = { provider: 'flowith', credits: total };
+  if (total !== null && !isNaN(total)) {
+    quotaCache[name] = { provider: 'flowith', credits: total };
+    // Update panel badge immediately if this is the active tab
+    const tabName = getTabAccountName();
+    if (name === tabName) {
+      const el = document.getElementById('flowithCreditsDisplay');
+      if (el) el.textContent = `⋆ ${total.toFixed(2)} credits`;
+    }
+  }
 }
 
 function _cacheClaude(name, payload) {
@@ -4154,15 +4204,24 @@ function _cacheClaude(name, payload) {
 
 /* ── Render the sidebar quota/credits bar for the ACTIVE tab account ── */
 function _renderSidebarBar() {
-  const wrap   = document.getElementById('quotaWrap');
-  const label  = document.getElementById('quotaLabel');
-  const pct    = document.getElementById('quotaPct');
-  const fill   = document.getElementById('quotaBarFill');
-  const detail = document.getElementById('quotaDetail');
+  const wrap = document.getElementById('quotaWrap');
+  
+  const acct     = getTabAccount();
+  const provider = (acct?.provider || 'claude').toLowerCase();
+  
+  if (provider === 'chatwithai') {
+    wrap.style.display = 'none';
+    return;
+  }
 
   const name   = getTabAccountName();
   const cached = name ? quotaCache[name] : null;
   if (!cached) { wrap.style.display = 'none'; return; }
+  
+  const label  = document.getElementById('quotaLabel');
+  const pct    = document.getElementById('quotaPct');
+  const fill   = document.getElementById('quotaBarFill');
+  const detail = document.getElementById('quotaDetail');
 
   if (cached.provider === 'oneminai') {
     const cr = cached.credits;
@@ -4262,15 +4321,9 @@ function buildMiniQuotaHtml(acctName) {
     const cr = cached.credits;
     if (cr === null || cr === undefined) return '';
     const crFmt = typeof cr === 'number' ? cr.toFixed(2) : String(cr);
-    // Colour-code: green if plenty, yellow if low (<5), red if critical (<1)
-    const crNum  = parseFloat(crFmt);
-    const colour = isNaN(crNum) ? 'var(--flowith)'
-                 : crNum < 1   ? 'var(--red)'
-                 : crNum < 5   ? 'var(--yellow)'
-                 : 'var(--flowith)';
     return `<div class="mini-quota">
       <span class="mini-quota-pct"
-            style="min-width:auto;font-size:9px;color:${colour}">
+            style="min-width:auto;font-size:9px;color:var(--flowith)">
         ⋆ ${crFmt} credits
       </span>
     </div>`;
@@ -4295,10 +4348,10 @@ function buildMiniQuotaHtml(acctName) {
 
   return `<div class="mini-quota">
     <div class="mini-quota-bar-bg">
-      <div class="mini-quota-bar-fill${fillClass}" style="width:${pctNum}%"></div>
+      <div class="mini-quota-bar-fill${fillClass}" style="width:${pctNum}%;color:var(--claude)"></div>
     </div>
-    <span class="mini-quota-pct">${pctNum}%</span>
-    ${resetStr ? `<span class="mini-quota-reset">↺ ${resetStr}</span>` : ''}
+    <span class="mini-quota-pct" style="color:var(--claude)">${pctNum}%</span>
+    ${resetStr ? `<span class="mini-quota-reset" style="color:var(--claude)">↺ ${resetStr}</span>` : ''}
   </div>`;
 }
 
@@ -4483,7 +4536,14 @@ async function switchTabAccount(name) {
   setStatus(true, acct.organization_id);
   renderAccountMenu();
   applyProviderUI(acct);
-  if (['claude', 'oneminai'].includes((acct.provider || 'claude').toLowerCase())) fetchQuota();
+  const _swProv = (acct.provider || 'claude').toLowerCase();
+  if (['claude', 'oneminai'].includes(_swProv)) fetchQuota();
+  if (_swProv === 'flowith') {
+    apiFetch('/api/flowith/credits').then(d => {
+      const raw = d.credits?.total ?? d.credits?.credits_total ?? d.credits_total ?? null;
+      if (raw != null) { _cacheFlowith(acct.name, raw); _renderSidebarBar(); renderAccountMenu(); }
+    }).catch(() => {});
+  }
 
   await Promise.all([loadPinnedIds(), loadAllConvs()]);
   renderSidebar();
@@ -4802,8 +4862,10 @@ async function selectConv(id, acct, skipPush) {
   renderMsgs();
   syncToolbar();
   buildBranchSel();
-  const _scSel = (S.tabAccount?._supCanvas !== false) && (S.tabAccount?.provider || 'claude').toLowerCase() === 'claude';
-  if (_scSel && S.canvasOpen && S.canvasTab === 'files') renderCanvasFiles();
+  const _scSel = S.canvasOpen && S.canvasTab === 'files' &&
+    ((S.tabAccount?.provider || 'claude').toLowerCase() === 'claude' ||
+     (S.tabAccount?.provider || '').toLowerCase() === 'flowith');
+  if (_scSel) renderCanvasFiles();
   const c = S.convs[id];
   const name = c?.name || 'Conversation';
   document.title = name + ' — ChatAI Console';
@@ -5162,8 +5224,8 @@ async function refreshConv() {
   if (!S.convId) return;
   await fetchConvMeta(S.convId);
   renderMsgs(); syncToolbar(); buildBranchSel();
-  const _scRef = (S.tabAccount?._supCanvas !== false) && (S.tabAccount?.provider || 'claude').toLowerCase() === 'claude';
-  if (_scRef && S.canvasOpen && S.canvasTab === 'files') renderCanvasFiles();
+  const _scRef = S.canvasOpen && S.canvasTab === 'files';
+  if (_scRef) renderCanvasFiles();
   toast('Refreshed', 'ok');
 }
 
@@ -5303,7 +5365,12 @@ function buildMsgEl(msg) {
   el.className = `msg ${msg.sender}`;
   el.dataset.uuid = msg.uuid;
 
-  const sender = msg.sender === 'human' ? 'You' : 'Claude';
+  const _msgProv = (S.tabAccount?.provider || 'claude').toLowerCase();
+  const _aiLabel = _msgProv === 'flowith' ? 'Flowith'
+                 : _msgProv === 'oneminai' ? '1min.AI'
+                 : _msgProv === 'chatwithai' ? 'ChatWithAI'
+                 : 'Claude';
+  const sender = msg.sender === 'human' ? 'You' : _aiLabel;
   const avatar = msg.sender === 'human' ? 'Y' : 'C';
   const avatarClass = msg.sender === 'human' ? 'human' : 'assistant';
   const senderClass = msg.sender === 'human' ? 'human' : 'assistant';
@@ -5315,30 +5382,40 @@ function buildMsgEl(msg) {
     const chips = msg.files_v2.map(f => {
       const mime = f.file_kind || f.content_type || '';
       const ico = fileIcon(mime);
-      const name = esc(f.file_name || f.filename || 'file');
+      const name = f.file_name || f.filename || 'file';
       const filePath = f.path || '';
       const isImage = mime.startsWith('image/');
+      
       if (filePath) {
         const url = dlUrl(convId, filePath);
         const urlInline = dlUrl(convId, filePath, true);
-        const canvasUrl = esc(dlUrl(convId, filePath, true));
+        const escapedUrl = url.replace(/'/g, "\\'");
+        const escapedName = name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const escapedMime = mime.replace(/'/g, "\\'");
 
         if (isImage) {
           return `<div class="file-img-wrap">
-            <img class="msg-img-preview" src="${dlUrl}" alt="${name}" loading="lazy"
-              onclick="openInCanvas('${canvasUrl}','${name.replace(/'/g, "\\'").replace(/"/g, "&quot;")}','${eMime}')" title="Click to open in canvas"
-              onerror="this.parentElement.innerHTML='<div class=\\'file-chip\\'><span>${ico}</span><span class=\\'file-chip-name\\'>${name}</span></div>'">
+            <img class="msg-img-preview" src="${urlInline}" alt="${esc(name)}" loading="lazy"
+              onclick="openInCanvas('${escapedUrl}','${escapedName}','${escapedMime}')"
+              title="Click to open in canvas"
+              onerror="this.style.display='none'">
             <div style="display:flex;gap:4px;margin-top:3px;">
-              <button class="file-chip dl img-dl" onclick="openInCanvas('${canvasUrl}','${name.replace(/'/g, "\\'").replace(/"/g, "&quot;")}','${eMime}')" style="border:none;cursor:pointer;">👁 Canvas</button>
+              <button class="file-chip dl img-dl" 
+                onclick="openInCanvas('${escapedUrl}','${escapedName}','${escapedMime}')"
+                style="border:none;cursor:pointer;">👁 Canvas</button>
+              <a class="file-chip dl img-dl" href="${url}" download="${esc(name)}">⬇ Save</a>
             </div>
           </div>`;
         }
         return `<div style="display:flex;gap:4px;align-items:center;">
-          <div class="file-chip"><span>${ico}</span><span class="file-chip-name">${name}</span></div>
-          <button class="file-chip dl" onclick="openInCanvas('${eDl}','${name.replace(/'/g, "\\'").replace(/"/g, "&quot;")}','${eMime}')" title="Preview in canvas" style="border:none;cursor:pointer;">👁</button>
+          <div class="file-chip"><span>${ico}</span><span class="file-chip-name">${esc(name)}</span></div>
+          <button class="file-chip dl" 
+            onclick="openInCanvas('${escapedUrl}','${escapedName}','${escapedMime}')"
+            title="Preview in canvas" style="border:none;cursor:pointer;">👁</button>
+          <a class="file-chip dl" href="${url}" download="${esc(name)}">⬇</a>
         </div>`;
       }
-      return `<div class="file-chip"><span>${ico}</span><span class="file-chip-name">${name}</span></div>`;
+      return `<div class="file-chip"><span>${ico}</span><span class="file-chip-name">${esc(name)}</span></div>`;
     }).join('');
     filesHtml = `<div class="msg-files">${chips}</div>`;
   }
@@ -5350,17 +5427,33 @@ function buildMsgEl(msg) {
       blocks = cached;
     }
   }
+  // Detect bare image/video URL stored as text (from old cache or server)
+  if (!blocks.length && msg.text) {
+    const t = msg.text.trim();
+    const isImgUrl = /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(t);
+    const isVidUrl = /\.(mp4|webm|mov)(\?|$)/i.test(t);
+    if (isImgUrl) blocks = [{ type: 'flowith_image', url: t }];
+    else if (isVidUrl) blocks = [{ type: 'flowith_video', url: t }];
+  }
+  // Also promote content blocks that are plain text containing only a media URL
+  if (blocks.length === 1 && blocks[0].type === 'text') {
+    const t = (blocks[0].text || '').trim();
+    const isImgUrl = /^https?:\/\/.+\.(png|jpe?g|webp|gif|avif)(\?.*)?$/i.test(t);
+    const isVidUrl = /^https?:\/\/.+\.(mp4|webm|mov)(\?.*)?$/i.test(t);
+    if (isImgUrl) blocks = [{ type: 'flowith_image', url: t }];
+    else if (isVidUrl) blocks = [{ type: 'flowith_video', url: t }];
+  }
 
   let contentHtml = '';
-  if (blocks.length) {
-    for (const b of blocks) contentHtml += renderBlock(b, false, msg.sender);  // <-- Pass false for streaming, msg.sender for sender
-  } else if (msg.text) {
-  if (msg.sender === 'human') {
-    contentHtml = `<div class="md"><p>${esc(msg.text).replace(/\n/g, '<br>')}</p></div>`;
-  } else {
-    contentHtml = `<div class="md">${marked.parse(msg.text)}</div>`;
+    if (blocks.length) {
+      for (const b of blocks) contentHtml += renderBlock(b, false, msg.sender);  // <-- Pass false for streaming, msg.sender for sender
+    } else if (msg.text) {
+    if (msg.sender === 'human') {
+      contentHtml = `<div class="md"><p>${esc(msg.text).replace(/\n/g, '<br>')}</p></div>`;
+    } else {
+      contentHtml = `<div class="md">${marked.parse(msg.text)}</div>`;
+    }
   }
-}
 
   // Add utility buttons for assistant messages
   const utilsHtml = msg.sender === 'assistant' ? `
@@ -5474,6 +5567,43 @@ function renderBlock(block, streaming = false, sender = 'assistant') {
         </div>`;
     }
 
+    case 'flowith_image': {
+      const url = block.url || block.image_url || '';
+      if (!url) return '';
+      const safeUrl = esc(url);
+      const safeName = esc(url.split('/').pop().split('?')[0] || 'generated.png');
+      return `<div class="flowith-chat-media">
+        <div class="code-header" style="border-radius:var(--r-l) var(--r-l) 0 0">
+          <span class="code-lang">🖼 GENERATED IMAGE</span>
+          <div style="display:flex;gap:4px">
+            <button class="code-copy" onclick="openInCanvas('${safeUrl}','${safeName}','image/png')">👁 Canvas</button>
+            <a class="code-copy" href="${safeUrl}" download="${safeName}" style="text-decoration:none">⬇ Save</a>
+          </div>
+        </div>
+        <img class="flowith-gen-img" src="${safeUrl}" alt="Generated image"
+          onclick="openInCanvas('${safeUrl}','${safeName}','image/png')"
+          onerror="this.outerHTML='<div class=\\'flowith-media-err\\'>⚠ Image failed to load — <a href=\\'${safeUrl}\\' target=\\'_blank\\'>open URL</a></div>'">
+      </div>`;
+    }
+
+    case 'flowith_video': {
+      const url = block.url || block.video_url || '';
+      if (!url) return '';
+      const safeUrl = esc(url);
+      const safeName = esc(url.split('/').pop().split('?')[0] || 'generated.mp4');
+      return `<div class="flowith-chat-media">
+        <div class="code-header" style="border-radius:var(--r-l) var(--r-l) 0 0">
+          <span class="code-lang">🎬 GENERATED VIDEO</span>
+          <div style="display:flex;gap:4px">
+            <a class="code-copy" href="${safeUrl}" target="_blank" rel="noopener" style="text-decoration:none">↗ Open</a>
+            <a class="code-copy" href="${safeUrl}" download="${safeName}" style="text-decoration:none">⬇ Save</a>
+          </div>
+        </div>
+        <video class="flowith-gen-video" controls preload="metadata">
+          <source src="${safeUrl}">
+        </video>
+      </div>`;
+    }
     case 'tool_result': {
       const trId  = 'tr_' + Math.random().toString(36).slice(2, 9);
       let txt   = '';
@@ -5819,14 +5949,43 @@ async function uploadSingleFile(file) {
   form.append('file', file);
 
   const headers = {};
-  const name = getTabAccountName();
-  if (name) headers['X-Account-Name'] = name;
+  const acctName = getTabAccountName();
+  if (acctName) headers['X-Account-Name'] = acctName;
+  const _uploadProv = getTabProvider();
+
+  // Flowith: store image as data URL locally (no server upload endpoint)
+  if (_uploadProv === 'flowith') {
+    if (!file.type.startsWith('image/')) {
+      document.getElementById(chipId)?.remove();
+      toast('Flowith only supports image file attachments in chat', 'err');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target.result;
+      document.getElementById(chipId)?.remove();
+      const fakeRecord = {
+        file_uuid:   '',
+        _filename:   file.name,
+        _mime:       file.type,
+        _size:       file.size,
+        url:         dataUrl,
+        _previewUrl: dataUrl,
+        _upload_ok:  true,
+      };
+      S.attached.push(fakeRecord);
+      renderAttBar();
+      toast(`Ready: ${file.name}`, 'ok');
+    };
+    reader.readAsDataURL(file);
+    return;
+  }
 
   try {
     const r = await fetch(`/api/conversations/${S.convId}/upload`, {
       method: 'POST',
       body: form,
-      headers,   // <-- account header; no Content-Type, browser sets multipart boundary
+      headers,
     });
     const d = await r.json();
     if (d.file_uuid || d._upload_ok) {
@@ -5993,9 +6152,13 @@ function openInCanvas(url, name, mime) {
   // Ensure account_name is in the url
   const acct = getTabAccountName();
   if (acct && !url.includes('account_name=')) {
-    url += (url.includes('?') ? '&' : '?') + 
+    url += (url.includes('?') ? '&' : '?') +
            'account_name=' + encodeURIComponent(acct);
   }
+
+  // Ensure canvas panel is visible (may be display:none for non-claude providers)
+  const _cvPanel = document.getElementById('canvasPanel');
+  if (_cvPanel) _cvPanel.style.display = '';
 
   if (!S.canvasOpen) toggleCanvas();
   switchCanvasTab('preview');
@@ -6320,18 +6483,16 @@ async function doSend() {
   if (!S.configured){ toast('Not configured', 'err'); openSettings(); return; }
 
   let parentUuid;
-  const _supBranch = S.tabAccount?._supBranching !== false &&
-                    (S.tabAccount?.provider || 'claude').toLowerCase() === 'claude';
+  const _tabProv    = (S.tabAccount?.provider || 'claude').toLowerCase();
+  const _supBranch  = S.tabAccount?._supBranching !== false &&
+                      (_tabProv === 'claude' || _tabProv === 'flowith');
 
   if (_supBranch) {
-    // Claude with branching: respect the branch selector
     parentUuid = document.getElementById('branchSel').value;
   } else {
-    // Non-branching providers: always use the actual last message
     const conv = S.convs[S.convId];
     const msgs = conv?.chat_messages || [];
     if (msgs.length > 0) {
-      // Walk the chain to find the real leaf
       const chainMsgs = buildChain(conv);
       parentUuid = chainMsgs.length > 0
         ? chainMsgs[chainMsgs.length - 1].uuid
@@ -6348,12 +6509,20 @@ async function doSend() {
 
   const fileRefs = (activeProvider === 'chatwithai' || activeProvider === 'oneminai')
     ? S.attached.map(f => ({ file_uuid: f.file_uuid, file_id: f.file_id || f.file_uuid, _filename: f._filename }))
-    : S.attached.map(f => ({
-        file_uuid: f.file_uuid,
-        file_name: f._filename || f.file_name || '',
-        file_kind: f._mime     || f.file_kind || '',
-        path:      f.path      || ''
-      }));
+    : activeProvider === 'flowith'
+      ? S.attached.map(f => ({
+          file_uuid: f.file_uuid || '',
+          url:       f.url || f._previewUrl || '',
+          mime:      f._mime || f.file_kind || '',
+          _mime:     f._mime || f.file_kind || '',
+          _filename: f._filename || '',
+        }))
+      : S.attached.map(f => ({
+          file_uuid: f.file_uuid,
+          file_name: f._filename || f.file_name || '',
+          file_kind: f._mime     || f.file_kind || '',
+          path:      f.path      || ''
+        }));
 
   const conv      = S.convs[S.convId];
   const humanUuid = uuid4();
@@ -6391,6 +6560,8 @@ async function doSend() {
 
   S.streaming = true; streamBlocks = {};
   setSendBtn(true);
+  // Close branch overlay if open
+  closeBranchOverlay();
 
   const box = document.getElementById('msgs');
   let finalRealUuid = asstUuid;
@@ -6446,8 +6617,7 @@ async function doSend() {
 
     await fetchConvMeta(S.convId);
     renderMsgs(); buildBranchSel();
-    const _sc = (S.tabAccount?._supCanvas !== false) && (S.tabAccount?.provider || 'claude').toLowerCase() === 'claude';
-    if (_sc && S.canvasOpen && S.canvasTab === 'files') renderCanvasFiles();
+    if (S.canvasOpen && S.canvasTab === 'files') renderCanvasFiles();
     if (getTabProvider() === 'oneminai') fetchQuota(); 
 
   } catch (err) {
@@ -6491,6 +6661,19 @@ function handleStreamEv(ev, asstMsg, bodyElFn) {
         asstMsg.content.push({...b});
       }
       break;
+    }
+
+    case 'flowith_image': {
+      // Injected by backend when image URL detected
+      asstMsg.content = [{ type: 'flowith_image', url: ev.image_url }];
+      updateStreamDisplay(asstMsg, bodyElFn);
+      return;
+    }
+
+    case 'flowith_video': {
+      asstMsg.content = [{ type: 'flowith_video', url: ev.video_url }];
+      updateStreamDisplay(asstMsg, bodyElFn);
+      return;
     }
     case 'message_delta':
       if (ev.delta?.stop_reason) asstMsg.stop_reason = ev.delta.stop_reason;
@@ -6784,6 +6967,51 @@ function toggleCodeBlock(wrapperId, btn) {
   }
 }
 
+function openFlowithMediaCanvas(url, mediaType) {
+  if (mediaType === 'image') {
+    const ext  = (url.split('?')[0].split('.').pop() || 'png').toLowerCase();
+    const name = url.split('/').pop().split('?')[0] || 'generated.png';
+
+    // Make canvas panel visible (Flowith provider hides it via display:none
+    // until explicitly needed; re-show it here)
+    const canvasPanel = document.getElementById('canvasPanel');
+    if (canvasPanel) canvasPanel.style.display = '';
+
+    if (!S.canvasOpen) {
+      S.canvasOpen = true;
+      canvasPanel.classList.remove('collapsed');
+      document.getElementById('canvasToggleBtn')?.classList.add('active');
+    }
+
+    switchCanvasTab('preview');
+
+    document.getElementById('cvPreviewEmpty').style.display   = 'none';
+    document.getElementById('cvPreviewContent').style.display = 'flex';
+    document.getElementById('cvPreviewName').textContent      = name;
+
+    const dlBtn = document.getElementById('cvDlBtn');
+    if (dlBtn) { dlBtn.href = url; dlBtn.download = name; }
+
+    const copyBtn = document.getElementById('cvCopyBtn');
+    if (copyBtn) copyBtn.style.display = 'none';
+
+    // Hide all viewers
+    ['cvFrame', 'cvCode', 'cvPdf'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+
+    const imgWrap = document.getElementById('cvImgWrap');
+    if (imgWrap) {
+      imgWrap.style.display = 'flex';
+      const img = document.getElementById('cvImg');
+      if (img) img.src = url;
+    }
+  } else {
+    window.open(url, '_blank');
+  }
+}
+
 function dlUrl(convId, filePath, inline = false) {
   const base = `/api/conversations/${convId}/download`
     + `?path=${encodeURIComponent(filePath)}`;
@@ -6887,7 +7115,6 @@ function closePollingPanel() {
   if (btn)   btn.classList.remove('active');
 }
 
-// ── Patched _pollAllAccounts — respects _pollCfg.auto_poll_credits ──────
 async function _pollAllAccounts() {
   if (!_pollCfg.auto_poll_credits) return;
   try {
@@ -6897,6 +7124,12 @@ async function _pollAllAccounts() {
       if (d.provider === 'oneminai') {
         if (d.credits !== null && d.credits !== undefined) {
           _cacheOneminai(name, d.credits);
+          changed = true;
+        }
+      } else if (d.provider === 'flowith') {
+        const raw = d.credits?.total ?? d.credits?.credits_total ?? d.credits_total ?? null;
+        if (raw !== null && raw !== undefined) {
+          _cacheFlowith(name, raw);
           changed = true;
         }
       } else if (d.provider === 'claude' && d.quota?.windows) {
@@ -6937,8 +7170,6 @@ async function fetchOneminaiModels(force = false) {
   return _omaiModelCache;
 }
 
-// Populate image model select from CACHE only — no network call.
-// fetchOneminaiModels() is called on account switch and background warm-up.
 function populateOmaiImageModels() {
   const sel = document.getElementById('omaiImageModel');
   if (!sel) return;
@@ -7177,12 +7408,13 @@ function _renderFlowithPanelFromCache() {
 }
 
 function _flowithPanelOnOpen() {
-  // Render from cache immediately for zero-latency open.
   _renderFlowithPanelFromCache();
-  // Model selects read from already-populated cache (no network call)
-  _populateFlowithModelSelects();
-  // Trigger a background session-cycle to get fresh credit balance.
-  // Use setTimeout so the panel animation isn't blocked.
+  if (_flowithModelCache.models.length) {
+    _populateFlowithModelSelects();
+  } else {
+    // First open — fetch models then populate
+    _fetchAndCacheFlowithModels().then(() => _populateFlowithModelSelects()).catch(() => {});
+  }
   setTimeout(() => _flowithRefreshCredits(false), 300);
 }
 
@@ -7345,12 +7577,22 @@ async function _flowithRefreshCredits(showToast = false) {
   if (!acct || acct.provider !== 'flowith') return;
   if (showToast) toast('Refreshing Flowith credits…', 'info');
   const r = await _flowithCycleSession({ cycles: 3, delay_sec: 1.0 });
-  if (!r) return;
+  // Also do a direct credits fetch to get latest value
+  try {
+    const d = await apiFetch('/api/flowith/credits');
+    const raw = d.credits?.total ?? d.credits?.credits_total ?? d.credits_total ?? null;
+    if (raw != null) {
+      _cacheFlowith(acct.name, raw);
+      _renderSidebarBar();
+      renderAccountMenu();
+    }
+  } catch {}
+  if (!r && !showToast) return;
   if (showToast) {
-    const raw = r.credits?.total ?? r.credits ?? null;
-    const display = raw != null
-      ? (typeof raw === 'number' ? raw.toFixed(2) : String(raw))
-      : '?';
+    const name   = getTabAccountName();
+    const cached = name ? quotaCache[name] : null;
+    const num    = cached?.credits ?? null;
+    const display = num != null ? num.toFixed(2) : '?';
     toast(`Flowith credits: ${display}`, 'ok');
   }
 }

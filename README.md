@@ -22,7 +22,7 @@ A self-hosted, free web chat interface for [Claude](https://claude.ai), [ChatWit
 git clone https://github.com/cyber-wojtek/ChatAI-Console.git
 cd ChatAI-Console
 pip install flask claude_webapi 1minai_webapi flowith_webapi hypercorn quart requests
-python -m hypercorn app:app --reload --bind localhost:5000
+python -m hypercorn app:app --reload --bind localhost:5000 --workers 4
 ```
 
 Open **http://localhost:5000**, add an account, and start chatting.

@@ -1180,11 +1180,19 @@ def _sync_stream_flowith(
                     {"type": "image_url", "image_url": {"url": u}}
                     for u in images
                 ]
+            # Build messages with image support
+            if images:
+                content_payload = [{"type": "text", "text": prompt}] + [
+                    {"type": "image_url", "image_url": {"url": u}}
+                    for u in images
+                ]
+            else:
+                content_payload = content
             await client._post(
                 f"https://edge.flowith.io/completion/async?mode=general",
                 {
                     "model":    model,
-                    "messages": [{"role": "user", "content": content}],
+                    "messages": [{"role": "user", "content": content_payload}],
                     "nodeId":   ai_node_id,
                     "convId":   real_conv_id,
                     "stream":   True,
@@ -1197,6 +1205,8 @@ def _sync_stream_flowith(
                         "content_block": {"type": "text", "text": ""}}))
 
             # ── Stream result ─────────────────────────────────────────────
+            _result_url   = None
+            _result_text  = ""
             async for chunk in client._stream_node_events(
                 ai_node_id, timeout=timeout
             ):
@@ -1204,6 +1214,7 @@ def _sync_stream_flowith(
                 if evt_type == "chunks":
                     for fragment in chunk.get("chunks", []):
                         if fragment:
+                            _result_text += fragment
                             q.put(emit({
                                 "type":  "content_block_delta",
                                 "index": 0,
@@ -1211,7 +1222,57 @@ def _sync_stream_flowith(
                                           "text": fragment},
                             }))
                 elif evt_type == "complete":
+                    raw = chunk.get("result", "")
+                    nd  = chunk.get("nodeData") or chunk.get("data") or {}
+                    _result_url = (
+                        chunk.get("resultUrl")
+                        or chunk.get("imageUrl")
+                        or chunk.get("videoUrl")
+                        or nd.get("value", "")
+                        or raw
+                    )
+                    if raw and not _result_url:
+                        _result_url = raw
                     break
+                elif chunk.get("resultUrl") or chunk.get("imageUrl") or chunk.get("videoUrl"):
+                    nd = chunk.get("nodeData") or chunk.get("data") or {}
+                    _result_url = (
+                        chunk.get("resultUrl")
+                        or chunk.get("imageUrl")
+                        or chunk.get("videoUrl")
+                        or nd.get("value", "")
+                    )
+                    break
+
+            # Detect if result is an image or video URL
+            _ru = (_result_url or "").strip()
+            _is_img   = bool(_ru) and any(_ru.lower().endswith(x)
+                for x in (".png",".jpg",".jpeg",".webp",".gif",".avif"))
+            _is_vid   = bool(_ru) and any(_ru.lower().endswith(x)
+                for x in (".mp4",".webm",".mov"))
+            _is_media = _is_img or _is_vid or (
+                bool(_ru) and ("r2-bucket" in _ru or "cdn" in _ru or
+                               "blob.core" in _ru or "storage" in _ru or
+                               "flowith" in _ru) and
+                not _result_text.strip()
+            )
+
+            if _is_media and _ru:
+                # Replace streaming text blocks with a media block
+                # Emit stop for the (possibly empty) text block first
+                if not _result_text.strip():
+                    # No text was streamed — close the empty block cleanly
+                    pass  # block_stop already emitted below
+                if _is_img or (not _is_vid and _is_media):
+                    q.put(emit({
+                        "type":      "flowith_image",
+                        "image_url": _ru,
+                    }))
+                elif _is_vid:
+                    q.put(emit({
+                        "type":      "flowith_video",
+                        "video_url": _ru,
+                    }))
 
             q.put(emit({"type": "content_block_stop", "index": 0}))
             q.put(emit({"type": "message_delta",
@@ -1249,8 +1310,9 @@ async def _flowith_get_credits(acct: dict) -> dict | None:
         credits_list = await client.get_credits()
         await client.close()
         total = sum(c.remain_quota for c in credits_list)
-        return {
-            "total":   total,
+        result = {
+            "total":         total,
+            "credits_total": total,
             "entries": [
                 {
                     "remain_quota": c.remain_quota,
@@ -1262,6 +1324,7 @@ async def _flowith_get_credits(acct: dict) -> dict | None:
                 for c in credits_list
             ],
         }
+        return result
     except Exception as exc:
         log.warning("Flowith credits: %s", exc)
         try: await client.close()
@@ -1322,12 +1385,6 @@ async def _flowith_generate_video(
         raise RuntimeError(str(exc)) from exc
 
 
-"""    async def upsert_online_session(self, payload: dict) -> object:
-        return await self._sb_rpc("upsert_online_session", payload)
-
-    async def remove_online_session(self, session_id: str) -> object:
-        return await self._sb_rpc("remove_online_session",
-                                  {"p_session_id": session_id})"""
 async def _flowith_upsert_online_session(
     acct: dict,
     session_id: str,
@@ -1339,12 +1396,12 @@ async def _flowith_upsert_online_session(
     try:
         result = await client._sb_rpc("upsert_online_session", {
             "p_session_id": session_id,
-            "p_current_path": payload.get("current_path", ""),
-            "p_device_type": payload.get("device_type", ""),
-            "p_platform": payload.get("platform", ""),
-            "p_browser": payload.get("browser", ""),
-            "p_locale": payload.get("locale", ""),
-            "p_subscription_tier": payload.get("subscription_tier", ""),
+            "p_current_path": payload.get("current_path", "firefox"),
+            "p_device_type": payload.get("device_type", "desktop"),
+            "p_platform": payload.get("platform", "linux"),
+            "p_browser": payload.get("browser", "firefox"),
+            "p_locale": payload.get("locale", "en"),
+            "p_subscription_tier": payload.get("subscription_tier", "free"),
             "p_is_idle": payload.get("is_idle", False),
             **payload,
         })
@@ -1423,33 +1480,18 @@ async def _flowith_session_cycle(
 
         if i < cycles - 1:
             await _asyncio.sleep(delay_sec)
+            
+    # finally, upsert one last time to ensure we end with a fresh session and updated credits
+    try:
+        r = await _flowith_upsert_online_session(acct, session_id, payload)
+        if isinstance(r, dict):
+            last_result = r
+        log.debug("Flowith session-cycle final upsert ok  sid=%s…", session_id[:8])
+    except Exception as exc:
+        log.warning("Flowith session-cycle final upsert: %s", exc)
 
     return last_result
 
-
-# Background poller: runs every _POLLING_CFG["poll_interval_sec"] seconds
-# and refreshes Flowith credits for every Flowith account.
-
-_flowith_cycle_lock = asyncio.Lock()
-
-
-async def _background_flowith_refresh():
-    """
-    Called by the periodic background poller.
-    Cycles sessions for every active Flowith account to refresh credits.
-    """
-    async with _flowith_cycle_lock:
-        data = store.read()
-        for acct in data.get("accounts", []):
-            if _provider_name(acct) != FLOWITH_PROVIDER:
-                continue
-            if not acct.get("api_key"):
-                continue
-            try:
-                await _flowith_session_cycle(acct, cycles=3, delay_sec=1.0)
-                log.info("Flowith credit-refresh cycle done for %s", acct["name"])
-            except Exception as exc:
-                log.warning("Flowith credit-refresh failed for %s: %s", acct["name"], exc)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Flask App
@@ -2304,7 +2346,6 @@ async def oauth_oneminai_ext_pending():
                 and entry.get("pending_ext")
                 and not entry["done"]
             ):
-                entry["pending_ext"] = False   # claimed — prevent double-handling
                 return jsonify({"state": state})
     return jsonify({"state": None})
 
@@ -2456,12 +2497,12 @@ async def oauth_flowith_ext_pending():
     """Content-script polls this; returns the first unclaimed waiting state."""
     with _oauth_lock:
         for state, entry in _oauth_states.items():
+            log.info("Checking Flowith OAuth state: %s  entry=%s", state, entry)
             if (
                 entry.get("provider") == "flowith"
                 and entry.get("pending_ext")
                 and not entry["done"]
             ):
-                entry["pending_ext"] = False   # claimed — prevent double-handling
                 return jsonify({"state": state})
     return jsonify({"state": None})
 
@@ -2640,13 +2681,14 @@ async def list_accounts():
             "supports_artifacts":  provider == CLAUDE_PROVIDER,
             "supports_tools":      provider == CLAUDE_PROVIDER,
             "supports_thinking":   provider == CLAUDE_PROVIDER,
-            # Flowith supports branching via p_id on flow nodes
             "supports_branching":  provider in (CLAUDE_PROVIDER, FLOWITH_PROVIDER),
             "supports_web_search": provider == ONEMINAI_PROVIDER,
             "supports_image_gen":  provider in (ONEMINAI_PROVIDER, FLOWITH_PROVIDER),
             "supports_video_gen":  provider == FLOWITH_PROVIDER,
             "supports_download":   provider == CLAUDE_PROVIDER,
             "supports_reuse_files": provider in (CLAUDE_PROVIDER, ONEMINAI_PROVIDER),
+            "supports_inline_images": provider in (CLAUDE_PROVIDER, FLOWITH_PROVIDER),
+            "supports_image_in_chat": provider in (CLAUDE_PROVIDER, FLOWITH_PROVIDER),
         }
         account_list.append(pub)
 
@@ -3208,12 +3250,19 @@ async def send_message(acct, conv_id):
         ROOT         = "00000000-0000-4000-8000-000000000000"
         _log_message_send(acct["name"], conv_id, model, len(prompt))
 
-        # parent_uuid IS the flowith node UUID when branching
-        # (our message UUIDs == flowith node_ids)
         parent_node_id = None if parent_uuid == ROOT else parent_uuid
+
+        # Collect image URLs from attached files (inline image chat)
+        raw_files   = data.get("files") or []
+        image_urls  = [f["url"] for f in raw_files if isinstance(f, dict) and f.get("url") and
+                       (f.get("mime","").startswith("image/") or
+                        f.get("_mime","").startswith("image/") or
+                        f.get("content_type","").startswith("image/"))]
 
         text_parts:    list[str] = []
         meta_holder:   list[dict] = []
+
+        media_holder: list[dict] = []  # holds flowith_image / flowith_video
 
         @stream_with_context
         async def generate_flowith():
@@ -3221,11 +3270,13 @@ async def send_message(acct, conv_id):
                 acct, conv_id, prompt, model,
                 asst_uuid      = asst_uuid,
                 parent_node_id = parent_node_id,
+                images         = image_urls or None,
                 timeout        = 120.0,
             ):
-                # Intercept internal metadata event — do not forward to browser
+                # Intercept internal events — do not forward to browser
                 try:
                     line = chunk.decode("utf-8", errors="replace").strip()
+                    skip = False
                     for part in line.splitlines():
                         if not part.startswith("data:"):
                             continue
@@ -3239,10 +3290,17 @@ async def send_message(acct, conv_id):
                                 evt.get("delta", {}).get("text", ""))
                         elif etype == "flowith_meta":
                             meta_holder.append(evt)
-                            continue  # skip yield
+                            skip = True
+                        elif etype in ("flowith_image", "flowith_video"):
+                            media_holder.append(evt)
+                            skip = True
+                    if skip:
+                        continue
                 except Exception:
                     pass
                 yield chunk
+                
+                await asyncio.sleep(0)
 
             # ── Persist messages locally after stream completes ───────────
             full_response  = "".join(text_parts)
@@ -3304,11 +3362,26 @@ async def send_message(acct, conv_id):
                 "parent_message_uuid": actual_parent,
                 "created_at":          _now(),
             }
+            # Build assistant message content — may be text, image, or video
+            _media_evt   = media_holder[0] if media_holder else None
+            _image_url   = _media_evt.get("image_url") if _media_evt and _media_evt.get("type") == "flowith_image" else None
+            _video_url   = _media_evt.get("video_url") if _media_evt and _media_evt.get("type") == "flowith_video" else None
+
+            if _image_url:
+                asst_content = [{"type": "flowith_image", "url": _image_url}]
+                asst_text    = _image_url
+            elif _video_url:
+                asst_content = [{"type": "flowith_video", "url": _video_url}]
+                asst_text    = _video_url
+            else:
+                asst_content = [{"type": "text", "text": full_response}]
+                asst_text    = full_response
+
             asst_msg = {
                 "uuid":                ai_node_id,
                 "sender":              "assistant",
-                "text":                full_response,
-                "content":             [{"type": "text", "text": full_response}],
+                "text":                asst_text,
+                "content":             asst_content,
                 "parent_message_uuid": user_node_id,
                 "model":               model,
                 "created_at":          _now(),
@@ -3354,6 +3427,8 @@ async def send_message(acct, conv_id):
                 web_search  = web_search,
             ):
                 yield chunk
+                
+                await asyncio.sleep(0)
 
         return Response(
             generate_oneminai(),
@@ -3421,6 +3496,8 @@ async def send_message(acct, conv_id):
                 except Exception:
                     pass
                 yield chunk
+                
+                await asyncio.sleep(0)
 
             # Persist messages with proper structure
             full_response = "".join(text_parts)
@@ -3457,6 +3534,8 @@ async def send_message(acct, conv_id):
     async def generate():
         for chunk in _sync_stream_claude(acct, conv_id, payload):
             yield chunk
+            
+            await asyncio.sleep(0)
 
     return Response(generate(),
                     content_type="text/event-stream",
@@ -3614,11 +3693,13 @@ async def get_usage(acct):
 
     if provider == FLOWITH_PROVIDER:
         credits = await _flowith_get_credits(acct)
-        total   = (
-            credits["total"]
-            if isinstance(credits, dict) and "total" in credits
-            else credits
-        ) if credits is not None else None
+        total   = (credits.get("total") or credits.get("credits_total")
+                   if isinstance(credits, dict) else credits) if credits is not None else None
+        # cache locally for sidebar bar
+        if total is not None:
+            def _fc_cache(store_data):
+                pass  # credits cached via the response below
+            pass
         return jsonify({
             "provider":      "flowith",
             "credits":       credits,
@@ -3725,15 +3806,15 @@ async def get_usage_all():
             except Exception as exc:
                 log.warning("Flowith credits fetch for %s: %s", name, exc)
                 credits_data = None
+            _total = None
+            if isinstance(credits_data, dict):
+                _total = credits_data.get("total") or credits_data.get("credits_total")
+            elif credits_data is not None:
+                _total = credits_data
             results[name] = {
-                "provider": "flowith",
-                # Normalise to always expose a top-level "total" float
-                "credits": credits_data,
-                "credits_total": (
-                    credits_data["total"]
-                    if isinstance(credits_data, dict)
-                    else credits_data
-                ) if credits_data is not None else None,
+                "provider":      "flowith",
+                "credits":       credits_data,
+                "credits_total": _total,
             }
 
         elif provider == CLAUDE_PROVIDER:
