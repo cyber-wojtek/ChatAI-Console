@@ -27,6 +27,26 @@ from quart import (
 )
 import requests as http_client
 
+# Shared session for ChatWithAI — connection-pooled, keep-alive enabled.
+_CHATWITHAI_SESSION = None  # lazy-initialised in _get_chatwithai_session()
+
+
+def _get_chatwithai_session() -> "http_client.Session":
+    global _CHATWITHAI_SESSION
+    if _CHATWITHAI_SESSION is None:
+        from requests.adapters import HTTPAdapter
+        s = http_client.Session()
+        adapter = HTTPAdapter(
+            pool_connections=4,
+            pool_maxsize=20,
+            max_retries=0,
+        )
+        s.mount("https://", adapter)
+        s.mount("http://", adapter)
+        _CHATWITHAI_SESSION = s
+    return _CHATWITHAI_SESSION
+
+
 from claude_webapi import ClaudeClient
 from flowith_webapi import FlowithClient
 from oneminai_webapi import OneMinAIClient
@@ -54,6 +74,9 @@ ONEMINAI_PROVIDER = "oneminai"
 FLOWITH_PROVIDER = "flowith"
 FLOWITH_DEFAULT_MODEL = "gpt-4.1-nano"
 ONEMINAI_DEFAULT_MODEL = "gpt-4.1-nano"
+
+# Canonical root UUID used across all providers for the parent chain root.
+ROOT_UUID = "00000000-0000-4000-8000-000000000000"
 
 # ── Rate-limit / polling configuration ────────────────────────────────────
 # These can be overridden at runtime via /api/settings/polling (PATCH).
@@ -168,8 +191,10 @@ _loop_thread.start()
 
 
 async def _run_coro(coro):
+    """Run *coro* on the background event-loop and await its result."""
     future = asyncio.run_coroutine_threadsafe(coro, _loop)
-    return await future.result()
+    return await asyncio.wrap_future(future)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Claude client + streaming
@@ -199,6 +224,7 @@ def _chatwithai_headers() -> dict:
     }
 
 
+
 _CHATWITHAI_MODEL_CACHE: dict = {"fetched_at": 0.0, "models": []}
 
 
@@ -207,7 +233,7 @@ async def _chatwithai_fetch_models() -> list[dict]:
     if _CHATWITHAI_MODEL_CACHE["models"] and now_ts - _CHATWITHAI_MODEL_CACHE["fetched_at"] < 900:
         return _CHATWITHAI_MODEL_CACHE["models"]
     url = f"{CHATWITHAI_API_BASE}/api/v1/chatwithai/chats/models"
-    resp = http_client.get(url, headers=_chatwithai_headers(), timeout=20)
+    resp = _get_chatwithai_session().get(url, headers=_chatwithai_headers(), timeout=20)
     if resp.status_code != 200:
         return _CHATWITHAI_MODEL_CACHE["models"]
     payload = resp.json()
@@ -280,8 +306,8 @@ def _sync_stream_oneminai(acct, conv_id, prompt, model, *, human_uuid, asst_uuid
     import queue as _queue
     q = _queue.Queue()
 
-    def emit(obj):
-        return (f"data: {json.dumps(obj, ensure_ascii=False)}\n").encode("utf-8")
+    def emit(obj: dict) -> bytes:
+        return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")
 
     async def producer():
         client = None
@@ -317,119 +343,172 @@ def _sync_stream_oneminai(acct, conv_id, prompt, model, *, human_uuid, asst_uuid
             break
         yield item
 
-def _sync_stream_chatwithai(prompt: str, model: str, *, assistant_uuid: str):
+def _sync_stream_chatwithai_messages(
+    messages: list[dict],
+    model: str,
+    *,
+    timeout: int,
+    assistant_uuid: str,
+):
+    """
+    Stream a ChatWithAI response using a full messages array for history.
+    messages = [{"role": "user"|"assistant", "content": str}, ...]
+    """
     url = f"{CHATWITHAI_API_BASE}/api/v1/chatwithai/chats/anonymous/events"
+
+    # Build the prompt by concatenating history in Human/Assistant format
+    # OR pass the last message as `message` and history as `context`
+    # The API only exposes `message` + `message_context`, so we encode
+    # history into the message field using a clear delimiter.
+    
+    # Separate history from the final user turn
+    history = messages[:-1]
+    current_prompt = messages[-1]["content"] if messages else ""
+
+    # Encode history as a system-style prefix the model will understand
+    if history:
+        history_lines = []
+        for m in history:
+            role_label = "Human" if m["role"] == "user" else "Assistant"
+            history_lines.append(f"{role_label}: {m['content']}")
+        history_text = "\n".join(history_lines)
+        full_message = f"{history_text}\nHuman: {current_prompt}\nAssistant:"
+    else:
+        full_message = current_prompt
+
     payload = {
-        "message": prompt,
+        "message": full_message,
         "chat_id": None,
         "message_context": "default",
         "model": model,
     }
 
+    _TERMINAL_EVENTS = frozenset({
+        "conversation_complete",
+        "ai_response_complete",
+        "stream_end",
+        "done",
+    })
+
     text_accum: list[str] = []
     started = False
     message_uuid = assistant_uuid
 
-    def emit(obj: dict):
+    def emit(obj: dict) -> bytes:
         return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")
 
-    def start_if_needed():
+    def _start_blocks():
         nonlocal started
         if started:
-            return None
+            return
         started = True
-        return [
-            emit({"type": "message_start", "message": {"uuid": message_uuid}}),
-            emit({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
-        ]
+        yield emit({"type": "message_start", "message": {"uuid": message_uuid}})
+        yield emit({"type": "content_block_start", "index": 0,
+                    "content_block": {"type": "text", "text": ""}})
 
-    resp = http_client.post(
-        url,
-        json=payload,
-        headers=_chatwithai_headers(),
-        stream=True,
-        timeout=3600,
-    )
-    if resp.status_code != 200:
-        err = {"type": "error", "error": {"type": "api_error", "message": f"HTTP {resp.status_code}"}}
-        yield emit(err)
-        return
+    resp = None
+    try:
+        resp = _get_chatwithai_session().post(
+            url,
+            json=payload,
+            headers=_chatwithai_headers(),
+            stream=True,
+            timeout=(10, timeout),
+        )
 
-    # Use iter_content with decode_unicode=False to preserve raw bytes
-    buffer = b""
-    for chunk in resp.iter_content(chunk_size=1024, decode_unicode=False):
-        if not chunk:
-            continue
-        
-        buffer += chunk
-        lines = buffer.split(b'\n')
-        buffer = lines[-1]  # Keep incomplete line in buffer
-        
-        for line_bytes in lines[:-1]:
-            try:
-                line = line_bytes.decode('utf-8', errors='replace').strip()
-            except UnicodeDecodeError:
-                continue
-                
-            if not line.startswith("data:"):
-                continue
-            data_str = line[5:].strip()
-            if not data_str:
-                continue
-            try:
-                evt = json.loads(data_str)
-            except json.JSONDecodeError:
+        if resp.status_code != 200:
+            err = {"type": "error",
+                   "error": {"type": "api_error",
+                              "message": f"HTTP {resp.status_code}"}}
+            yield emit(err)
+            return
+
+        buffer = b""
+        done = False
+
+        for raw_chunk in resp.iter_content(chunk_size=4096, decode_unicode=False):
+            if not raw_chunk:
                 continue
 
-            evt_type = evt.get("event_type")
-            evt_data = evt.get("data") or {}
+            buffer += raw_chunk
+            *lines, buffer = buffer.split(b"\n")
 
-            if evt_type == "message_created":
-                message_uuid = evt_data.get("id") or message_uuid
-                start_events = start_if_needed()
-                if start_events:
-                    for ev in start_events:
-                        yield ev
-                continue
+            for line_bytes in lines:
+                if not line_bytes or not line_bytes.startswith(b"data:"):
+                    continue
 
-            if evt_type == "ai_response_chunk":
-                if not started:
-                    start_events = start_if_needed()
-                    if start_events:
-                        for ev in start_events:
-                            yield ev
-                chunk_text = evt_data.get("chunk") or ""
-                if chunk_text:
-                    text_accum.append(chunk_text)
-                    yield emit({
-                        "type": "content_block_delta",
-                        "index": 0,
-                        "delta": {"type": "text_delta", "text": chunk_text},
-                    })
+                try:
+                    line = line_bytes.decode("utf-8", errors="replace")
+                except Exception:
+                    continue
 
-    # Process any remaining data in buffer
-    if buffer:
-        try:
-            line = buffer.decode('utf-8', errors='replace').strip()
-            if line.startswith("data:"):
                 data_str = line[5:].strip()
-                if data_str:
-                    try:
-                        evt = json.loads(data_str)
-                        evt_type = evt.get("event_type")
-                        if evt_type == "ai_response_chunk":
-                            chunk_text = evt.get("data", {}).get("chunk") or ""
-                            if chunk_text:
-                                text_accum.append(chunk_text)
-                                yield emit({
-                                    "type": "content_block_delta",
-                                    "index": 0,
-                                    "delta": {"type": "text_delta", "text": chunk_text},
-                                })
-                    except json.JSONDecodeError:
-                        pass
-        except UnicodeDecodeError:
-            pass
+                if not data_str:
+                    continue
+
+                try:
+                    evt = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+
+                evt_type = evt.get("event_type", "")
+                evt_data = evt.get("data") or {}
+
+                if evt_type in _TERMINAL_EVENTS:
+                    done = True
+                    break
+
+                if evt_type == "message_created":
+                    _new_uuid = evt_data.get("id")
+                    if _new_uuid:
+                        message_uuid = _new_uuid
+                    yield from _start_blocks()
+                    continue
+
+                if evt_type == "ai_response_chunk":
+                    yield from _start_blocks()
+                    chunk_text = evt_data.get("chunk") or ""
+                    if chunk_text:
+                        text_accum.append(chunk_text)
+                        yield emit({
+                            "type": "content_block_delta",
+                            "index": 0,
+                            "delta": {"type": "text_delta", "text": chunk_text},
+                        })
+
+            if done:
+                break
+
+        # flush leftover buffer
+        if buffer and not done:
+            try:
+                line = buffer.decode("utf-8", errors="replace").strip()
+                if line.startswith("data:"):
+                    data_str = line[5:].strip()
+                    if data_str:
+                        try:
+                            evt = json.loads(data_str)
+                            if evt.get("event_type") == "ai_response_chunk":
+                                chunk_text = evt.get("data", {}).get("chunk") or ""
+                                if chunk_text:
+                                    text_accum.append(chunk_text)
+                                    yield from _start_blocks()
+                                    yield emit({
+                                        "type": "content_block_delta",
+                                        "index": 0,
+                                        "delta": {"type": "text_delta", "text": chunk_text},
+                                    })
+                        except json.JSONDecodeError:
+                            pass
+            except UnicodeDecodeError:
+                pass
+
+    finally:
+        if resp is not None:
+            try:
+                resp.close()
+            except Exception:
+                pass
 
     if started:
         yield emit({"type": "content_block_stop", "index": 0})
@@ -720,7 +799,10 @@ def _seed_from_env():
     try:
         from keys import CLAUDE_ACCOUNTS
     except ImportError:
-        return
+        try:
+            from keys import ACCOUNTS as CLAUDE_ACCOUNTS
+        except ImportError:
+            return
     if not CLAUDE_ACCOUNTS:
         return
 
@@ -747,8 +829,7 @@ def _seed_from_env():
 
 async def _warm_model_caches():
     """Fetch models for all configured providers in background — called once at startup."""
-    import time
-    time.sleep(3)  # let Flask finish starting up
+    await asyncio.sleep(3)  # let Flask finish starting up
     data = store.read()
     providers_seen = set()
     for acct in data.get("accounts", []):
@@ -768,7 +849,7 @@ async def _warm_model_caches():
                 log.info("Warmed Flowith model cache")
         except Exception as e:
             log.warning("Model cache warm-up failed for %s: %s", prov, e)
-        time.sleep(1)
+        await asyncio.sleep(1)
 
 
 _seed_from_env() 
@@ -778,6 +859,26 @@ asyncio.run_coroutine_threadsafe(_warm_model_caches(), _loop)
 # ═══════════════════════════════════════════════════════════════════════════════
 # Quota / usage helpers
 # ═══════════════════════════════════════════════════════════════════════════════
+
+# Write-coalescing for high-frequency message_log mutations.
+# We allow up to _MSG_LOG_BATCH_SIZE in-memory before forcing a disk flush.
+_MSG_LOG_DIRTY_COUNT = 0
+_MSG_LOG_BATCH_SIZE = 5
+_MSG_LOG_LOCK = threading.Lock()
+
+
+def _mutate_msg_log(fn):
+    """Like store.mutate() but defers disk flush until batch threshold."""
+    global _MSG_LOG_DIRTY_COUNT
+    with _MSG_LOG_LOCK:
+        with store._lock:
+            fn(store._data)
+            _MSG_LOG_DIRTY_COUNT += 1
+            if _MSG_LOG_DIRTY_COUNT >= _MSG_LOG_BATCH_SIZE:
+                store._save()
+                _MSG_LOG_DIRTY_COUNT = 0
+
+
 
 def _save_quota_snapshot(account_name: str, payload: dict):
     def fn(data):
@@ -1180,7 +1281,7 @@ def _sync_stream_flowith(
     ROOT = "00000000-0000-4000-8000-000000000000"
 
     def emit(obj: dict) -> bytes:
-        return (f"data: {json.dumps(obj, ensure_ascii=False)}\n").encode("utf-8")
+        return (f"data: {json.dumps(obj, ensure_ascii=False)}\n\n").encode("utf-8")
 
     async def producer():
         client = await _make_flowith_client(acct)
@@ -1217,20 +1318,14 @@ def _sync_stream_flowith(
 
             # ── Fire completion request ───────────────────────────────────
             import json as _json
-            content = prompt
-            if images:
-                content = [{"type": "text", "text": prompt}] + [
-                    {"type": "image_url", "image_url": {"url": u}}
-                    for u in images
-                ]
-            # Build messages with image support
+            # Build message content (with image support if applicable)
             if images:
                 content_payload = [{"type": "text", "text": prompt}] + [
                     {"type": "image_url", "image_url": {"url": u}}
                     for u in images
                 ]
             else:
-                content_payload = content
+                content_payload = prompt
             await client._post(
                 f"https://edge.flowith.io/completion/async?mode=general",
                 {
@@ -1330,9 +1425,6 @@ def _sync_stream_flowith(
             if _is_media and _ru:
                 # Replace streaming text blocks with a media block
                 # Emit stop for the (possibly empty) text block first
-                if not _result_text.strip():
-                    # No text was streamed — close the empty block cleanly
-                    pass  # block_stop already emitted below
                 if _is_img or (not _is_vid and _is_media):
                     q.put(emit({
                         "type":      "flowith_image",
@@ -1571,6 +1663,9 @@ async def _flowith_session_cycle(
 
 app = Quart(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
+app.config["RESPONSE_TIMEOUT"] = None      # disable response timeout
+app.config["BODY_TIMEOUT"] = None          # disable body receive timeout
+app.config["KEEP_ALIVE_TIMEOUT"] = 3600   # keep connection alive
 
 # ── Simple API cache (in-memory) ─────────────────────────────────────────────
 _API_CACHE = {
@@ -1627,15 +1722,20 @@ def cache_json(ttl_sec: float = 5.0, key_fn=None):
             try:
                 if isinstance(result, tuple):
                     resp, status = result
-
                     if status == 200 and hasattr(resp, "get_json"):
-                        data = await resp.get_json()
-                        _cache_set(key, data, ttl_sec)
-
-                elif hasattr(result, "get_json"):
-                    data = await result.get_json()
-                    _cache_set(key, data, ttl_sec)
-
+                        try:
+                            data = await resp.get_json()
+                            if isinstance(data, dict):
+                                _cache_set(key, data, ttl_sec)
+                        except Exception:
+                            pass
+                    elif hasattr(result, "get_json"):
+                        try:
+                            data = await result.get_json()
+                            if isinstance(data, dict):
+                                _cache_set(key, data, ttl_sec)
+                        except Exception:
+                            pass
             except Exception:
                 pass
 
@@ -2753,7 +2853,7 @@ async def list_accounts():
             "supports_artifacts":  provider == CLAUDE_PROVIDER,
             "supports_tools":      provider == CLAUDE_PROVIDER,
             "supports_thinking":   provider == CLAUDE_PROVIDER,
-            "supports_branching":  provider in (CLAUDE_PROVIDER, FLOWITH_PROVIDER),
+            "supports_branching": provider in (CLAUDE_PROVIDER, FLOWITH_PROVIDER, CHATWITHAI_PROVIDER),
             "supports_web_search": provider == ONEMINAI_PROVIDER,
             "supports_image_gen":  provider in (ONEMINAI_PROVIDER, FLOWITH_PROVIDER),
             "supports_video_gen":  provider == FLOWITH_PROVIDER,
@@ -3339,14 +3439,35 @@ async def send_message(acct, conv_id):
 
         @stream_with_context
         async def generate_flowith():
-            for chunk in _sync_stream_flowith(
-                acct, conv_id, prompt, model,
-                asst_uuid      = asst_uuid,
-                parent_node_id = parent_node_id,
-                images         = image_urls or None,
-                timeout        = 3600.0,
-            ):
-                # Intercept internal events — do not forward to browser
+            loop = asyncio.get_event_loop()
+            q: asyncio.Queue = asyncio.Queue()
+
+            def run_sync():
+                try:
+                    for chunk in _sync_stream_flowith(
+                        acct, conv_id, prompt, model,
+                        asst_uuid      = asst_uuid,
+                        parent_node_id = parent_node_id,
+                        images         = image_urls or None,
+                        timeout        = 3600000.0,
+                    ):
+                        asyncio.run_coroutine_threadsafe(q.put(chunk), loop)
+                except Exception as exc:
+                    err = json.dumps({"type": "error", "error": {"message": str(exc)}})
+                    asyncio.run_coroutine_threadsafe(
+                        q.put(f"data: {err}\n".encode()), loop
+                    )
+                finally:
+                    asyncio.run_coroutine_threadsafe(q.put(None), loop)
+
+            threading.Thread(target=run_sync, daemon=True).start()
+
+            while True:
+                chunk = await q.get()
+                if chunk is None:
+                    break
+
+                # Parse chunk for side-effects (text accumulation, meta events)
                 try:
                     line = chunk.decode("utf-8", errors="replace").strip()
                     skip = False
@@ -3374,9 +3495,8 @@ async def send_message(acct, conv_id):
                         continue
                 except Exception:
                     pass
+
                 yield chunk
-                
-                await asyncio.sleep(0)
 
             # ── Persist messages locally after stream completes ───────────
             full_response  = "".join(text_parts)
@@ -3393,11 +3513,9 @@ async def send_message(acct, conv_id):
                         if a["name"] != acct["name"]:
                             continue
                         convs = a.setdefault("pinned_conversations", [])
-                        # Remove placeholder
                         convs[:] = [c for c in convs
                                     if c.get("conv_uuid") != conv_id]
-                        if not any(c["conv_uuid"] == real_conv_id
-                                   for c in convs):
+                        if not any(c["conv_uuid"] == real_conv_id for c in convs):
                             convs.append({
                                 "conv_uuid":    real_conv_id,
                                 "display_name": prompt[:40],
@@ -3422,10 +3540,8 @@ async def send_message(acct, conv_id):
                         break
                 store.mutate(touch)
 
-            # Build parent chain using real flowith node UUIDs
             actual_parent = parent_uuid
             if parent_uuid == ROOT:
-                # No branch specified — chain to last message in local store
                 local_entry = _get_local_conv_entry(acct["name"], real_conv_id)
                 local_msgs  = (local_entry or {}).get("chat_messages", [])
                 if local_msgs:
@@ -3439,10 +3555,10 @@ async def send_message(acct, conv_id):
                 "parent_message_uuid": actual_parent,
                 "created_at":          _now(),
             }
-            # Build assistant message content — may be text, image, or video
-            _media_evt   = media_holder[0] if media_holder else None
-            _image_url   = _media_evt.get("image_url") if _media_evt and _media_evt.get("type") == "flowith_image" else None
-            _video_url   = _media_evt.get("video_url") if _media_evt and _media_evt.get("type") == "flowith_video" else None
+
+            _media_evt  = media_holder[0] if media_holder else None
+            _image_url  = _media_evt.get("image_url") if _media_evt and _media_evt.get("type") == "flowith_image" else None
+            _video_url  = _media_evt.get("video_url") if _media_evt and _media_evt.get("type") == "flowith_video" else None
 
             if _image_url:
                 asst_content = [{"type": "flowith_image", "url": _image_url}]
@@ -3458,7 +3574,7 @@ async def send_message(acct, conv_id):
                     asst_content.append({"type": "text", "text": full_response})
                 if not asst_content:
                     asst_content = [{"type": "text", "text": full_response}]
-                asst_text    = full_response
+                asst_text = full_response
 
             asst_msg = {
                 "uuid":                ai_node_id,
@@ -3502,16 +3618,29 @@ async def send_message(acct, conv_id):
 
         @stream_with_context
         async def generate_oneminai():
-            for chunk in _sync_stream_oneminai(
-                acct, conv_id, prompt, model,
-                human_uuid  = human_uuid,
-                asst_uuid   = asst_uuid,
-                file_uuids  = file_uuids or None,
-                web_search  = web_search,
-            ):
+            def run_sync():
+                try:
+                    for chunk in _sync_stream_oneminai(
+                        acct, conv_id, prompt, model,
+                        human_uuid  = human_uuid,
+                        asst_uuid   = asst_uuid,
+                        file_uuids  = file_uuids or None,
+                        web_search  = web_search,
+                    ):
+                        asyncio.run_coroutine_threadsafe(q.put(chunk), loop)
+                finally:
+                    asyncio.run_coroutine_threadsafe(q.put(None), loop)
+
+            loop = asyncio.get_event_loop()
+            q = asyncio.Queue()
+            thread = threading.Thread(target=run_sync, daemon=True)
+            thread.start()
+            
+            while True:
+                chunk = await q.get()
+                if chunk is None:
+                    break
                 yield chunk
-                
-                await asyncio.sleep(0)
 
         return Response(
             generate_oneminai(),
@@ -3525,36 +3654,83 @@ async def send_message(acct, conv_id):
         parent_uuid = data.get("parent_message_uuid", "00000000-0000-4000-8000-000000000000")
         human_uuid = str(uuid_lib.uuid4())
         asst_uuid = str(uuid_lib.uuid4())
+        ROOT = "00000000-0000-4000-8000-000000000000"
 
-        # Get conversation and build history
         conv_entry = _get_local_conv_entry(acct["name"], conv_id)
-        
-        # Build message chain based on parent_uuid
-        history = []
-        if conv_entry and parent_uuid != "00000000-0000-4000-8000-000000000000":
-            all_msgs = conv_entry.get("chat_messages", [])
-            msg_map = {m.get("uuid"): m for m in all_msgs if m.get("uuid")}
-            
-            # Build chain from parent backwards
-            current = parent_uuid
-            chain = []
-            while current and current != "00000000-0000-4000-8000-000000000000":
-                if current in msg_map:
-                    chain.insert(0, msg_map[current])
-                    current = msg_map[current].get("parent_message_uuid")
-                else:
-                    break
-            history = chain
 
-        # Build history text for API
-        if history:
-            history_text = "\n".join(
-                f"{'Human' if m.get('sender') == 'human' else 'Assistant'}: {m.get('text', '')}"
-                for m in history
-            )
-            full_prompt = f"{history_text}\nHuman: {prompt}"
-        else:
-            full_prompt = prompt
+        # Build the branch chain by walking backward from parent_uuid,
+        # or use the full stored chain if parent_uuid is ROOT
+        history_messages: list[dict] = []
+        if conv_entry:
+            all_msgs = conv_entry.get("chat_messages", [])
+            if all_msgs:
+                msg_map = {m["uuid"]: m for m in all_msgs if m.get("uuid")}
+                
+                if parent_uuid == ROOT:
+                    # No branch specified — walk from the active leaf.
+                    # 1) Try current_leaf_message_uuid from local entry
+                    # 2) Fall back to deepest leaf (longest chain)
+                    # 3) Last resort: use all messages in order
+                    _active_leaf = (conv_entry or {}).get("current_leaf_message_uuid", "")
+                    has_child = {m.get("parent_message_uuid") for m in all_msgs}
+                    leaves = [m for m in all_msgs if m.get("uuid") not in has_child]
+
+                    _start_uuid = ""
+                    if _active_leaf and _active_leaf != ROOT and _active_leaf in msg_map:
+                        _start_uuid = _active_leaf
+                    elif leaves:
+                        # Pick the leaf with the longest chain back to root
+                        _best, _best_len = "", 0
+                        for _lf in leaves:
+                            _ln = 0
+                            _cur = _lf["uuid"]
+                            _vis = set()
+                            while _cur and _cur != ROOT and _cur in msg_map and _cur not in _vis:
+                                _vis.add(_cur)
+                                _ln += 1
+                                _cur = msg_map[_cur].get("parent_message_uuid", "")
+                            if _ln > _best_len:
+                                _best_len = _ln
+                                _best = _lf["uuid"]
+                        _start_uuid = _best
+
+                    if _start_uuid:
+                        chain = []
+                        visited = set()
+                        current = _start_uuid
+                        while current and current != ROOT and current not in visited:
+                            visited.add(current)
+                            node = msg_map.get(current)
+                            if not node:
+                                break
+                            chain.append(node)
+                            current = node.get("parent_message_uuid", "")
+                        history_messages = list(reversed(chain))
+                    else:
+                        history_messages = list(all_msgs)
+                else:
+                    # Branch mode — walk backward from the specified parent
+                    chain = []
+                    visited = set()
+                    current = parent_uuid
+                    while current and current != ROOT and current not in visited:
+                        visited.add(current)
+                        node = msg_map.get(current)
+                        if not node:
+                            break
+                        chain.append(node)
+                        current = node.get("parent_message_uuid", "")
+                    history_messages = list(reversed(chain))
+
+        # Build ChatWithAI messages array (OpenAI-style roles)
+        api_messages = []
+        for m in history_messages:
+            role = "user" if m.get("sender") == "human" else "assistant"
+            text = (m.get("text") or "").strip()
+            if text:
+                api_messages.append({"role": role, "content": text})
+        # Append current user message
+        api_messages.append({"role": "user", "content": prompt})
 
         display_name = data.get("display_name") or (prompt[:30] if prompt else "")
         _log_message_send(acct["name"], conv_id, model, len(prompt))
@@ -3563,33 +3739,55 @@ async def send_message(acct, conv_id):
 
         @stream_with_context
         async def generate_chatwithai():
-            for chunk in _sync_stream_chatwithai(full_prompt, model, assistant_uuid=asst_uuid):
-                # Collect text deltas
-                try:
-                    line = chunk.decode("utf-8", errors="replace").strip()
-                    for part in line.splitlines():
-                        if not part.startswith("data:"):
-                            continue
-                        js = part[5:].strip()
-                        if not js:
-                            continue
-                        evt = json.loads(js)
-                        if evt.get("type") == "content_block_delta":
-                            text_parts.append(evt.get("delta", {}).get("text", ""))
-                except Exception:
-                    pass
-                yield chunk
-                
-                await asyncio.sleep(0)
+            loop = asyncio.get_event_loop()
+            q = asyncio.Queue()
 
-            # Persist messages with proper structure
+            def run_sync():
+                try:
+                    for chunk in _sync_stream_chatwithai_messages(
+                        api_messages, model, timeout=3600000, assistant_uuid=asst_uuid
+                    ):
+                        # Parse text parts here too for persistence
+                        try:
+                            line = chunk.decode("utf-8", errors="replace").strip()
+                            for part in line.splitlines():
+                                if not part.startswith("data:"):
+                                    continue
+                                js = part[5:].strip()
+                                if not js:
+                                    continue
+                                evt = json.loads(js)
+                                if evt.get("type") == "content_block_delta":
+                                    text_parts.append(
+                                        evt.get("delta", {}).get("text", "")
+                                    )
+                        except Exception:
+                            pass
+                        asyncio.run_coroutine_threadsafe(q.put(chunk), loop)
+                finally:
+                    asyncio.run_coroutine_threadsafe(q.put(None), loop)
+
+            thread = threading.Thread(target=run_sync, daemon=True)
+            thread.start()
+
+            while True:
+                chunk = await q.get()
+                if chunk is None:
+                    break
+                yield chunk
+
             full_response = "".join(text_parts)
+
+            stored_parent = parent_uuid
+            if parent_uuid == ROOT and history_messages:
+                stored_parent = history_messages[-1].get("uuid", ROOT)
+
             human_msg = {
                 "uuid": human_uuid,
                 "sender": "human",
                 "text": prompt,
                 "content": [{"type": "text", "text": prompt}],
-                "parent_message_uuid": parent_uuid,
+                "parent_message_uuid": stored_parent,
                 "created_at": _now(),
             }
             asst_msg = {
@@ -3601,13 +3799,16 @@ async def send_message(acct, conv_id):
                 "model": model,
                 "created_at": _now(),
             }
-            _append_local_messages(acct["name"], conv_id, human_msg, asst_msg,
-                                   display_name=display_name)
+            _append_local_messages(
+                acct["name"], conv_id, human_msg, asst_msg,
+                display_name=display_name,
+            )
 
-        return Response(generate_chatwithai(),
-                        content_type="text/event-stream",
-                        headers={"Cache-Control": "no-cache",
-                                 "X-Accel-Buffering": "no"})
+        return Response(
+            generate_chatwithai(),
+            content_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     payload = build_claude_payload(data)
     _log_message_send(acct["name"], conv_id, payload["model"],
@@ -3615,10 +3816,28 @@ async def send_message(acct, conv_id):
 
     @stream_with_context
     async def generate():
-        for chunk in _sync_stream_claude(acct, conv_id, payload):
+        loop = asyncio.get_event_loop()
+        q: asyncio.Queue = asyncio.Queue()
+
+        def run_sync():
+            try:
+                for chunk in _sync_stream_claude(acct, conv_id, payload):
+                    asyncio.run_coroutine_threadsafe(q.put(chunk), loop)
+            except Exception as exc:
+                err = json.dumps({"type": "error", "error": {"message": str(exc)}})
+                asyncio.run_coroutine_threadsafe(
+                    q.put(f"data: {err}\n".encode()), loop
+                )
+            finally:
+                asyncio.run_coroutine_threadsafe(q.put(None), loop)
+
+        threading.Thread(target=run_sync, daemon=True).start()
+
+        while True:
+            chunk = await q.get()
+            if chunk is None:
+                break
             yield chunk
-            
-            await asyncio.sleep(0)
 
     return Response(generate(),
                     content_type="text/event-stream",
@@ -3648,8 +3867,8 @@ async def upload_file(acct, conv_id):
     
     if "file" not in await request.files:
         return jsonify({"error": "No file provided"}), 400
-
-    f          = request.files["file"]
+    
+    f          = (await request.files)["file"]
     file_bytes = f.read()
     mime       = f.content_type or "application/octet-stream"
     fname      = f.filename or "upload"
@@ -3973,7 +4192,7 @@ async def local_conv_list(acct):
                 key=lambda c: c.get("pinned_at", c.get("updated_at", "")),
                 reverse=True,
             )
-            return jsonify(convs[:200])
+            return jsonify(convs)
     return jsonify([])
 
 

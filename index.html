@@ -5942,9 +5942,8 @@ function buildChain(conv) {
   const leaf = conv.current_leaf_message_uuid;
   if (leaf && leaf !== ROOT && map[leaf]) {
     const chain = walkFrom(leaf);
-    // If the current leaf produces any chain at all, use it.
-    // (Branches are typically shorter than total message count.)
-    if (chain.length > 0) return chain;
+    // Accept if we got at least half the messages (handles minor gaps)
+    if (chain.length >= Math.ceil(messages.length * 0.5)) return chain;
   }
 
   // --- Strategy 2: find the deepest leaf ourselves ---
@@ -5963,7 +5962,7 @@ function buildChain(conv) {
     const chain = walkFrom(lf.uuid);
     if (chain.length > best.length) best = chain;
   }
-  if (best.length > 0) return best;
+  if (best.length >= Math.ceil(messages.length * 0.5)) return best;
 
   // --- Strategy 3: last resort – sort all messages by index then created_at ---
   return [...messages].sort((a, b) => {
@@ -6599,7 +6598,19 @@ function buildBranchSel() {
 function openBranchOverlay()  { openBranchPicker();  }
 function closeBranchOverlay() { closeBranchPicker(); }
 
-// forkFromMsg — see canonical definition below
+function forkFromMsg(uuid) {
+  const conv = S.convs[S.convId];
+  if (!conv) return;
+  const msg = (conv.chat_messages||[]).find(m => m.uuid === uuid);
+  const preview = msg
+    ? (msg.text||(msg.content||[]).find(b=>b.type==='text')?.text||'')
+        .slice(0,55).replace(/\n/g,' ')
+    : uuid.slice(0,8)+'…';
+  const label = `[${msg?.sender === 'human' ? 'You' : 'AI'}] ${preview}`;
+  _setBranchPoint(uuid, label);
+  document.getElementById('msgTa')?.focus();
+  toast('Branch point set — type your message and send', 'info');
+}
 
 function toggleBranchRow() {
   S.branchVisible = !S.branchVisible;
@@ -7247,14 +7258,6 @@ async function doSend() {
   conv.chat_messages.push(asstMsg);
   conv.current_leaf_message_uuid = asstUuid;
 
-  // Sync branch state so the next send knows we're on the new leaf
-  const _bsel = document.getElementById('branchSel');
-  if (_bsel) _bsel.value = asstUuid;
-  if (typeof BEX !== 'undefined') {
-    BEX.viewLeafUuid   = asstUuid;
-    BEX.sendParentUuid = asstUuid;
-  }
-
   renderMsgs(); buildBranchSel();
   ta.value = ''; resizeTa(ta); updateCount(ta);
   S.attached = []; renderAttBar();
@@ -7331,13 +7334,6 @@ async function doSend() {
     toast('Stream error: ' + err.message, 'err');
     conv.chat_messages = conv.chat_messages.filter(m => m.uuid !== asstUuid);
     conv.current_leaf_message_uuid = humanUuid;
-    // Restore branch state to the human message (last valid in chain)
-    const _errSel = document.getElementById('branchSel');
-    if (_errSel) _errSel.value = humanUuid;
-    if (typeof BEX !== 'undefined') {
-      BEX.viewLeafUuid   = humanUuid;
-      BEX.sendParentUuid = humanUuid;
-    }
     renderMsgs();
   } finally {
     S.streaming = false;
@@ -8696,13 +8692,6 @@ function bexSetLeaf(leafUuid, skipTreeRebuild) {
   BEX.viewLeafUuid  = leafUuid;
   BEX.sendParentUuid = leafUuid;  // next send continues from this leaf
 
-  // Persist the active leaf on the conversation object so it survives
-  // BEX state resets, page reloads, and backend round-trips.
-  const conv = S.convId ? S.convs[S.convId] : null;
-  if (conv && leafUuid) {
-    conv.current_leaf_message_uuid = leafUuid;
-  }
-
   // Update the hidden branchSel for legacy doSend() compatibility
   const sel = document.getElementById('branchSel');
   if (sel) sel.value = leafUuid || ROOT_UUID;
@@ -9058,9 +9047,6 @@ window.doSend = async function doSend() {
   if (BEX.sendParentUuid) {
     const sel = document.getElementById('branchSel');
     if (sel) sel.value = BEX.sendParentUuid;
-    // Clear the explicit fork point — it's consumed. After the send,
-    // the post-send handler will advance to the new leaf automatically.
-    BEX.sendParentUuid = null;
   }
 
   // After send, advance viewLeaf to the new assistant message

@@ -1,6 +1,6 @@
 # ✦ ChatAI Console
 
-A self-hosted, free web chat interface for [Claude](https://claude.ai), [ChatWithAI.app](https://chatwithai.app), [1min.AI](https://1min.ai), and [Flowith.io](https://flowith.io), powered by the reverse-engineered `claude_webapi` and `oneminai_webapi` libraries. Multi-account management, real-time streaming, file uploads, conversation branching, usage tracking, and a Galaxy-themed UI — all in a single Flask app.
+A self-hosted, free web chat interface for [Claude](https://claude.ai), [ChatWithAI.app](https://chatwithai.app), [1min.AI](https://1min.ai), and [Flowith.io](https://flowith.io), powered by the reverse-engineered `claude_webapi` and `oneminai_webapi` libraries. Multi-account management, real-time streaming, file uploads, conversation branching, usage tracking, and a Galaxy-themed UI — all in a single Quart (async Flask) app.
 
 ## Features
 
@@ -21,7 +21,7 @@ A self-hosted, free web chat interface for [Claude](https://claude.ai), [ChatWit
 ```sh
 git clone https://github.com/cyber-wojtek/ChatAI-Console.git
 cd ChatAI-Console
-pip install flask claude_webapi 1minai_webapi flowith_webapi hypercorn quart requests
+pip install quart claude_webapi oneminai_webapi flowith_webapi hypercorn requests
 python -m hypercorn app:app --reload --bind localhost:5000 --workers 4
 ```
 
@@ -90,9 +90,9 @@ Two options:
 Create a `keys.py` in the project root to auto-load accounts on startup:
 
 ```python
-ACCOUNTS = [
-    ("claude", "Account Name", "sk-ant-..."),
-    ("Account Name With Org", "org-uuid", "sk-ant-..."),
+CLAUDE_ACCOUNTS = [
+    ("Account Name", "sk-ant-..."),                    # (name, session_key)
+    ("Account Name With Org", "org-uuid", "sk-ant-..."),  # (name, org_id, session_key)
 ]
 ```
 
@@ -144,14 +144,13 @@ curl -X POST http://localhost:5000/api/accounts \
     "claude_code": "4/0A..."
   }'
 
-# Add MiniApps account
+# Add 1min.AI account
 curl -X POST http://localhost:5000/api/accounts \
   -H 'Content-Type: application/json' \
   -d '{
-    "name": "MiniApps",
-    "provider": "miniapps",
-    "miniapps_id_token": "eyJ...",
-    "tool_slug": "claude-37"
+    "name": "My 1min.AI",
+    "provider": "oneminai",
+    "api_key": "eyJ..."
   }'
 ```
 
@@ -163,8 +162,10 @@ curl -X POST http://localhost:5000/api/accounts \
     "name": "My Flowith",
     "provider": "flowith",
     "api_key": "eyJ..."
-  }'```
-  Conversations
+  }'
+```
+
+### Conversations
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -213,10 +214,10 @@ curl -X POST http://localhost:5000/api/accounts \
 | `GET` | `/api/oauth/claude/ext-pending` | Polled by extension to find waiting Claude sessions |
 | `POST` | `/api/oauth/claude/ext-callback` | Receive auth code from extension |
 | `GET` | `/api/oauth/claude/status?state=` | Poll for completed Claude OAuth |
-| `GET` | `/api/oauth/miniapps/begin` | Start MiniApps Google OAuth session |
-| `GET` | `/api/oauth/miniapps/ext-pending` | Polled by extension to find waiting sessions |
-| `POST` | `/api/oauth/miniapps/ext-callback` | Receive ID token from extension |
-| `GET` | `/api/oauth/miniapps/status?state=` | Poll for completed MiniApps OAuth |
+| `GET` | `/api/oauth/chatwithai/begin` | Start ChatWithAI Google OAuth session |
+| `GET` | `/api/oauth/chatwithai/ext-pending` | Polled by extension for waiting sessions |
+| `POST` | `/api/oauth/chatwithai/ext-callback` | Receive auth from extension |
+| `GET` | `/api/oauth/chatwithai/status?state=` | Poll for completed ChatWithAI OAuth |
 | `GET` | `/api/oauth/oneminai/begin` | Start 1min.AI Google OAuth session |
 | `GET` | `/api/oauth/oneminai/owns-state` | Check if state belongs to Console |
 | `GET` | `/api/oauth/oneminai/ext-pending` | Polled by extension for waiting sessions |
@@ -227,7 +228,7 @@ curl -X POST http://localhost:5000/api/accounts \
 
 ```
 ChatAI-Console/
-├── app.py                  # Flask backend — routes, streaming, account management
+├── app.py                  # Quart backend — routes, streaming, account management
 ├── keys.py                 # (Optional) auto-seed account credentials
 ├── data/
 │   └── accounts.json       # Persistent JSON store (auto-created)
@@ -241,9 +242,10 @@ The backend bridges the reverse-engineered APIs and the frontend, exposing REST 
 
 | Package | Purpose |
 |---|---|
-| [Flask](https://flask.palletsprojects.com/) | Web framework |
+| [Quart](https://quart.palletsprojects.com/) | Async web framework (Flask-compatible) |
 | [Claude-API](https://github.com/cyber-wojtek/Claude-API/) | Reverse-engineered async Claude.ai client |
 | [1MinAI-API](https://github.com/cyber-wojtek/1MinAI-API/) | Reverse-engineered async 1min.AI client |
+| [Flowith-API](https://github.com/cyber-wojtek/Flowith-API/) | Async Flowith.io client |
 | [marked.js](https://marked.js.org/) | Markdown rendering (frontend) |
 | [highlight.js](https://highlightjs.org/) | Syntax highlighting (frontend) |
 
