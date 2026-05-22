@@ -92,7 +92,7 @@ Create a `keys.py` in the project root to auto-load accounts on startup:
 ```python
 ACCOUNTS = [
     ("claude", "Account Name", "sk-ant-..."),
-    ("Account Name With Org", "org-uuid", "sk-ant-..."),
+    ("claude", "Account Name With Org", "org-uuid", "sk-ant-..."),
 ]
 ```
 
