@@ -1,6 +1,6 @@
 # ✦ ChatAI Console
 
-A self-hosted, free web chat interface for [Claude](https://claude.ai), [ChatWithAI.app](https://chatwithai.app), [1min.AI](https://1min.ai), and [Flowith.io](https://flowith.io), powered by the reverse-engineered `claude_webapi` and `oneminai_webapi` libraries. Multi-account management, real-time streaming, file uploads, conversation branching, usage tracking, and a Galaxy-themed UI — all in a single Quart (async Flask) app.
+A self-hosted, free web chat interface for [Claude](https://claude.ai), [ChatWithAI.app](https://chatwithai.app), [1min.AI](https://1min.ai), and [Flowith.io](https://flowith.io), powered by the reverse-engineered `claude_webapi`, `oneminai_webapi` and `flowith_webapi` libraries. Multi-account management, real-time streaming, file uploads, conversation branching, usage tracking, and a Galaxy-themed UI — all in a single Quart app.
 
 ## Features
 
@@ -90,9 +90,9 @@ Two options:
 Create a `keys.py` in the project root to auto-load accounts on startup:
 
 ```python
-CLAUDE_ACCOUNTS = [
-    ("Account Name", "sk-ant-..."),                    # (name, session_key)
-    ("Account Name With Org", "org-uuid", "sk-ant-..."),  # (name, org_id, session_key)
+ACCOUNTS = [
+    ("claude", "Account Name", "sk-ant-..."),
+    ("claude", "Account Name With Org", "org-uuid", "sk-ant-..."),
 ]
 ```
 
