@@ -163,8 +163,9 @@ curl -X POST http://localhost:5000/api/accounts \
     "name": "My Flowith",
     "provider": "flowith",
     "api_key": "eyJ..."
-  }'```
-  Conversations
+  }'
+```
+### Conversations
 
 | Method | Endpoint | Description |
 |---|---|---|
