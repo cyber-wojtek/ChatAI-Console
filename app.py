@@ -348,7 +348,7 @@ def _sync_stream_chatwithai(prompt: str, model: str, *, assistant_uuid: str):
         json=payload,
         headers=_chatwithai_headers(),
         stream=True,
-        timeout=60,
+        timeout=3600,
     )
     if resp.status_code != 200:
         err = {"type": "error", "error": {"type": "api_error", "message": f"HTTP {resp.status_code}"}}
@@ -1160,7 +1160,7 @@ def _sync_stream_flowith(
     asst_uuid:       str,
     parent_node_id:  str | None = None,
     images:          list | None = None,
-    timeout:         float = 120.0,
+    timeout:         float = 3600.0,
 ):
     """
     Stream a Flowith chat turn with branching support.
@@ -3344,7 +3344,7 @@ async def send_message(acct, conv_id):
                 asst_uuid      = asst_uuid,
                 parent_node_id = parent_node_id,
                 images         = image_urls or None,
-                timeout        = 120.0,
+                timeout        = 3600.0,
             ):
                 # Intercept internal events — do not forward to browser
                 try:
@@ -4086,7 +4086,7 @@ async def flowith_generate_image(acct):
     model        = (data.get("model") or "gemini-3.1-flash-image").strip()
     aspect_ratio = (data.get("aspect_ratio") or "1:1").strip()
     conv_id      = data.get("conv_id") or None
-    timeout      = float(data.get("timeout", 120))
+    timeout      = float(data.get("timeout", 3600.0))
     if not prompt:
         return jsonify({"error": "prompt is required"}), 400
     result = await _flowith_generate_image(
@@ -4108,7 +4108,7 @@ async def flowith_generate_video(acct):
     model        = (data.get("model") or "seedance-2.0-fast").strip()
     aspect_ratio = (data.get("aspect_ratio") or "16:9").strip()
     conv_id      = data.get("conv_id") or None
-    timeout      = float(data.get("timeout", 300))
+    timeout      = float(data.get("timeout", 3600))
     if not prompt:
         return jsonify({"error": "prompt is required"}), 400
     result = await _flowith_generate_video(
@@ -4191,7 +4191,7 @@ async def flowith_refresh_token_route(acct):
                 "apikey":        SUPABASE_ANON_KEY,
                 "Content-Type":  "application/json",
             },
-            timeout=20,
+            timeout=36,
         )
         resp.raise_for_status()
         body = resp.json()

@@ -6606,6 +6606,7 @@ async function doSend() {
         locale: 'en-US',
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
       })
+      signal: AbortSignal.timeout(3600000)
     });
 
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -7698,8 +7699,9 @@ async function runFlowithImage() {
         prompt,
         model,
         aspect_ratio: ratio,
-        timeout: 120,
+        timeout: 3600,
       }),
+      signal: AbortSignal.timeout(3600000)
     });
     if (r.images && r.images.length) {
       if (result) result.classList.add('visible');
@@ -7751,8 +7753,9 @@ async function runFlowithVideo() {
         prompt,
         model,
         aspect_ratio: ratio,
-        timeout: 300,
+        timeout: 3600,
       }),
+      signal: AbortSignal.timeout(3600000)
     });
     if (r.video_url) {
       if (videoEl) { videoEl.src = r.video_url; videoEl.load(); }
