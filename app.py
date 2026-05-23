@@ -4597,7 +4597,6 @@ async def main():
     port = args.port
     log.info("Starting ChatAI Console on %s:%d…", host, port)
     config = Config()
-    config.workers = 4
     config.bind = [f"{host}:{port}"]
     await serve(app, config)
     
