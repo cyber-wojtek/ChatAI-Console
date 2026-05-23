@@ -34,6 +34,16 @@ from quart_cors import cors
 
 import requests as http_client
 
+from claude_webapi import ClaudeClient
+from flowith_webapi import FlowithClient
+from oneminai_webapi import OneMinAIClient
+from oneminai_webapi.exceptions import CloudflareError as OneMinAICFError
+from claude_webapi.constants import CLAUDE_BASE_URL
+from claude_webapi.exceptions import (
+    APIError, AuthenticationError, QuotaExceededError,
+)
+
+
 # Shared session for ChatWithAI — connection-pooled, keep-alive enabled.
 _CHATWITHAI_SESSION = None  # lazy-initialised in _get_chatwithai_session()
 
@@ -53,15 +63,6 @@ def _get_chatwithai_session() -> "http_client.Session":
         _CHATWITHAI_SESSION = s
     return _CHATWITHAI_SESSION
 
-
-from claude_webapi import ClaudeClient
-from flowith_webapi import FlowithClient
-from oneminai_webapi import OneMinAIClient
-from oneminai_webapi.exceptions import CloudflareError as OneMinAICFError
-from claude_webapi.constants import CLAUDE_BASE_URL
-from claude_webapi.exceptions import (
-    APIError, AuthenticationError, QuotaExceededError,
-)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Logging
