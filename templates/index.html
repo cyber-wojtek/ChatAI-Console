@@ -802,7 +802,74 @@ a:hover { text-decoration:underline; }
 .drop-overlay-t { font-family:var(--font-head); font-size:20px; font-weight:700; color:var(--accent); text-shadow:0 0 20px rgba(168,85,247,0.4); }
 .drop-overlay-s { font-size:13px; color:var(--text-2); }
 
-/* Attachment bar */
+/* ── Cloudflare challenge overlay — compact floating card ─────────────────── */
+#cfOverlay {
+  position:fixed;
+  bottom:20px; right:20px;
+  z-index:9999;
+  width:min(440px, 96vw);
+  background:linear-gradient(160deg, var(--bg-1), #0a0816);
+  border:1px solid var(--oneminai-mid);
+  border-radius:var(--r-xl);
+  box-shadow:0 8px 40px rgba(0,0,0,.7), 0 0 0 1px rgba(249,115,22,.08);
+  display:none;
+  flex-direction:column;
+  gap:0;
+  overflow:hidden;
+  animation:slideUp .2s var(--ease);
+}
+#cfOverlay.active { display:flex; }
+#cfOverlay .cf-titlebar {
+  display:flex; align-items:center; gap:8px;
+  padding:10px 14px 9px;
+  background:rgba(249,115,22,0.07);
+  border-bottom:1px solid var(--oneminai-mid);
+  flex-shrink:0;
+}
+#cfOverlay .cf-header {
+  display:flex; align-items:center; gap:8px; flex:1;
+  font-family:var(--font-head); font-size:13px; font-weight:700; color:var(--oneminai);
+}
+#cfOverlay .cf-sub {
+  font-size:11px; color:var(--text-2);
+  padding:8px 14px 7px;
+  line-height:1.55;
+  border-bottom:1px solid var(--border-s);
+  flex-shrink:0;
+}
+#cfOverlay .cf-frame-wrap {
+  width:100%; height:260px;
+  background:#000; flex-shrink:0;
+}
+#cfOverlay .cf-frame-wrap iframe {
+  width:100%; height:100%; border:none;
+}
+#cfOverlay .cf-footer {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:7px 14px;
+  border-top:1px solid var(--border-s);
+  background:rgba(255,255,255,.015);
+  flex-shrink:0;
+}
+#cfOverlay .cf-status { font-size:11px; font-family:var(--font-mono); color:var(--text-2); }
+#cfOverlay .cf-status.ok { color:#4ade80; }
+#cfOverlay .cf-close {
+  background:var(--bg-4); border:1px solid var(--border);
+  border-radius:var(--r); color:var(--text-2);
+  font-size:11px; padding:4px 10px;
+  cursor:pointer; transition:all .15s; line-height:1;
+  font-family:var(--font-mono); flex-shrink:0;
+}
+#cfOverlay .cf-close:hover { background:var(--bg-5); color:var(--text); border-color:var(--border-m); }
+#cfOverlay .cf-expand-btn {
+  background:var(--bg-4); border:1px solid var(--border);
+  border-radius:var(--r); color:var(--text-2);
+  font-size:11px; padding:4px 10px;
+  cursor:pointer; transition:all .15s;
+  font-family:var(--font-mono); flex-shrink:0;
+}
+#cfOverlay .cf-expand-btn:hover { background:var(--bg-5); color:var(--text); }
+#cfOverlay.expanded .cf-frame-wrap { height:min(520px, 65vh); }
 .attached-bar { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:8px; }
 .att-chip {
   display:flex; align-items:center; gap:5px; padding:4px 10px;
@@ -2884,6 +2951,22 @@ select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
         <div class="drop-overlay-ico">📎</div>
         <div class="drop-overlay-t">Drop files here</div>
         <div class="drop-overlay-s">Images, PDFs, code &amp; more</div>
+      </div>
+
+      <!-- Cloudflare challenge overlay — compact floating card -->
+      <div id="cfOverlay">
+        <div class="cf-titlebar">
+          <div class="cf-header">⚠ Cloudflare — 1min.AI</div>
+          <button class="cf-expand-btn" onclick="toggleCFExpand()" id="cfExpandBtn" title="Toggle size">⤢</button>
+          <button class="cf-close" onclick="closeCFOverlay()" title="Dismiss">✕ Dismiss</button>
+        </div>
+        <div class="cf-sub">Complete the Cloudflare check below. The console will detect clearance automatically.</div>
+        <div class="cf-frame-wrap">
+          <iframe id="cfFrame" src="https://app.1min.ai" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+        </div>
+        <div class="cf-footer">
+          <div class="cf-status" id="cfStatus">Waiting for challenge…</div>
+        </div>
       </div>
 
       <!-- Input area -->
@@ -7443,6 +7526,18 @@ function handleStreamEv(ev, asstMsg, bodyElFn) {
       }
       return;
     }
+    case 'cloudflare_challenge': {
+      showCFOverlay(ev.state);
+      const errEl = bodyElFn();
+      if (errEl) {
+        const d = document.createElement('div');
+        d.style.cssText = 'color:var(--oneminai);font-size:13px;padding:6px 0';
+        d.textContent = '⚠ Cloudflare challenge — complete the check in the overlay, then resend.';
+        errEl.innerHTML = '';
+        errEl.appendChild(d);
+      }
+      return;
+    }
     case 'ping':
       return;
   }
@@ -7815,7 +7910,11 @@ function _reschedulePoller() {
   if (_pollTimer) clearInterval(_pollTimer);
   if (!_pollCfg.auto_poll_credits) return;
   const ms = Math.max(10_000, (_pollCfg.poll_interval_sec || 90) * 1000);
-  _pollTimer = setInterval(_pollAllAccounts, ms);
+  _pollTimer = setInterval(() => {
+    _pollAllAccounts();
+    // Also refresh credits for every flowith account in the background
+    _pollAllFlowithCredits().catch(() => {});
+  }, ms);
 }
 
 function togglePollingPanel() {
@@ -7863,6 +7962,37 @@ async function _pollAllAccounts() {
       renderAccountList();
     }
   } catch { /* silent */ }
+}
+
+// Background helper: fetch latest credits for every flowith account and
+// cache them so the sidebar / account-menu always shows fresh data.
+async function _pollAllFlowithCredits() {
+  const flowithAccounts = S.accounts.filter(
+    a => (a.provider || '').toLowerCase() === 'flowith'
+  );
+  if (!flowithAccounts.length) return;
+
+  let changed = false;
+  for (const acct of flowithAccounts) {
+    try {
+      const d = await fetch('/api/flowith/credits', {
+        headers: { 'X-Account-Name': acct.name },
+        signal: AbortSignal.timeout(15_000),
+      }).then(r => r.json());
+      const raw = d.credits?.total ?? d.credits?.credits_total ?? d.credits_total ?? null;
+      if (raw != null) {
+        _cacheFlowith(acct.name, raw);
+        changed = true;
+      }
+    } catch { /* per-account failure is non-fatal */ }
+    // Small stagger between accounts
+    await new Promise(res => setTimeout(res, 600));
+  }
+
+  if (changed) {
+    _renderSidebarBar();
+    renderAccountMenu();
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -8314,23 +8444,54 @@ async function _flowithCycleSession(opts = {}) {
   }
 }
 
-// Convenience: cycle then fetch credits — called from toolbar button and timer.
+// Convenience: cycle then fetch credits — refreshes ALL flowith accounts,
+// not just the active one, so the sidebar shows up-to-date credits for every account.
 async function _flowithRefreshCredits(showToast = false) {
-  const acct = getTabAccount();
-  if (!acct || acct.provider !== 'flowith') return;
+  const flowithAccounts = S.accounts.filter(a => (a.provider || '').toLowerCase() === 'flowith');
+  if (!flowithAccounts.length) return;
+
   if (showToast) toast('Refreshing Flowith credits…', 'info');
+
+  // Refresh the active/tab account first (cycle + fetch)
+  const activeAcct = flowithAccounts.find(a => a.name === getTabAccountName())
+                  || flowithAccounts[0];
+
+  // Helper: fetch credits for a named flowith account via the server
+  async function _fetchFlowithCreditsFor(acctName) {
+    try {
+      const headers = { 'X-Account-Name': acctName };
+      const d = await fetch('/api/flowith/credits', { headers }).then(r => r.json());
+      const raw = d.credits?.total ?? d.credits?.credits_total ?? d.credits_total ?? null;
+      if (raw != null) {
+        _cacheFlowith(acctName, raw);
+        return raw;
+      }
+    } catch {}
+    return null;
+  }
+
+  // Cycle session + fetch for the active account
   const r = await _flowithCycleSession({ cycles: 3, delay_sec: 1.0 });
-  // Also do a direct credits fetch to get latest value
-  try {
-    const d = await apiFetch('/api/flowith/credits');
-    const raw = d.credits?.total ?? d.credits?.credits_total ?? d.credits_total ?? null;
-    if (raw != null) {
-      _cacheFlowith(acct.name, raw);
+  await _fetchFlowithCreditsFor(activeAcct.name);
+
+  // Background-refresh all OTHER flowith accounts (no cycle, just credits)
+  const others = flowithAccounts.filter(a => a.name !== activeAcct.name);
+  if (others.length) {
+    // Fire-and-forget with a small stagger to avoid hammering the server
+    (async () => {
+      for (const acct of others) {
+        await _fetchFlowithCreditsFor(acct.name);
+        await new Promise(res => setTimeout(res, 800));
+      }
       _renderSidebarBar();
       renderAccountMenu();
-    }
-  } catch {}
-  if (!r && !showToast) return;
+      renderAccountList();
+    })().catch(() => {});
+  }
+
+  _renderSidebarBar();
+  renderAccountMenu();
+
   if (showToast) {
     const name   = getTabAccountName();
     const cached = name ? quotaCache[name] : null;
@@ -9220,6 +9381,59 @@ function openInCanvasRaw(content, name, mime) {
   // Fallback: plain text
   codeEl.style.display = 'block';
   codeEl.textContent = content;
+}
+
+/* ═══════════════════════════════════════════
+   CLOUDFLARE CHALLENGE OVERLAY
+═══════════════════════════════════════════ */
+let _cfPollTimer = null;
+let _cfState     = null;
+
+function showCFOverlay(state) {
+  _cfState = state;
+  document.getElementById('cfOverlay').classList.add('active');
+  document.getElementById('cfStatus').textContent = 'Waiting for challenge completion…';
+  document.getElementById('cfStatus').className   = 'cf-status';
+  _cfStartPoll();
+}
+
+function closeCFOverlay() {
+  document.getElementById('cfOverlay').classList.remove('active');
+  if (_cfPollTimer) { clearTimeout(_cfPollTimer); _cfPollTimer = null; }
+  _cfState = null;
+}
+
+function toggleCFExpand() {
+  const overlay = document.getElementById('cfOverlay');
+  const btn     = document.getElementById('cfExpandBtn');
+  const expanded = overlay.classList.toggle('expanded');
+  if (btn) btn.textContent = expanded ? '⤡' : '⤢';
+}
+
+function _cfStartPoll() {
+  if (_cfPollTimer) clearTimeout(_cfPollTimer);
+  _cfPollTimer = setTimeout(_cfPoll, 1500);
+}
+
+async function _cfPoll() {
+  if (!_cfState) return;
+  try {
+    const acctName = document.querySelector('[data-active-account]')?.dataset.activeAccount
+                  || (window._activeAccountName ?? '');
+    const r = await fetch(`/api/oneminai/cf-status?state=${encodeURIComponent(_cfState)}`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (r.ok) {
+      const d = await r.json();
+      if (d.done) {
+        document.getElementById('cfStatus').textContent = 'Cloudflare cleared — you can resend your message.';
+        document.getElementById('cfStatus').className   = 'cf-status ok';
+        setTimeout(closeCFOverlay, 2200);
+        return;
+      }
+    }
+  } catch { /* keep polling */ }
+  _cfPollTimer = setTimeout(_cfPoll, 1800);
 }
 
 /* ═══════════════════════════════════════════

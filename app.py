@@ -20,11 +20,18 @@ import uuid as uuid_lib
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
+import argparse
+from hypercorn.asyncio import serve
+from hypercorn.config import Config
+
 
 from quart import (
     Quart, Response, jsonify, render_template, render_template_string,
     request, stream_with_context,
 )
+
+from quart_cors import cors
+
 import requests as http_client
 
 # Shared session for ChatWithAI — connection-pooled, keep-alive enabled.
@@ -50,6 +57,7 @@ def _get_chatwithai_session() -> "http_client.Session":
 from claude_webapi import ClaudeClient
 from flowith_webapi import FlowithClient
 from oneminai_webapi import OneMinAIClient
+from oneminai_webapi.exceptions import CloudflareError as OneMinAICFError
 from claude_webapi.constants import CLAUDE_BASE_URL
 from claude_webapi.exceptions import (
     APIError, AuthenticationError, QuotaExceededError,
@@ -142,15 +150,32 @@ def _now() -> str:
 
 
 class JSONStore:
-    """Thread-safe JSON file store for all application data."""
+    """Thread-safe JSON file store with file-level locking for multi-worker safety."""
 
     def __init__(self, path: Path):
-        self.path  = path
-        self._lock = threading.Lock()
-        self._data = self._load()
+        self.path      = path
+        self._lock     = threading.Lock()
+        self._fl_lock  = None  # lazy filelock
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         log.info("JSON store ready  %s", self.path)
 
-    def _load(self) -> dict:
+    def _get_fl(self):
+        """Lazy-init a FileLock for cross-process mutual exclusion."""
+        if self._fl_lock is None:
+            try:
+                from filelock import FileLock
+                self._fl_lock = FileLock(str(self.path) + ".lock", timeout=15)
+            except ImportError:
+                # Fallback: no cross-process lock (single-worker or dev mode)
+                log.warning(
+                    "filelock not installed — multi-worker persistence "
+                    "may have race conditions. Run: pip install filelock"
+                )
+                self._fl_lock = _NullLock()
+        return self._fl_lock
+
+    def _load_unlocked(self) -> dict:
+        """Load from disk. Must be called with file lock already held."""
         if self.path.exists():
             try:
                 with open(self.path, "r", encoding="utf-8") as f:
@@ -161,22 +186,38 @@ class JSONStore:
                 log.warning("Failed to load %s: %s  — starting fresh", self.path, e)
         return {"accounts": []}
 
-    def _save(self):
+    def _save_unlocked(self, data: dict):
+        """Save to disk. Must be called with file lock already held."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self._data, f, indent=2, ensure_ascii=False)
+            json.dump(data, f, indent=2, ensure_ascii=False)
         tmp.replace(self.path)
 
     def read(self) -> dict:
+        """Always read fresh from disk (safe for multi-worker)."""
         with self._lock:
-            return json.loads(json.dumps(self._data))
+            with self._get_fl():
+                return self._load_unlocked()
 
     def mutate(self, fn):
+        """
+        Read-modify-write under both the thread lock and the file lock.
+        fn receives the current data dict and may modify it in place.
+        """
         with self._lock:
-            fn(self._data)
-            self._save()
+            with self._get_fl():
+                data = self._load_unlocked()
+                fn(data)
+                self._save_unlocked(data)
 
+
+class _NullLock:
+    """No-op context manager used as a fallback when filelock isn't installed."""
+    def __enter__(self):  return self
+    def __exit__(self, *_): pass
+    def acquire(self, *a, **kw): pass
+    def release(self): pass
 
 store = JSONStore(STORE_PATH)
 
@@ -328,6 +369,22 @@ def _sync_stream_oneminai(acct, conv_id, prompt, model, *, human_uuid, asst_uuid
             q.put(emit({"type": "content_block_stop", "index": 0}))
             q.put(emit({"type": "message_delta", "delta": {"stop_reason": "end_turn"}}))
             q.put(emit({"type": "message_stop"}))
+        except OneMinAICFError as exc:
+            state = secrets.token_hex(16)
+            with _cf_lock:
+                _cf_pending[state] = {
+                    "account_name": acct.get("name", ""),
+                    "done": False,
+                    "cf_clearance": None,
+                }
+            log.warning("1min.AI Cloudflare challenge: %s  state=%s", exc.challenge_type, state)
+            q.put(emit({
+                "type":           "cloudflare_challenge",
+                "state":          state,
+                "challenge_type": exc.challenge_type,
+                "ray_id":         exc.ray_id,
+                "url":            "https://app.1min.ai",
+            }))
         except Exception as exc:
             q.put(emit({"type": "error", "error": {"type": "api_error", "message": str(exc)}}))
         finally:
@@ -561,6 +618,9 @@ async def _make_oneminai_client(acct: dict) -> OneMinAIClient:
     client = OneMinAIClient(api_key=key)
     if team_id:
         client._team_id = team_id   # skip the /users round-trip
+    cf = acct.get("cf_clearance")
+    if cf:
+        client.update_cf_clearance(cf)
     return client
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -860,24 +920,11 @@ asyncio.run_coroutine_threadsafe(_warm_model_caches(), _loop)
 # Quota / usage helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Write-coalescing for high-frequency message_log mutations.
-# We allow up to _MSG_LOG_BATCH_SIZE in-memory before forcing a disk flush.
-_MSG_LOG_DIRTY_COUNT = 0
-_MSG_LOG_BATCH_SIZE = 5
 _MSG_LOG_LOCK = threading.Lock()
 
-
 def _mutate_msg_log(fn):
-    """Like store.mutate() but defers disk flush until batch threshold."""
-    global _MSG_LOG_DIRTY_COUNT
-    with _MSG_LOG_LOCK:
-        with store._lock:
-            fn(store._data)
-            _MSG_LOG_DIRTY_COUNT += 1
-            if _MSG_LOG_DIRTY_COUNT >= _MSG_LOG_BATCH_SIZE:
-                store._save()
-                _MSG_LOG_DIRTY_COUNT = 0
-
+    """Thin wrapper — just delegates to store.mutate() now."""
+    store.mutate(fn)
 
 
 def _save_quota_snapshot(account_name: str, payload: dict):
@@ -1662,6 +1709,8 @@ async def _flowith_session_cycle(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 app = Quart(__name__)
+app = cors(app, allow_origin="*", allow_methods=["GET", "POST", "OPTIONS"],
+           allow_headers=["Content-Type", "X-Account-Name", "Cache-Control", "Pragma", "Expires"])
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 app.config["RESPONSE_TIMEOUT"] = None      # disable response timeout
 app.config["BODY_TIMEOUT"] = None          # disable body receive timeout
@@ -1751,14 +1800,21 @@ def _cors_for_extension(response):
     if request.path.startswith("/api/oauth/") or request.path == "/api/ping":
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Account-Name"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Account-Name, Cache-Control, Pragma, Expires"
     return response
 
 
 @app.route("/api/oauth/<path:subpath>", methods=["OPTIONS"])
-async def _oauth_preflight(subpath):
+async def _oauth_preflight(path, subpath):
     """Handle CORS preflight for all /api/oauth/* routes."""
-    return "", 204
+    allow_origin = "*"
+    if request.headers.get("Origin") and request.headers["Origin"] != "null":
+        allow_origin = request.headers["Origin"]
+    response = Response()
+    response.headers["Access-Control-Allow-Origin"] = allow_origin
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Account-Name, Cache-Control, Pragma, Expires"
+    return response
 
 
 
@@ -2367,191 +2423,240 @@ async def health():
     return jsonify(result)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Google OAuth
-# ═══════════════════════════════════════════════════════════════════════════════
-# Claude:    PKCE auth-code flow (v2). Extension intercepts claude.ai/oauth/callback
-#            and POSTs the code back. ext-pending (v1) also supported so the
-#            extension can poll before the popup opens.
-# MiniApps:  Extension-driven GIS flow (both versions identical).
-
-# In-memory state store: state -> {done, code/id_token/error, provider, pending_ext}
-_oauth_states: dict = {}
-_oauth_lock = threading.Lock()
+# ── Cloudflare clearance pending sessions (1min.AI) ───────────────────────────
+_cf_pending: dict = {}  # state -> {account_name, done, cf_clearance}
+_cf_lock = threading.Lock()
 
 
-def _oauth_persist(state: str, entry: dict) -> None:
-    """Write-through: persist entry to JSONStore so it survives restarts/workers."""
+_STATE_TTL_SEC = 300  # 5 minutes
+
+
+def _oauth_gc(data: dict):
+    """Remove states older than TTL. Call inside store.mutate()."""
+    now = datetime.now(timezone.utc).timestamp()
+    states = data.setdefault("_oauth_states", {})
+    stale = [
+        s for s, e in states.items()
+        if e.get("created_at", 0) + _STATE_TTL_SEC < now
+    ]
+    for s in stale:
+        states.pop(s, None)
+        log.debug("OAuth GC: dropped stale state %s…", s[:8])
+
+
+def _oauth_new_state(provider: str) -> str:
+    state = secrets.token_hex(16)
+
     def fn(data):
-        data.setdefault("_oauth_states", {})[state] = dict(entry)
+        _oauth_gc(data)
+        data.setdefault("_oauth_states", {})[state] = {
+            "provider":    provider,
+            "pending_ext": True,
+            "done":        False,
+            "created_at":  datetime.now(timezone.utc).timestamp(),
+        }
+
     store.mutate(fn)
+    log.info("OAuth new state: provider=%s state=%s…", provider, state[:8])
+    return state
 
 
-def _oauth_fetch_stored(state: str) -> dict | None:
-    """Cache-miss fallback: look up state in JSONStore (cross-worker/restart)."""
-    return store.read().get("_oauth_states", {}).get(state)
+def _oauth_claim_pending(provider: str) -> str | None:
+    # Fast path: check without mutating first
+    data = store.read()
+    candidate = None
+    for state, entry in data.get("_oauth_states", {}).items():
+        if (
+            entry.get("provider") == provider
+            and entry.get("pending_ext")
+            and not entry["done"]
+        ):
+            candidate = state
+            break
+
+    if not candidate:
+        return None  # nothing waiting — no write needed
+
+    # Slow path: claim it with a mutation
+    claimed_state: list[str] = []
+
+    def fn(data):
+        states = data.get("_oauth_states", {})
+        # Re-check inside the lock in case another worker claimed it first
+        entry = states.get(candidate)
+        if (
+            entry
+            and entry.get("pending_ext")
+            and not entry["done"]
+        ):
+            entry["pending_ext"] = False
+            claimed_state.append(candidate)
+            log.info("OAuth claimed: provider=%s state=%s…", provider, candidate[:8])
+
+    store.mutate(fn)
+    return claimed_state[0] if claimed_state else None
 
 
-def _oauth_drop(state: str) -> None:
-    """Remove state from both in-process cache and JSONStore."""
-    _oauth_states.pop(state, None)
+def _oauth_complete(state: str, updates: dict) -> bool:
+    """Mark state as done. Returns False if already done or not found."""
+    completed: list[bool] = [False]
+
+    def fn(data):
+        entry = data.get("_oauth_states", {}).get(state)
+        if not entry:
+            log.warning("OAuth complete: state not found %s…", state[:8])
+            return
+        if entry.get("done"):
+            log.info("OAuth complete: already done %s…", state[:8])
+            completed[0] = False
+            return
+        entry.update(updates)
+        entry["done"] = True
+        entry["pending_ext"] = False
+        completed[0] = True
+        log.info("OAuth complete: ok %s…", state[:8])
+
+    store.mutate(fn)
+    return completed[0]
+
+
+def _oauth_read(state: str) -> dict | None:
+    """Read a state entry from the shared store. Returns None if not found."""
+    data = store.read()
+    entry = data.get("_oauth_states", {}).get(state)
+    if entry:
+        log.info(
+            "OAuth read: state=%s… done=%s provider=%s",
+            state[:8], entry.get("done"), entry.get("provider")
+        )
+    else:
+        log.warning("OAuth read: state NOT FOUND %s…", state[:8])
+    return entry
+
+
+def _oauth_drop_state(state: str):
     def fn(data):
         data.get("_oauth_states", {}).pop(state, None)
     store.mutate(fn)
+    log.info("OAuth drop: state=%s…", state[:8])
 
 
-# ── Claude OAuth (extension-driven flow) ─────────────────────────────────────
-
-@app.route("/api/oauth/claude/owns-state")
-async def oauth_claude_owns_state():
-    """Extension checks this before intercepting — prevents acting on non-Console callbacks."""
-    state = request.args.get("state", "")
-    with _oauth_lock:
-        owned = state in _oauth_states and _oauth_states[state].get("provider") == "claude"
-    return jsonify({"owned": owned})
-
+# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.route("/api/oauth/claude/begin")
 async def oauth_claude_begin():
-    state = secrets.token_hex(16)
-    with _oauth_lock:
-        _oauth_states[state] = {
-            "done":        False,
-            "provider":    "claude",
-            "pending_ext": True,
-        }
-    return jsonify({"state": state})
+    state = _oauth_new_state("claude")
+    resp = jsonify({"state": state})
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"]        = "no-cache"
+    return resp
 
 
 @app.route("/api/oauth/claude/ext-pending")
 async def oauth_claude_ext_pending():
-    """Content script polls this to learn whether a session is waiting for it.
-    Marks the state as claimed immediately to prevent two tabs racing."""
-    with _oauth_lock:
-        for state, entry in _oauth_states.items():
-            if (
-                entry.get("provider") == "claude"
-                and entry.get("pending_ext")
-                and not entry["done"]
-            ):
-                entry["pending_ext"] = False  # claimed — only one tab handles it
-                return jsonify({"state": state})
-    return jsonify({"state": None})
+    state = _oauth_claim_pending("claude")
+    resp  = jsonify({"state": state})
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"]        = "no-cache"
+    return resp
 
 
 @app.route("/api/oauth/claude/ext-callback", methods=["POST"])
 async def oauth_claude_ext_callback():
-    """Receives the OAuth code relayed by the browser extension."""
     data  = await _get_json()
-    code  = data.get("code")
-    state = data.get("state")
+    code  = (data.get("code")  or "").strip()
+    state = (data.get("state") or "").strip()
     error = data.get("error")
+
     if not state:
         return jsonify({"ok": False, "error": "missing_state"}), 400
-    with _oauth_lock:
-        entry = _oauth_states.get(state)
-    if not entry:
+
+    entry = _oauth_read(state)
+    if not entry or entry.get("provider") != "claude":
         return jsonify({"ok": False, "error": "unknown_state"}), 400
-    if entry["done"]:
-        return jsonify({"ok": True})  # already recorded (double-delivery)
+    if entry.get("done"):
+        return jsonify({"ok": True})  # idempotent
+
     if code:
-        entry.update({"code": code, "done": True, "pending_ext": False})
+        _oauth_complete(state, {"code": code})
         return jsonify({"ok": True})
-    entry.update({"error": error or "no_code", "done": True, "pending_ext": False})
+
+    _oauth_complete(state, {"error": error or "no_code"})
     return jsonify({"ok": False, "error": error or "no_code"})
 
 
 @app.route("/api/oauth/claude/status")
 async def oauth_claude_status():
-    state = request.args.get("state", "")
-    with _oauth_lock:
-        entry = _oauth_states.get(state)
-    if not entry:
+    state = (request.args.get("state") or "").strip()
+    if not state:
+        return jsonify({"error": "missing_state"}), 400
+
+    entry = _oauth_read(state)
+    if entry is None:
         return jsonify({"error": "invalid_state"}), 400
-    if not entry["done"]:
+    if not entry.get("done"):
         return jsonify({"done": False})
-    result: dict = {"done": True}
-    if "code" in entry:
-        result["code"] = entry["code"]
-    if "error" in entry:
-        result["error"] = entry["error"]
-    with _oauth_lock:
-        _oauth_states.pop(state, None)
-    return jsonify(result)
+
+    resp: dict = {"done": True}
+    if "code"  in entry: resp["code"]  = entry["code"]
+    if "error" in entry: resp["error"] = entry["error"]
+
+    return jsonify(resp)
 
 
+@app.route("/api/oauth/claude/owns-state")
+async def oauth_claude_owns_state():
+    state = request.args.get("state", "")
+    entry = _oauth_read(state) if state else None
+    return jsonify({"owned": bool(entry and entry.get("provider") == "claude")})
 
-# ── 1min.AI OAuth (auth-code flow — mirrors Claude exactly) ──────────────────
-# Extension intercepts app.1min.ai, calls GIS initCodeClient, POSTs the code.
-# Backend exchanges code for a 1min.AI JWT via OneMinAIawait client.from_google_code().
+
+# ── 1min.AI ───────────────────────────────────────────────────────────────────
 
 @app.route("/api/oauth/oneminai/begin")
 async def oauth_oneminai_begin():
-    state = secrets.token_hex(16)
-    with _oauth_lock:
-        _oauth_states[state] = {
-            "done":        False,
-            "provider":    "oneminai",
-            "pending_ext": True,
-        }
-    return jsonify({"state": state})
-
-
-@app.route("/api/oauth/oneminai/owns-state")
-async def oauth_oneminai_owns_state():
-    state = request.args.get("state", "")
-    with _oauth_lock:
-        owned = (
-            state in _oauth_states
-            and _oauth_states[state].get("provider") == "oneminai"
-        )
-    return jsonify({"owned": owned})
+    state = _oauth_new_state("oneminai")
+    resp = jsonify({"state": state})
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"]        = "no-cache"
+    return resp
 
 
 @app.route("/api/oauth/oneminai/ext-pending")
 async def oauth_oneminai_ext_pending():
-    """Content script polls this; returns the first unclaimed waiting state."""
-    with _oauth_lock:
-        for state, entry in _oauth_states.items():
-            if (
-                entry.get("provider") == "oneminai"
-                and entry.get("pending_ext")
-                and not entry["done"]
-            ):
-                return jsonify({"state": state})
-    return jsonify({"state": None})
+    state = _oauth_claim_pending("oneminai")
+    resp  = jsonify({"state": state})
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"]        = "no-cache"
+    return resp
 
 
 @app.route("/api/oauth/oneminai/ext-callback", methods=["POST"])
 async def oauth_oneminai_ext_callback():
     data        = await _get_json()
-    # accept both field names defensively
     oauth_token = (
-        data.get("oauth_token")
-        or data.get("access_token")
-        or data.get("token")
-        or data.get("code")   # never expected but guard anyway
-    )
-    state       = data.get("state")
-    error       = data.get("error")
+        data.get("oauth_token") or data.get("access_token")
+        or data.get("token") or ""
+    ).strip()
+    state = (data.get("state") or "").strip()
+    error = data.get("error")
 
     if not state:
         return jsonify({"ok": False, "error": "missing_state"}), 400
 
-    with _oauth_lock:
-        entry = _oauth_states.get(state)
-    if not entry:
+    entry = _oauth_read(state)
+    if not entry or entry.get("provider") != "oneminai":
         return jsonify({"ok": False, "error": "unknown_state"}), 400
-    if entry["done"]:
+    if entry.get("done"):
         return jsonify({"ok": True})
 
     if error:
-        entry.update({"error": error, "done": True, "pending_ext": False})
+        _oauth_complete(state, {"error": error})
         return jsonify({"ok": False, "error": error})
 
     if not oauth_token:
-        log.warning("oneminai ext-callback: no token in payload. keys=%s", list(data.keys()))
-        entry.update({"error": "no_token", "done": True, "pending_ext": False})
+        log.warning("oneminai ext-callback: no token. keys=%s", list(data.keys()))
+        _oauth_complete(state, {"error": "no_token"})
         return jsonify({"ok": False, "error": "no_token"}), 400
 
     # Exchange Google access token → 1min.AI JWT
@@ -2579,114 +2684,91 @@ async def oauth_oneminai_ext_callback():
         teams   = user.get("teams", [])
         team_id = teams[0]["teamId"] if teams else ""
 
-        entry.update({
-            "api_key":     api_key,
-            "team_id":     team_id,
-            "email":       email,
-            "done":        True,
-            "pending_ext": False,
+        _oauth_complete(state, {
+            "api_key": api_key,
+            "team_id": team_id,
+            "email":   email,
         })
         log.info("1min.AI OAuth success: %s  team=%s", email, team_id)
         return jsonify({"ok": True, "email": email})
 
     except Exception as exc:
         log.warning("1min.AI OAuth exchange failed: %s", exc)
-        entry.update({"error": str(exc), "done": True, "pending_ext": False})
+        _oauth_complete(state, {"error": str(exc)})
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
 @app.route("/api/oauth/oneminai/status")
 async def oauth_oneminai_status():
-    state = request.args.get("state", "")
-    with _oauth_lock:
-        entry = _oauth_states.get(state)
-    if not entry:
+    state = (request.args.get("state") or "").strip()
+    if not state:
+        return jsonify({"error": "missing_state"}), 400
+
+    entry = _oauth_read(state)
+    if entry is None:
         return jsonify({"error": "invalid_state"}), 400
-    if not entry["done"]:
+    if not entry.get("done"):
         return jsonify({"done": False})
 
-    result: dict = {"done": True}
+    resp: dict = {"done": True}
     if "api_key" in entry:
-        result["api_key"] = entry["api_key"]
-        result["team_id"] = entry.get("team_id", "")
-        result["email"]   = entry.get("email", "")
+        resp["api_key"] = entry["api_key"]
+        resp["team_id"] = entry.get("team_id", "")
+        resp["email"]   = entry.get("email", "")
     if "error" in entry:
-        result["error"] = entry["error"]
+        resp["error"] = entry["error"]
 
-    with _oauth_lock:
-        _oauth_states.pop(state, None)
-    return jsonify(result)
+    return jsonify(resp)
 
 
+@app.route("/api/oauth/oneminai/owns-state")
+async def oauth_oneminai_owns_state():
+    state = request.args.get("state", "")
+    entry = _oauth_read(state) if state else None
+    return jsonify({"owned": bool(entry and entry.get("provider") == "oneminai")})
 
 
-# ── Flowith OAuth (extension-driven flow, similar to Claude) ───────────────────────────────
-# Extension intercepts flowith.io redirects, relays token + user_id (parsed from JWT if not supplied) back to ext-callback.
+# ── Flowith ───────────────────────────────────────────────────────────────────
+
+@app.route("/api/oauth/flowith/begin")
+async def oauth_flowith_begin():
+    state = _oauth_new_state("flowith")
+    resp = jsonify({"state": state})
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"]        = "no-cache"
+    return resp
+
 
 @app.route("/api/oauth/flowith/url")
 async def oauth_flowith_url():
-    # Returns the Supabase authorize URL so the extension knows where to navigate.
-    # State is embedded in redirect_to so content_flowith.js can recover it
-    # after the full-page OAuth redirect restarts the script context.
     from urllib.parse import urlencode
-    state = request.args.get("state", "")
+    state        = request.args.get("state", "")
     SUPABASE_URL = "https://aibdxsebwhalbnugsqel.supabase.co"
-    redirect_to = (
+    redirect_to  = (
         f"https://flowith.io/#_console_state={state}" if state
         else "https://flowith.io"
     )
-    params = {"provider": "google", "redirect_to": redirect_to}
-    url = f"{SUPABASE_URL}/auth/v1/authorize?{urlencode(params)}"
+    url  = f"{SUPABASE_URL}/auth/v1/authorize?{urlencode({'provider': 'google', 'redirect_to': redirect_to})}"
     resp = jsonify({"url": url, "state": state})
     resp.headers["Access-Control-Allow-Origin"] = "*"
     return resp
 
 
-@app.route("/api/oauth/flowith/begin")
-async def oauth_flowith_begin():
-    state = secrets.token_hex(16)
-    entry = {"done": False, "provider": "flowith", "pending_ext": True}
-    with _oauth_lock:
-        _oauth_states[state] = entry
-    _oauth_persist(state, entry)          # survive restarts / multi-worker
-    return jsonify({"state": state})
-
-
-@app.route("/api/oauth/flowith/owns-state")
-async def oauth_flowith_owns_state():
-    """Extension checks this before acting on a flowith.io redirect."""
-    state = request.args.get("state", "")
-    with _oauth_lock:
-        owned = (
-            state in _oauth_states
-            and _oauth_states[state].get("provider") == "flowith"
-        )
-    return jsonify({"owned": owned})
-
-
 @app.route("/api/oauth/flowith/ext-pending")
 async def oauth_flowith_ext_pending():
-    """Content-script polls this; returns the first unclaimed waiting state."""
-    with _oauth_lock:
-        for state, entry in _oauth_states.items():
-            log.info("Checking Flowith OAuth state: %s  entry=%s", state, entry)
-            if (
-                entry.get("provider") == "flowith"
-                and entry.get("pending_ext")
-                and not entry["done"]
-            ):
-                return jsonify({"state": state})
-    return jsonify({"state": None})
+    state = _oauth_claim_pending("flowith")
+    resp  = jsonify({"state": state})
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"]        = "no-cache"
+    return resp
 
 
 @app.route("/api/oauth/flowith/ext-callback", methods=["POST"])
 async def oauth_flowith_ext_callback():
     data          = await _get_json()
     access_token  = (
-        data.get("access_token")
-        or data.get("token")
-        or data.get("oauth_token")
-        or ""
+        data.get("access_token") or data.get("token")
+        or data.get("oauth_token") or ""
     ).strip()
     refresh_token = (data.get("refresh_token") or "").strip()
     user_id       = (data.get("user_id")       or "").strip()
@@ -2696,77 +2778,127 @@ async def oauth_flowith_ext_callback():
     if not state:
         return jsonify({"ok": False, "error": "missing_state"}), 400
 
-    with _oauth_lock:
-        entry = _oauth_states.get(state)
-        if not entry:
-            entry = {"done": False, "provider": "flowith", "pending_ext": False}
-            _oauth_states[state] = entry
-
-    if entry["done"]:
+    entry = _oauth_read(state)
+    if not entry:
+        return jsonify({"ok": False, "error": "unknown_state"}), 400
+    if entry.get("provider") != "flowith":
+        return jsonify({"ok": False, "error": "wrong_provider"}), 400
+    if entry.get("done"):
         return jsonify({"ok": True})
 
     if error:
-        entry.update({"error": error, "done": True, "pending_ext": False})
-        _oauth_persist(state, entry)
+        _oauth_complete(state, {"error": error})
         return jsonify({"ok": False, "error": error})
 
     if not access_token:
-        log.warning("flowith ext-callback: no token in payload. keys=%s", list(data.keys()))
-        entry.update({"error": "no_token", "done": True, "pending_ext": False})
-        _oauth_persist(state, entry)
+        log.warning("flowith ext-callback: no token. keys=%s", list(data.keys()))
+        _oauth_complete(state, {"error": "no_token"})
         return jsonify({"ok": False, "error": "no_token"}), 400
 
     if not user_id:
         try:
             import base64 as _b64, json as _json
-            parts = access_token.split(".")
-            if len(parts) >= 2:
-                pad     = parts[1] + "=" * (-len(parts[1]) % 4)
-                payload = _json.loads(_b64.urlsafe_b64decode(pad))
-                user_id = payload.get("sub", "")
+            parts   = access_token.split(".")
+            pad     = parts[1] + "=" * (-len(parts[1]) % 4)
+            payload = _json.loads(_b64.urlsafe_b64decode(pad))
+            user_id = payload.get("sub", "")
         except Exception:
             pass
 
-    entry.update({
+    _oauth_complete(state, {
         "access_token":  access_token,
         "refresh_token": refresh_token,
         "user_id":       user_id,
-        "done":          True,
-        "pending_ext":   False,
     })
-    _oauth_persist(state, entry)
     log.info("Flowith OAuth success: user_id=%s", user_id or "(unknown)")
     return jsonify({"ok": True, "user_id": user_id})
 
 
 @app.route("/api/oauth/flowith/status")
 async def oauth_flowith_status():
-    state = request.args.get("state", "")
-    with _oauth_lock:
-        entry = _oauth_states.get(state)
-    log.info("Flowith OAuth status check: state=%s  entry=%s", state, entry)
+    state = (request.args.get("state") or "").strip()
+    if not state:
+        return jsonify({"error": "missing_state"}), 400
+
+    entry = _oauth_read(state)
     if entry is None:
-        # Cross-worker / restart fallback — check persistent store
-        entry = _oauth_fetch_stored(state)
-        if entry is not None:
-            with _oauth_lock:
-                _oauth_states[state] = entry   # repopulate in-process cache
-    if not entry:
         return jsonify({"error": "invalid_state"}), 400
-    if not entry["done"]:
+    if not entry.get("done"):
         return jsonify({"done": False})
 
-    result: dict = {"done": True}
+    resp: dict = {"done": True}
     if "access_token" in entry:
-        result["access_token"]  = entry["access_token"]
-        result["refresh_token"] = entry.get("refresh_token", "")
-        result["user_id"]       = entry.get("user_id", "")
+        resp["access_token"]  = entry["access_token"]
+        resp["refresh_token"] = entry.get("refresh_token", "")
+        resp["user_id"]       = entry.get("user_id", "")
     if "error" in entry:
-        result["error"] = entry["error"]
+        resp["error"] = entry["error"]
 
-    _oauth_drop(state)
-    return jsonify(result)
+    return jsonify(resp)
 
+
+@app.route("/api/oauth/flowith/owns-state")
+async def oauth_flowith_owns_state():
+    state = request.args.get("state", "")
+    entry = _oauth_read(state) if state else None
+    return jsonify({"owned": bool(entry and entry.get("provider") == "flowith")})
+
+# ── 1min.AI Cloudflare clearance — extension-driven cookie relay ──────────────
+
+@app.route("/api/oneminai/cf-pending")
+async def oneminai_cf_pending():
+    """Extension content script polls this; returns the first unsatisfied CF state."""
+    with _cf_lock:
+        for state, entry in _cf_pending.items():
+            if not entry["done"]:
+                return jsonify({"state": state, "account_name": entry["account_name"]})
+    return jsonify({"state": None})
+
+
+@app.route("/api/oneminai/cf-callback", methods=["POST"])
+async def oneminai_cf_callback():
+    """Extension POSTs cf_clearance here once it grabs the cookie."""
+    data         = await _get_json()
+    state        = data.get("state", "")
+    cf_clearance = data.get("cf_clearance", "")
+
+    if not state or not cf_clearance:
+        return jsonify({"ok": False, "error": "missing_fields"}), 400
+
+    with _cf_lock:
+        entry = _cf_pending.get(state)
+    if not entry:
+        return jsonify({"ok": False, "error": "unknown_state"}), 400
+    if entry["done"]:
+        return jsonify({"ok": True})
+
+    entry.update({"cf_clearance": cf_clearance, "done": True})
+
+    # Persist cf_clearance on the account so future clients use it
+    acct_name = entry["account_name"]
+    def fn(data):
+        for a in data["accounts"]:
+            if a["name"] == acct_name:
+                a["cf_clearance"] = cf_clearance
+                break
+    store.mutate(fn)
+    log.info("1min.AI cf_clearance received for account '%s'", acct_name)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/oneminai/cf-status")
+async def oneminai_cf_status():
+    """Frontend polls this to know when the CF challenge is resolved."""
+    state = request.args.get("state", "")
+    with _cf_lock:
+        entry = _cf_pending.get(state)
+    if not entry:
+        return jsonify({"error": "unknown_state"}), 400
+    if not entry["done"]:
+        return jsonify({"done": False})
+    with _cf_lock:
+        _cf_pending.pop(state, None)
+    return jsonify({"done": True})# ── Flowith OAuth (extension-driven flow, similar to OAuth) ───────────────────────────────
 
 @app.route("/api/models", methods=["GET"])
 @require_account
@@ -3859,7 +3991,7 @@ async def upload_file(acct, conv_id):
         if "file" not in await request.files:
             return jsonify({"error": "No file provided"}), 400
         try:
-            result = await _upload_file_oneminai(acct, conv_id, request.files["file"])
+            result = await _upload_file_oneminai(acct, conv_id, (await request.files)["file"])
             logging.info("1min.AI file uploaded to conversation %s", conv_id[:8])
             return jsonify(result), 200
         except RuntimeError as exc:
@@ -4454,3 +4586,22 @@ async def flowith_refresh_token_route(acct):
         "refresh_token": new_refresh,
         "user_id":       new_user_id,
     })
+
+async def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", type=str, default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=5000)
+    args = parser.parse_args()
+    host = args.host
+    port = args.port
+    log.info("Starting ChatAI Console on %s:%d…", host, port)
+    config = Config()
+    config.workers = 4
+    config.bind = [f"{host}:{port}"]
+    await serve(app, config)
+    
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        log.info("Shutting down ChatAI Console…")
