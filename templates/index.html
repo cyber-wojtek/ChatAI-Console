@@ -8503,7 +8503,7 @@ function renderBashTool(block, streaming) {
   if (tuDisp && tuDisp.type === 'json_block' && tuDisp.json_block) {
     try { command = JSON.parse(tuDisp.json_block).code || command; } catch {}
   }
-  const shortCmd = command.replace(/\s+/g, ' ').trim().slice(0, 140);
+  const shortCmd = command.replace(/\s+/g, ' ').trim().slice(0, 360);
 
   if (streaming && !block._result_parsed && !block._result_display) {
     return `<div class="widget-block bash-widget">
@@ -8513,7 +8513,7 @@ function renderBashTool(block, streaming) {
         <span class="widget-status running">⟳ running</span>
       </div>
       <div class="widget-body">
-        ${shortCmd ? `<div class="bash-command">$ ${esc(shortCmd)}${command.length > 140 ? '…' : ''}</div>` : ''}
+        ${shortCmd ? `<div class="bash-command">$ ${esc(shortCmd)}${command.length > 360 ? '…' : ''}</div>` : ''}
         <div class="widget-streaming"><div class="think-pulse"></div><span>Running…</span></div>
       </div>
     </div>`;
@@ -8597,7 +8597,7 @@ function renderBashTool(block, streaming) {
     :                                   '✓ done';
 
   const bodyHtml = `<div class="widget-body">
-    ${shortCmd ? `<div class="bash-command">$ ${esc(shortCmd)}${command.length > 140 ? '…' : ''}</div>` : ''}
+    ${shortCmd ? `<div class="bash-command">$ ${esc(shortCmd)}${command.length > 360 ? '…' : ''}</div>` : ''}
     ${stdout
       ? `<div class="bash-output">${esc(stdout)}</div>`
       : `<div style="font-size:11px;color:var(--text-3);font-family:var(--font-mono);padding:4px 0">Command executed${retcode !== null ? ` (exit ${retcode})` : ''}</div>`}
