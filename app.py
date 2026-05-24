@@ -393,15 +393,14 @@ async def _chatwithai_fetch_models() -> list[dict]:
     _CHATWITHAI_MODEL_CACHE["fetched_at"] = now_ts
     return models
 
-# _sync_stream_claude: must be plain def, not async def
 def _sync_stream_claude(acct: dict, conv_id: str, payload: dict):
-    """Stream a Claude completion using claude_webapi's streaming API."""
     import queue as _queue
     q = _queue.Queue()
 
     prompt      = payload.get("prompt", "")
     model       = payload.get("model", "claude-sonnet-4-6")
-    parent_uuid = payload.get("parent_message_uuid", "00000000-0000-4000-8000-000000000000")
+    parent_uuid = payload.get("parent_message_uuid",
+                               "00000000-0000-4000-8000-000000000000")
     file_uuids  = payload.get("files", [])
     style_raw   = (payload.get("personalized_styles") or [None])[0]
 
@@ -411,62 +410,98 @@ def _sync_stream_claude(acct: dict, conv_id: str, payload: dict):
     async def producer():
         client = None
         try:
-            client = ClaudeClient(acct["session_key"], acct.get("organization_id") or None)
-            await client.init(timeout=60, auto_close=True, close_delay=30)
+            client = ClaudeClient(
+                acct["session_key"],
+                acct.get("organization_id") or None,
+            )
+            await client.init(timeout=60, auto_close=False)
 
-            # Ensure conversation exists server-side
-            await client.ensure_conversation(conv_id)
+            chat = client.start_chat(
+                model    = model,
+                metadata = {
+                    "conversation_id":     conv_id,
+                    "parent_message_uuid": parent_uuid,
+                },
+                style = style_raw,
+            )
 
-            accumulated = ""
-            async for chunk in client._send_stream(
-                conv_id             = conv_id,
-                prompt              = prompt,
-                files               = [],          # already uploaded; pass UUIDs below
-                model               = model,
-                parent_uuid         = parent_uuid,
-                attachments         = None,
-                is_new_conversation = False,
-                style               = style_raw,
+            # Track whether thinking block is open
+            thinking_open = False
+            text_open     = False
+
+            async for chunk in chat.send_message_stream(
+                prompt,
+                files = file_uuids or None,
             ):
-                # _send_stream yields ModelOutput with text_delta
-                if chunk.text_delta:
+                # ── thinking delta ────────────────────────────────────────
+                if chunk.thinking_delta:
+                    if not thinking_open:
+                        thinking_open = True
+                        q.put(emit({
+                            "type":          "content_block_start",
+                            "index":         0,
+                            "content_block": {"type": "thinking", "thinking": ""},
+                        }))
                     q.put(emit({
                         "type":  "content_block_delta",
                         "index": 0,
+                        "delta": {
+                            "type":     "thinking_delta",
+                            "thinking": chunk.thinking_delta,
+                        },
+                    }))
+
+                # ── text delta ────────────────────────────────────────────
+                if chunk.text_delta:
+                    if not text_open:
+                        # Close thinking block first if it was open
+                        if thinking_open:
+                            q.put(emit({"type": "content_block_stop", "index": 0}))
+                        text_open = True
+                        q.put(emit({
+                            "type":          "content_block_start",
+                            "index":         1 if thinking_open else 0,
+                            "content_block": {"type": "text", "text": ""},
+                        }))
+                    q.put(emit({
+                        "type":  "content_block_delta",
+                        "index": 1 if thinking_open else 0,
                         "delta": {"type": "text_delta", "text": chunk.text_delta},
                     }))
-                new_parent = chunk.metadata.get("parent_message_uuid")
-                if new_parent and new_parent != parent_uuid:
-                    q.put(emit({
-                        "type":    "message_start",
-                        "message": {"uuid": new_parent},
-                    }))
-                    parent_uuid_ref = new_parent  # noqa: F841
 
+            # ── close open blocks ─────────────────────────────────────────
+            if text_open:
+                q.put(emit({"type": "content_block_stop",
+                            "index": 1 if thinking_open else 0}))
+            elif thinking_open:
+                q.put(emit({"type": "content_block_stop", "index": 0}))
+
+            q.put(emit({"type": "message_delta",
+                        "delta": {"stop_reason": "end_turn"}}))
             q.put(emit({"type": "message_stop"}))
+
         except QuotaExceededError as exc:
-            q.put(emit({"type": "error", "error": {"type": "rate_limit_error",
-                        "message": str(exc)}}))
+            q.put(emit({"type": "error", "error": {
+                "type": "rate_limit_error", "message": str(exc),
+            }}))
+        except AuthenticationError as exc:
+            q.put(emit({"type": "error", "error": {
+                "type": "authentication_error", "message": str(exc),
+            }}))
         except Exception as exc:
-            q.put(emit({"type": "error", "error": {"type": "api_error",
-                        "message": str(exc)}}))
+            log.exception("Claude stream error for conv %s", conv_id[:8])
+            q.put(emit({"type": "error", "error": {
+                "type": "api_error", "message": str(exc),
+            }}))
         finally:
             if client:
-                try: await client.close()
-                except Exception: pass
+                try:
+                    await client.close()
+                except Exception:
+                    pass
             q.put(None)
 
-    # Inject file UUIDs into the payload so the underlying client picks them up
-    # by patching _send_stream via the already-resolved file_uuids list.
-    # We monkey-patch _upload_file_list to return the pre-resolved UUIDs.
-    _orig_upload = ClaudeClient._upload_file_list
-
-    async def _noop_upload(self, conv_id_, files_):  # noqa: D401
-        return file_uuids or []
-
-    ClaudeClient._upload_file_list = _noop_upload
     asyncio.run_coroutine_threadsafe(producer(), _loop)
-    ClaudeClient._upload_file_list = _orig_upload
 
     while True:
         item = q.get()

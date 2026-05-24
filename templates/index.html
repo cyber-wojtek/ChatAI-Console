@@ -1661,17 +1661,27 @@ a:hover { text-decoration:underline; }
 }
 
 /* Collapsible markdown content */
+/* Collapsible markdown content */
 .md-content-wrap {
   position: relative;
 }
 
-.md-content-wrap.collapsed .md {
+.md-content-wrap.collapsed > .think-block,
+.md-content-wrap.collapsed > .tool-block,
+.md-content-wrap.collapsed > .artifact-block,
+.md-content-wrap.collapsed > .files-block,
+.md-content-wrap.collapsed > .flowith-chat-media,
+.md-content-wrap.collapsed > .md-utils.bottom {
+  display: none;
+}
+
+.md-content-wrap.collapsed > .md {
   max-height: 150px;
   overflow: hidden;
   position: relative;
 }
 
-.md-content-wrap.collapsed .md::after {
+.md-content-wrap.collapsed > .md::after {
   content: '';
   position: absolute;
   bottom: 0;
@@ -1680,6 +1690,10 @@ a:hover { text-decoration:underline; }
   height: 60px;
   background: linear-gradient(transparent, var(--bg-3));
   pointer-events: none;
+}
+
+.msg.assistant .md-content-wrap.collapsed > .md::after {
+  background: linear-gradient(transparent, var(--bg));
 }
 
 .md-expand-btn {
@@ -3810,7 +3824,7 @@ select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
       <label class="form-lbl">Format</label>
       <select class="form-inp" id="copyConvFormatSel">
         <option value="standard">Standard (You: ... Assistant: ...)</option>
-        <option value="prompt">Prompt Format (---- Human: ... ---- Assistant: ...)</option>
+        <option value="prompt">Prompt Format (---- Human: ---- ... ---- Assistant: ---- ...)</option>
         <option value="json">JSON</option>
       </select>
     </div>
@@ -7926,12 +7940,34 @@ function toast(msg, type = 'info') {
 }
 
 // Copy message content with formatting preserved
+
 function copyMsgContent(uuid, btn) {
-  const el = document.querySelector(`.msg[data-uuid="${uuid}"] .md`);
+  // Try to get text from the md-content-wrap (includes thinking text)
+  const contentWrap = document.querySelector(
+    `.msg[data-uuid="${uuid}"] .md-content-wrap`
+  );
+  const el = contentWrap || document.querySelector(
+    `.msg[data-uuid="${uuid}"] .msg-body`
+  );
   if (!el) return;
   
-  // Get plain text with basic formatting
-  const text = el.innerText;
+  // Collect text from all relevant blocks
+  const parts = [];
+  
+  // Thinking blocks
+  el.querySelectorAll('.think-body').forEach(tb => {
+    const thinking = tb.textContent.trim();
+    if (thinking) parts.push(`<thinking>\n${thinking}\n</thinking>`);
+  });
+  
+  // Main text content
+  el.querySelectorAll('.md').forEach(md => {
+    const text = md.innerText.trim();
+    if (text) parts.push(text);
+  });
+  
+  const text = parts.join('\n\n') || el.innerText.trim();
+  
   navigator.clipboard.writeText(text).then(() => {
     btn.innerHTML = '<span>✓</span><span>Copied</span>';
     btn.classList.add('copied');
@@ -7974,32 +8010,38 @@ function copyMsgAsMarkdown(uuid, btn) {
 
 // Toggle collapse/expand for long messages
 function toggleMsgCollapse(uuid, btn) {
-  const wrap = document.getElementById(`content-${uuid}`);
-  if (!wrap) return;
+  const msgEl = document.querySelector(`.msg[data-uuid="${uuid}"] .msg-body`);
+  if (!msgEl) return;
   
-  const isCollapsed = wrap.classList.contains('collapsed');
+  const contentWrap = msgEl.querySelector('.md-content-wrap');
+  if (!contentWrap) return;
+  
+  const isCollapsed = contentWrap.classList.contains('collapsed');
+  contentWrap.classList.toggle('collapsed', !isCollapsed);
+  
   if (isCollapsed) {
-    wrap.classList.remove('collapsed');
     btn.innerHTML = '<span>⊟</span><span>Collapse</span>';
+    btn.title = 'Collapse';
   } else {
-    // Only collapse if content is long enough
-    const mdEl = wrap.querySelector('.md');
-    if (mdEl && mdEl.scrollHeight > 200) {
-      wrap.classList.add('collapsed');
-      btn.innerHTML = '<span>⊞</span><span>Expand</span>';
-    }
+    btn.innerHTML = '<span>⊞</span><span>Expand</span>';
+    btn.title = 'Expand';
   }
 }
 
-// Expand a collapsed message
 function expandMsg(uuid) {
-  const wrap = document.getElementById(`content-${uuid}`);
-  if (wrap) {
-    wrap.classList.remove('collapsed');
-    const btn = document.querySelector(`.msg[data-uuid="${uuid}"] .md-util-btn.collapse`);
-    if (btn) {
-      btn.innerHTML = '<span>⊟</span><span>Collapse</span>';
-    }
+  const contentWrap = document.querySelector(
+    `.msg[data-uuid="${uuid}"] .md-content-wrap`
+  );
+  if (!contentWrap) return;
+  contentWrap.classList.remove('collapsed');
+  
+  // Also update the collapse button label
+  const collapseBtn = document.querySelector(
+    `.msg[data-uuid="${uuid}"] .md-util-btn.collapse`
+  );
+  if (collapseBtn) {
+    collapseBtn.innerHTML = '<span>⊟</span><span>Collapse</span>';
+    collapseBtn.title = 'Collapse';
   }
 }
 
