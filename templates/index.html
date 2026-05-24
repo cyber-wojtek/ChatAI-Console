@@ -4048,7 +4048,11 @@ async function init() {
   }
 
   window.addEventListener('popstate', onPopState);
-  _pollAllAccounts();
+
+  // First poll
+  setTimeout(() => {
+    _pollAllAccounts();
+  }, 10 * 1000);
 }
 
 /* ═══════════════════════════════════════════

@@ -29,3 +29,17 @@ build/
 .DS_Store
 Thumbs.db
 
+# Redis
+dump.rdb
+
+# SSL certs 
+cert.pem
+key.pem
+# ChatAI Console — never commit these
+*.pem
+*.key
+*.crt
+*.cert
+keys.py
+data/
+.env
