@@ -425,73 +425,30 @@ def _sync_stream_claude(acct: dict, conv_id: str, payload: dict):
                 style = style_raw,
             )
 
-            # Track whether thinking block is open
-            thinking_open = False
-            text_open     = False
-
             async for chunk in chat.send_message_stream(
                 prompt,
                 files = file_uuids or None,
             ):
-                # ── thinking delta ────────────────────────────────────────
-                if chunk.thinking_delta:
-                    if not thinking_open:
-                        thinking_open = True
-                        q.put(emit({
-                            "type":          "content_block_start",
-                            "index":         0,
-                            "content_block": {"type": "thinking", "thinking": ""},
-                        }))
-                    q.put(emit({
-                        "type":  "content_block_delta",
-                        "index": 0,
-                        "delta": {
-                            "type":     "thinking_delta",
-                            "thinking": chunk.thinking_delta,
-                        },
-                    }))
-
-                # ── text delta ────────────────────────────────────────────
-                if chunk.text_delta:
-                    if not text_open:
-                        # Close thinking block first if it was open
-                        if thinking_open:
-                            q.put(emit({"type": "content_block_stop", "index": 0}))
-                        text_open = True
-                        q.put(emit({
-                            "type":          "content_block_start",
-                            "index":         1 if thinking_open else 0,
-                            "content_block": {"type": "text", "text": ""},
-                        }))
-                    q.put(emit({
-                        "type":  "content_block_delta",
-                        "index": 1 if thinking_open else 0,
-                        "delta": {"type": "text_delta", "text": chunk.text_delta},
-                    }))
-
-            # ── close open blocks ─────────────────────────────────────────
-            if text_open:
-                q.put(emit({"type": "content_block_stop",
-                            "index": 1 if thinking_open else 0}))
-            elif thinking_open:
-                q.put(emit({"type": "content_block_stop", "index": 0}))
-
-            q.put(emit({"type": "message_delta",
-                        "delta": {"stop_reason": "end_turn"}}))
-            q.put(emit({"type": "message_stop"}))
+                # The library now yields raw_event for every SSE event.
+                # Forward it directly — the frontend handles all Claude SSE types.
+                if chunk.raw_event:
+                    q.put(emit(chunk.raw_event))
 
         except QuotaExceededError as exc:
             q.put(emit({"type": "error", "error": {
-                "type": "rate_limit_error", "message": str(exc),
+                "type":    "rate_limit_error",
+                "message": str(exc),
             }}))
         except AuthenticationError as exc:
             q.put(emit({"type": "error", "error": {
-                "type": "authentication_error", "message": str(exc),
+                "type":    "authentication_error",
+                "message": str(exc),
             }}))
         except Exception as exc:
             log.exception("Claude stream error for conv %s", conv_id[:8])
             q.put(emit({"type": "error", "error": {
-                "type": "api_error", "message": str(exc),
+                "type":    "api_error",
+                "message": str(exc),
             }}))
         finally:
             if client:
@@ -508,7 +465,6 @@ def _sync_stream_claude(acct: dict, conv_id: str, payload: dict):
         if item is None:
             break
         yield item
-
 
 def _sync_stream_oneminai(acct, conv_id, prompt, model, *, human_uuid, asst_uuid,
                            file_uuids=None, web_search=False):

@@ -89,7 +89,7 @@
 
 /* ═══════════════════ RESET ═══════════════════ */
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-html, body { height:100%; background:var(--bg); color:var(--text); font-family:var(--font-ui); font-size:14px; overflow:hidden; -webkit-font-smoothing:antialiased; }
+html, body { height:100%; background:var(--bg); color:var(--text); font-family:var(--font-ui); font-size:15px; overflow:hidden; -webkit-font-smoothing:antialiased; }
 ::-webkit-scrollbar { width:4px; height:4px; }
 ::-webkit-scrollbar-track { background:transparent; }
 ::-webkit-scrollbar-thumb { background:var(--bg-5); border-radius:4px; }
@@ -124,9 +124,9 @@ a:hover { text-decoration:underline; }
 }
 .sb-toggle:hover { background:var(--bg-4); color:var(--text-2); border-color:var(--border-h); }
 
-.sb-head { padding:16px 14px 12px; flex-shrink:0; }
+.sb-head { padding:18px 16px 14px; flex-shrink:0; }
 
-.logo { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+.logo { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
 .logo-mark {
   width:32px; height:32px;
   background:linear-gradient(135deg, rgba(168,85,247,0.25), rgba(56,189,248,0.08));
@@ -149,7 +149,8 @@ a:hover { text-decoration:underline; }
   color:#fff; font-size:13px; font-weight:600;
   display:flex; align-items:center; justify-content:center; gap:6px;
   transition:all .2s var(--ease);
-  box-shadow:0 2px 16px rgba(168,85,247,0.20), 0 0 30px rgba(168,85,247,0.08);
+  box-shadow:0 2px 16px rgba(168,85,247,0.18), 0 0 30px rgba(168,85,247,0.06);
+  letter-spacing:.01em;
 }
 .btn-new:hover { 
   box-shadow:0 4px 24px rgba(168,85,247,0.35), 0 0 40px rgba(168,85,247,0.12); 
@@ -157,44 +158,44 @@ a:hover { text-decoration:underline; }
   filter:brightness(1.12);
 }
 
-.sb-search { padding:6px 12px 8px; flex-shrink:0; }
+.sb-search { padding:0 12px 12px; flex-shrink:0; }
 .search-wrap { position:relative; }
 .search-icon { position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:12px; color:var(--text-3); pointer-events:none; }
 .search-inp {
-  width:100%; padding:8px 10px 8px 30px;
+  width:100%; padding:8px 10px 8px 32px;
   background:var(--bg-3); border:1px solid var(--border);
   border-radius:var(--r); color:var(--text);
-  font-size:12px; outline:none; transition:all .2s var(--ease);
+  font-size:13px; outline:none; transition:all .2s var(--ease);
 }
 .search-inp:focus { border-color:rgba(168,85,247,0.35); background:var(--bg-4); box-shadow:0 0 12px rgba(168,85,247,0.06); }
 .search-inp::placeholder { color:var(--text-4); }
 
-.sb-list { flex:1; overflow-y:auto; padding:4px 8px; }
+.sb-list { flex:1; overflow-y:auto; padding:4px 8px 8px; }
 .sb-section {
-  font-size:10px; font-weight:600;
+  font-size:10px; font-weight:700;
   text-transform:uppercase; letter-spacing:.1em;
-  color:var(--text-3); padding:12px 8px 6px;
+  color:var(--text-4); padding:14px 8px 5px;
 }
 
 .conv-item {
-  padding:10px 10px; border-radius:var(--r);
+  padding:9px 10px 9px 12px; border-radius:var(--r);
   cursor:pointer; display:flex; align-items:center; gap:8px;
-  position:relative; margin-bottom:2px; transition:all .15s var(--ease);
+  position:relative; margin-bottom:1px; transition:all .15s var(--ease);
 }
 .conv-item:hover { background:var(--bg-3); }
 .conv-item.active { background:var(--accent-dim); }
 .conv-item.active::before {
-  content:''; position:absolute; left:0; top:10px; bottom:10px;
-  width:2.5px; background:var(--accent); border-radius:2px;
+  content:''; position:absolute; left:0; top:8px; bottom:8px;
+  width:2px; background:var(--accent); border-radius:2px;
 }
 .conv-ico { font-size:11px; opacity:.25; flex-shrink:0; }
 .conv-meta { flex:1; overflow:hidden; }
 .conv-name {
-  font-size:12.5px; font-weight:500; color:var(--text-2);
+  font-size:13px; font-weight:500; color:var(--text-2);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 .conv-item.active .conv-name, .conv-item:hover .conv-name { color:var(--text); }
-.conv-date { font-size:10px; color:var(--text-3); font-family:var(--font-mono); margin-top:2px; }
+.conv-date { font-size:11px; color:var(--text-3); font-family:var(--font-mono); margin-top:2px; }
 .conv-btns { display:flex; gap:2px; opacity:0; flex-shrink:0; transition:opacity .15s var(--ease); pointer-events:none; }
 .conv-item:hover .conv-btns { opacity:1; pointer-events:auto; }
 .conv-btn {
@@ -205,29 +206,29 @@ a:hover { text-decoration:underline; }
 .conv-btn.pin-btn.pinned { color:var(--accent); opacity:.8; }
 .conv-item:hover .conv-btn.pin-btn.pinned { opacity:1; }
 .conv-btn.del-btn:hover { color:var(--red); background:var(--red-dim); }
-.sb-section.pinned-section { color:var(--accent); }
+.sb-section.pinned-section { color:rgba(168,85,247,0.7); }
 .sb-section .pin-ico { font-size:9px; margin-right:2px; }
 
-.sb-foot { padding:10px 12px; border-top:1px solid var(--border); flex-shrink:0; }
+.sb-foot { padding:12px 14px 14px; border-top:1px solid var(--border); flex-shrink:0; }
 
 /* Quota bar */
 .quota-wrap { 
-  margin-bottom:10px; padding:10px 12px; 
+  margin-bottom:12px; padding:12px 14px; 
   background:var(--bg-2); border:1px solid var(--border); 
   border-radius:var(--r-l);
 }
-.quota-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
-.quota-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--text-3); }
-.quota-pct { font-size:11px; font-family:var(--font-mono); font-weight:600; color:var(--text-2); }
+.quota-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.quota-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-3); }
+.quota-pct { font-size:12px; font-family:var(--font-mono); font-weight:600; color:var(--text-2); }
 .quota-bar-bg { height:3px; background:var(--bg-5); border-radius:2px; overflow:hidden; }
 .quota-bar-fill { height:100%; border-radius:2px; transition:width .6s var(--ease); background:linear-gradient(90deg, var(--accent), #7c3aed); box-shadow:0 0 8px rgba(168,85,247,0.2); }
 .quota-bar-fill.warn { background:#e0943a; }
 .quota-bar-fill.crit { background:var(--red); }
-.quota-detail { margin-top:5px; font-size:10px; color:var(--text-3); font-family:var(--font-mono); line-height:1.5; }
+.quota-detail { margin-top:7px; font-size:10px; color:var(--text-3); font-family:var(--font-mono); line-height:1.6; }
 
 .acct-switcher { position:relative; }
 .acct-active {
-  display:flex; align-items:center; gap:8px; padding:8px 10px;
+  display:flex; align-items:center; gap:10px; padding:9px 12px;
   border-radius:var(--r); cursor:pointer;
   border:1px solid var(--border); background:var(--bg-2);
   transition:all .2s var(--ease); user-select:none;
@@ -240,8 +241,8 @@ a:hover { text-decoration:underline; }
 }
 .acct-dot.ok { background:var(--green); box-shadow:0 0 10px rgba(74,222,128,.4), 0 0 4px rgba(74,222,128,.6); }
 .acct-info { flex:1; overflow:hidden; }
-.acct-name { font-size:12px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.acct-org  { font-size:10px; color:var(--text-3); font-family:var(--font-mono); }
+.acct-name { font-size:13px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.acct-org  { font-size:11px; color:var(--text-3); font-family:var(--font-mono); margin-top:1px; }
 .acct-chev { font-size:9px; color:var(--text-3); transition:transform .25s var(--ease); }
 .acct-chev.open { transform:rotate(180deg); }
 
@@ -375,31 +376,31 @@ a:hover { text-decoration:underline; }
 
 /* ═══════════════════ TOOLBAR ═══════════════════ */
 .toolbar {
-  padding:10px 16px;
+  padding:10px 20px;
   background:linear-gradient(90deg, var(--bg-1), rgba(14,14,34,0.95)); border-bottom:1px solid var(--border);
   display:flex; align-items:center; gap:8px;
-  flex-shrink:0; min-height:52px;
+  flex-shrink:0; min-height:58px;
 }
 .conv-title-wrap { flex:1; overflow:hidden; }
 .conv-title-display {
-  font-family:var(--font-head); font-size:14px; font-weight:600;
+  font-family:var(--font-head); font-size:15px; font-weight:600;
   color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   letter-spacing:-.01em;
 }
 .conv-title-display.untitled { color:var(--text-3); }
-.tb-group { display:flex; align-items:center; gap:4px; flex-shrink:0; }
+.tb-group { display:flex; align-items:center; gap:5px; flex-shrink:0; }
 
 .tb-select {
-  padding:5px 10px; background:var(--bg-3); border:1px solid var(--border);
+  height:34px; padding:0 10px; background:var(--bg-3); border:1px solid var(--border);
   border-radius:var(--r); color:var(--text); font-family:var(--font-mono);
-  font-size:11px; outline:none; cursor:pointer; transition:all .2s var(--ease);
+  font-size:12px; outline:none; cursor:pointer; transition:all .2s var(--ease);
 }
 .tb-select:focus { border-color:rgba(168,85,247,0.4); box-shadow:0 0 12px rgba(168,85,247,0.06); }
 .tb-select option { background:var(--bg-3); }
 
 .tb-toggle {
-  padding:5px 10px; background:var(--bg-3); border:1px solid var(--border);
-  border-radius:var(--r); color:var(--text-2); font-size:11px;
+  height:34px; padding:0 12px; background:var(--bg-3); border:1px solid var(--border);
+  border-radius:var(--r); color:var(--text-2); font-size:12px;
   display:flex; align-items:center; gap:5px; transition:all .2s var(--ease); white-space:nowrap;
   font-weight:500;
 }
@@ -408,15 +409,15 @@ a:hover { text-decoration:underline; }
 .tb-toggle.think-ext { background:rgba(139,92,246,0.12); border-color:rgba(139,92,246,0.35); color:var(--violet); }
 
 .tb-icon {
-  width:32px; height:32px; background:transparent; border:1px solid var(--border);
-  border-radius:var(--r); color:var(--text-2); font-size:13px;
+  width:34px; height:34px; background:transparent; border:1px solid var(--border);
+  border-radius:var(--r); color:var(--text-3); font-size:14px;
   display:flex; align-items:center; justify-content:center; transition:all .2s var(--ease);
 }
 .tb-icon:hover { background:var(--bg-3); color:var(--text); border-color:var(--border-m); }
 
 .tb-branch-btn {
-  padding:5px 10px; background:var(--bg-3); border:1px solid var(--border);
-  border-radius:var(--r); color:var(--text-3); font-size:11px; font-weight:500;
+  height:34px; padding:0 12px; background:var(--bg-3); border:1px solid var(--border);
+  border-radius:var(--r); color:var(--text-3); font-size:12.5px; font-weight:500;
   display:flex; align-items:center; gap:5px; transition:all .2s var(--ease);
 }
 .tb-branch-btn:hover { color:var(--teal); border-color:var(--teal-mid); background:var(--bg-4); }
@@ -425,7 +426,7 @@ a:hover { text-decoration:underline; }
 /* ═══════════════════ MESSAGES ═══════════════════ */
 .msgs {
   flex:1; overflow-y:auto;
-  padding:24px 0 8px; display:flex; flex-direction:column;
+  padding:28px 0 12px; display:flex; flex-direction:column;
   scroll-behavior:smooth;
 }
 
@@ -448,10 +449,10 @@ a:hover { text-decoration:underline; }
 /* ── Message rows ── */
 .msg {
   display:flex; flex-direction:column;
-  animation:fadeUp .2s var(--ease); padding:0 24px;
+  animation:fadeUp .2s var(--ease); padding:0 28px;
   position:relative;
 }
-.msg + .msg { margin-top:20px; }
+.msg + .msg { margin-top:22px; }
 @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
 
 .msg.human { align-items:flex-end; }
@@ -459,7 +460,7 @@ a:hover { text-decoration:underline; }
   background:linear-gradient(135deg, var(--bg-3), rgba(168,85,247,0.04));
   border:1px solid rgba(168,85,247,0.12);
   border-radius:var(--r-xl) var(--r-xl) 4px var(--r-xl);
-  max-width:72%; padding:12px 16px;
+  max-width:70%; padding:13px 17px;
   color:var(--text); font-size:14px; line-height:1.65;
   box-shadow:var(--shadow-sm);
 }
@@ -488,7 +489,7 @@ a:hover { text-decoration:underline; }
 .msg-sender { font-size:11px; font-weight:600; letter-spacing:.03em; }
 .msg-sender.human     { color:var(--text-3); }
 .msg-sender.assistant { color:var(--violet); opacity:.85; }
-.msg-ts { font-size:10px; color:var(--text-4); font-family:var(--font-mono); }
+.msg-ts { font-size:11px; color:var(--text-4); font-family:var(--font-mono); }
 
 .msg-actions { opacity:0; transition:opacity .2s var(--ease); display:flex; gap:4px; margin-top:8px; }
 .msg:hover .msg-actions { opacity:1; }
@@ -784,7 +785,7 @@ a:hover { text-decoration:underline; }
 
 /* ═══════════════════ INPUT AREA ═══════════════════ */
 .input-area {
-  padding:10px 20px 16px;
+  padding:12px 24px 16px;
   background:linear-gradient(180deg, rgba(10,10,24,0.98), var(--bg-1)); border-top:1px solid var(--border);
   flex-shrink:0;
 }
@@ -988,9 +989,9 @@ a:hover { text-decoration:underline; }
 
 /* Input box */
 .input-box {
-  display:flex; align-items:flex-end; gap:6px;
+  display:flex; align-items:flex-end; gap:8px;
   background:var(--bg-3); border:1px solid var(--border-m);
-  border-radius:var(--r-2xl); padding:8px 8px;
+  border-radius:var(--r-2xl); padding:8px 8px 8px 4px;
   transition:all .25s var(--ease);
 }
 .input-box:focus-within {
@@ -999,8 +1000,8 @@ a:hover { text-decoration:underline; }
 }
 .inp-left { display:flex; gap:0; padding-bottom:2px; }
 .inp-btn {
-  width:30px; height:30px; background:none; border-radius:var(--r);
-  color:var(--text-3); font-size:15px;
+  width:34px; height:34px; background:none; border-radius:var(--r);
+  color:var(--text-3); font-size:16px;
   display:flex; align-items:center; justify-content:center; transition:all .15s; cursor:pointer;
 }
 .inp-btn:hover { background:var(--bg-5); color:var(--text-2); }
@@ -1009,12 +1010,12 @@ a:hover { text-decoration:underline; }
 .msg-ta {
   flex:1; background:transparent; border:none; outline:none;
   color:var(--text); font-size:14px; resize:none;
-  max-height:200px; line-height:1.55; padding:4px 0;
+  max-height:200px; line-height:1.6; padding:6px 0;
 }
 .msg-ta::placeholder { color:var(--text-4); }
 
 .send-btn {
-  width:36px; height:36px; border-radius:var(--r-l);
+  width:38px; height:38px; border-radius:var(--r-l);
   background:linear-gradient(135deg, var(--accent), #7c3aed);
   color:#fff; font-size:17px; font-weight:700;
   display:flex; align-items:center; justify-content:center;
@@ -1038,10 +1039,10 @@ a:hover { text-decoration:underline; }
 
 .input-footer {
   display:flex; align-items:center; justify-content:space-between;
-  padding:4px 4px 0;
+  padding:6px 6px 0;
 }
-.inp-hint { font-size:10px; color:var(--text-4); }
-.inp-count { font-size:10px; color:var(--text-3); font-family:var(--font-mono); }
+.inp-hint { font-size:11px; color:var(--text-4); letter-spacing:.01em; }
+.inp-count { font-size:11px; color:var(--text-3); font-family:var(--font-mono); }
 
 /* ═══════════════════ MODALS ═══════════════════ */
 .overlay {
@@ -2949,6 +2950,1072 @@ select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
   gap: 8px;
 }
 
+/* ═══════════════════ ASK USER INPUT WIDGET ═══════════════════ */
+.ask-widget {
+  border: 1px solid rgba(168,85,247,0.25);
+  border-radius: var(--r-xl);
+  overflow: hidden;
+  margin: 10px 0;
+  background: linear-gradient(135deg, var(--bg-2), rgba(168,85,247,0.03));
+  box-shadow: 0 2px 20px rgba(168,85,247,0.08);
+}
+
+.ask-widget-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(168,85,247,0.07);
+  border-bottom: 1px solid rgba(168,85,247,0.12);
+}
+
+.ask-widget-badge {
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: .08em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid rgba(168,85,247,0.25);
+  flex-shrink: 0;
+}
+
+.ask-widget-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+}
+
+.ask-widget-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ask-question-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ask-question-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.55;
+}
+
+/* Single / multi select options */
+.ask-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ask-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--r-l);
+  border: 1px solid var(--border-m);
+  background: var(--bg-3);
+  cursor: pointer;
+  transition: all .15s var(--ease);
+  user-select: none;
+}
+
+.ask-option:hover {
+  border-color: rgba(168,85,247,0.35);
+  background: var(--accent-dim);
+}
+
+.ask-option.selected {
+  border-color: var(--accent);
+  background: rgba(168,85,247,0.12);
+  box-shadow: 0 0 0 1px rgba(168,85,247,0.2);
+}
+
+.ask-option-indicator {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-h);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .15s;
+}
+
+/* Square for multi-select */
+.ask-option.multi .ask-option-indicator {
+  border-radius: 4px;
+}
+
+.ask-option.selected .ask-option-indicator {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 8px rgba(168,85,247,0.4);
+}
+
+.ask-option.selected .ask-option-indicator::after {
+  content: '✓';
+  font-size: 9px;
+  color: #fff;
+  font-weight: 700;
+}
+
+.ask-option-label {
+  font-size: 13px;
+  color: var(--text-2);
+  flex: 1;
+  line-height: 1.4;
+}
+
+.ask-option.selected .ask-option-label {
+  color: var(--text);
+}
+
+/* Submit button */
+.ask-submit-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.ask-submit-btn {
+  padding: 9px 20px;
+  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  border: none;
+  border-radius: var(--r-l);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s var(--ease);
+  box-shadow: 0 2px 14px rgba(168,85,247,0.22);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ask-submit-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+  box-shadow: 0 4px 20px rgba(168,85,247,0.35);
+  transform: translateY(-1px);
+}
+
+.ask-submit-btn:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Answered / submitted state */
+.ask-widget.answered {
+  opacity: .65;
+  pointer-events: none;
+}
+
+.ask-widget.answered .ask-widget-head {
+  background: rgba(74,222,128,0.06);
+  border-bottom-color: rgba(74,222,128,0.15);
+}
+
+.ask-widget.answered .ask-widget-badge {
+  background: var(--green-dim);
+  color: var(--green);
+  border-color: rgba(74,222,128,0.25);
+}
+
+.ask-answered-note {
+  font-size: 11px;
+  color: var(--green);
+  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+
+/* Free text input inside ask widget */
+.ask-free-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-3);
+  border: 1px solid var(--border-m);
+  border-radius: var(--r-l);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font-ui);
+  outline: none;
+  transition: all .2s var(--ease);
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.55;
+}
+.ask-free-input:focus {
+  border-color: rgba(168,85,247,0.4);
+  box-shadow: 0 0 0 3px rgba(168,85,247,0.06);
+  background: var(--bg-4);
+}
+.ask-free-input::placeholder { color: var(--text-4); }
+/* ── rank_priorities ── */
+.ask-rank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ask-rank-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--r-l);
+  border: 1px solid var(--border-m);
+  background: var(--bg-3);
+  cursor: grab;
+  transition: all .15s var(--ease);
+  user-select: none;
+}
+
+.ask-rank-item:active { cursor: grabbing; }
+
+.ask-rank-item.drag-over {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  box-shadow: 0 0 0 1px rgba(168,85,247,0.2);
+}
+
+.ask-rank-item.dragging {
+  opacity: .4;
+}
+
+.ask-rank-handle {
+  font-size: 12px;
+  color: var(--text-4);
+  flex-shrink: 0;
+  cursor: grab;
+}
+
+.ask-rank-num {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--accent);
+  width: 16px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.ask-rank-label {
+  font-size: 13px;
+  color: var(--text-2);
+  flex: 1;
+}
+
+.ask-rank-arrows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.ask-rank-arrow {
+  background: none;
+  border: none;
+  color: var(--text-4);
+  font-size: 9px;
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 3px;
+  line-height: 1;
+  transition: all .1s;
+}
+
+.ask-rank-arrow:hover {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.ask-rank-arrow:disabled {
+  opacity: .2;
+  cursor: default;
+}
+
+/* ── Collapsed special block summary ── */
+.collapsed-blocks-summary {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.md-content-wrap.collapsed .collapsed-blocks-summary {
+  display: flex;
+}
+
+.collapsed-block-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--bg-3);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.collapsed-block-chip.chip-thinking {
+  border-color: rgba(139,92,246,0.18);
+  background: rgba(139,92,246,0.05);
+  color: var(--violet);
+}
+
+.collapsed-block-chip.chip-tool {
+  border-color: rgba(250,204,21,0.15);
+  background: rgba(250,204,21,0.04);
+  color: var(--yellow);
+}
+
+.collapsed-block-chip.chip-artifact {
+  border-color: rgba(96,165,250,0.18);
+  background: rgba(96,165,250,0.04);
+  color: var(--blue);
+}
+
+.collapsed-block-chip.chip-files {
+  border-color: rgba(74,222,128,0.18);
+  background: rgba(74,222,128,0.04);
+  color: var(--green);
+}
+
+.collapsed-block-chip.chip-ask {
+  border-color: rgba(168,85,247,0.18);
+  background: rgba(168,85,247,0.05);
+  color: var(--accent);
+}
+
+.collapsed-block-chip.chip-image {
+  border-color: rgba(56,189,248,0.18);
+  background: rgba(56,189,248,0.04);
+  color: var(--teal);
+}
+
+.collapsed-block-chip-icon { flex-shrink: 0; font-size: 11px; }
+.collapsed-block-chip-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+/* ═══════════════════ SHARED WIDGET BASE ═══════════════════ */
+.widget-block {
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  overflow: hidden;
+  margin: 8px 0;
+  background: var(--bg-2);
+  box-shadow: var(--shadow-sm);
+}
+.widget-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  background: rgba(255,255,255,0.02);
+  border-bottom: 1px solid var(--border-s);
+}
+.widget-badge {
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: .07em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.widget-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.widget-status {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.widget-body { padding: 12px 14px; }
+.widget-streaming {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+}
+
+/* ═══════════════════ WEATHER ═══════════════════ */
+.weather-widget { border-color: rgba(56,189,248,0.2); }
+.weather-widget .widget-head { background: rgba(56,189,248,0.05); border-bottom-color: rgba(56,189,248,0.12); }
+.weather-widget .widget-badge { background: rgba(56,189,248,0.1); color: var(--teal); border: 1px solid rgba(56,189,248,0.2); }
+.weather-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+.weather-icon { font-size: 40px; line-height: 1; }
+.weather-temp {
+  font-size: 32px;
+  font-weight: 700;
+  font-family: var(--font-head);
+  color: var(--text);
+  line-height: 1;
+}
+.weather-desc {
+  font-size: 13px;
+  color: var(--text-2);
+  margin-top: 3px;
+}
+.weather-location {
+  font-size: 11px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+}
+.weather-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-s);
+}
+.weather-detail-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: rgba(56,189,248,0.06);
+  border: 1px solid rgba(56,189,248,0.12);
+  border-radius: var(--r);
+  font-size: 11px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+}
+.weather-input-note {
+  font-size: 11px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  margin-top: 6px;
+}
+
+/* ═══════════════════ MAP ═══════════════════ */
+.map-widget { border-color: rgba(74,222,128,0.2); }
+.map-widget .widget-head { background: rgba(74,222,128,0.05); border-bottom-color: rgba(74,222,128,0.12); }
+.map-widget .widget-badge { background: var(--green-dim); color: var(--green); border: 1px solid rgba(74,222,128,0.2); }
+.map-day-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  margin-bottom: 8px;
+}
+.map-locations { display: flex; flex-direction: column; gap: 0; }
+.map-location-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  position: relative;
+  padding-bottom: 10px;
+}
+.map-location-row:last-child { padding-bottom: 0; }
+.map-loc-line {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  padding-top: 3px;
+}
+.map-loc-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--green);
+  border: 2px solid rgba(74,222,128,0.4);
+  flex-shrink: 0;
+  box-shadow: 0 0 8px rgba(74,222,128,0.3);
+}
+.map-loc-vline {
+  width: 2px;
+  flex: 1;
+  min-height: 20px;
+  background: linear-gradient(180deg, rgba(74,222,128,0.3), rgba(74,222,128,0.05));
+  margin-top: 3px;
+}
+.map-location-row:last-child .map-loc-vline { display: none; }
+.map-loc-info { flex: 1; }
+.map-loc-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.map-loc-time {
+  font-size: 10px;
+  color: var(--teal);
+  font-family: var(--font-mono);
+  margin-top: 1px;
+}
+.map-loc-notes {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 3px;
+  line-height: 1.5;
+}
+.map-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 6px 14px;
+  background: var(--green-dim);
+  border: 1px solid rgba(74,222,128,0.25);
+  border-radius: var(--r-l);
+  color: var(--green);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  text-decoration: none;
+  transition: all .15s;
+}
+.map-open-btn:hover { background: rgba(74,222,128,0.15); text-decoration: none; }
+
+/* ═══════════════════ PLACES SEARCH ═══════════════════ */
+.places-widget { border-color: rgba(251,191,36,0.2); }
+.places-widget .widget-head { background: rgba(251,191,36,0.05); border-bottom-color: rgba(251,191,36,0.12); }
+.places-widget .widget-badge { background: var(--yellow-dim); color: var(--yellow); border: 1px solid rgba(251,191,36,0.2); }
+.place-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-s);
+}
+.place-item:last-child { border-bottom: none; padding-bottom: 0; }
+.place-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r);
+  background: var(--yellow-dim);
+  border: 1px solid rgba(251,191,36,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.place-info { flex: 1; }
+.place-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.place-addr {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 1px;
+  line-height: 1.4;
+}
+.place-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+}
+.place-rating {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--yellow);
+  font-weight: 600;
+}
+.place-type {
+  font-size: 10px;
+  color: var(--text-4);
+  font-family: var(--font-mono);
+}
+
+/* ═══════════════════ RECIPE ═══════════════════ */
+.recipe-widget { border-color: rgba(251,146,60,0.2); }
+.recipe-widget .widget-head { background: rgba(251,146,60,0.05); border-bottom-color: rgba(251,146,60,0.12); }
+.recipe-widget .widget-badge { background: var(--oneminai-dim); color: var(--oneminai); border: 1px solid var(--oneminai-mid); }
+.recipe-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.recipe-meta-chip {
+  padding: 3px 9px;
+  background: rgba(251,146,60,0.07);
+  border: 1px solid rgba(251,146,60,0.15);
+  border-radius: var(--r);
+  font-size: 10px;
+  color: var(--oneminai);
+  font-family: var(--font-mono);
+}
+.recipe-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-3);
+  margin: 10px 0 6px;
+}
+.recipe-ingredients { display: flex; flex-direction: column; gap: 4px; }
+.recipe-ingredient {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+}
+.recipe-ingredient-amt {
+  font-family: var(--font-mono);
+  color: var(--oneminai);
+  font-size: 11px;
+  flex-shrink: 0;
+  min-width: 60px;
+}
+.recipe-ingredient-name { color: var(--text-2); }
+.recipe-steps { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.recipe-step {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.recipe-step-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(251,146,60,0.15);
+  border: 1px solid rgba(251,146,60,0.25);
+  color: var(--oneminai);
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.recipe-step-body { flex: 1; }
+.recipe-step-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.recipe-step-text { font-size: 12px; color: var(--text-2); line-height: 1.55; }
+.recipe-step-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 2px 8px;
+  background: rgba(251,146,60,0.07);
+  border: 1px solid rgba(251,146,60,0.15);
+  border-radius: 10px;
+  font-size: 10px;
+  color: var(--oneminai);
+  font-family: var(--font-mono);
+}
+.recipe-notes {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: rgba(251,146,60,0.04);
+  border: 1px solid rgba(251,146,60,0.1);
+  border-radius: var(--r-l);
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.6;
+  font-style: italic;
+}
+
+/* ═══════════════════ MESSAGE COMPOSE ═══════════════════ */
+.compose-widget { border-color: rgba(192,132,252,0.2); }
+.compose-widget .widget-head { background: rgba(192,132,252,0.05); border-bottom-color: rgba(192,132,252,0.12); }
+.compose-widget .widget-badge { background: var(--violet-dim); color: var(--violet); border: 1px solid rgba(192,132,252,0.2); }
+.compose-variant {
+  padding: 10px 12px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-l);
+  margin-bottom: 8px;
+  transition: border-color .15s;
+}
+.compose-variant:last-child { margin-bottom: 0; }
+.compose-variant:hover { border-color: rgba(192,132,252,0.3); }
+.compose-variant-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--violet);
+  margin-bottom: 5px;
+  font-family: var(--font-mono);
+}
+.compose-variant-body {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.compose-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.compose-btn {
+  padding: 3px 10px;
+  background: var(--bg-4);
+  border: 1px solid rgba(192,132,252,0.2);
+  border-radius: 6px;
+  color: var(--violet);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all .15s;
+}
+.compose-btn:hover { background: var(--violet-dim); }
+
+/* ═══════════════════ SPORTS ═══════════════════ */
+.sports-widget { border-color: rgba(96,165,250,0.2); }
+.sports-widget .widget-head { background: rgba(96,165,250,0.05); border-bottom-color: rgba(96,165,250,0.12); }
+.sports-widget .widget-badge { background: var(--blue-dim); color: var(--blue); border: 1px solid rgba(96,165,250,0.2); }
+.sports-match {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-s);
+  font-size: 13px;
+}
+.sports-match:last-child { border-bottom: none; padding-bottom: 0; }
+.sports-team {
+  flex: 1;
+  font-weight: 500;
+  color: var(--text-2);
+  text-align: right;
+  font-size: 12px;
+}
+.sports-team.winner { color: var(--text); font-weight: 700; }
+.sports-score {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  min-width: 40px;
+  text-align: center;
+  padding: 2px 8px;
+  background: var(--bg-3);
+  border-radius: var(--r);
+  flex-shrink: 0;
+}
+.sports-team-home {
+  flex: 1;
+  font-weight: 500;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.sports-team-home.winner { color: var(--text); font-weight: 700; }
+.sports-league-label {
+  font-size: 10px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+
+/* ═══════════════════ IMAGE SEARCH ═══════════════════ */
+.imgsearch-widget { border-color: rgba(56,189,248,0.2); }
+.imgsearch-widget .widget-head { background: rgba(56,189,248,0.05); border-bottom-color: rgba(56,189,248,0.12); }
+.imgsearch-widget .widget-badge { background: var(--teal-dim); color: var(--teal); border: 1px solid rgba(56,189,248,0.2); }
+.imgsearch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 6px;
+}
+.imgsearch-item { position: relative; border-radius: var(--r); overflow: hidden; }
+.imgsearch-item img {
+  width: 100%;
+  height: 100px;
+  object-fit: cover;
+  display: block;
+  cursor: pointer;
+  transition: opacity .15s;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+}
+.imgsearch-item img:hover { opacity: .85; }
+.imgsearch-caption {
+  font-size: 10px;
+  color: var(--text-3);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+}
+.imgsearch-query {
+  font-size: 11px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ═══════════════════ WEB SEARCH ═══════════════════ */
+.websearch-widget { border-color: rgba(168,85,247,0.15); }
+.websearch-widget .widget-head { background: rgba(168,85,247,0.04); border-bottom-color: rgba(168,85,247,0.1); }
+.websearch-widget .widget-badge { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(168,85,247,0.2); }
+.websearch-result {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-s);
+}
+.websearch-result:last-child { border-bottom: none; padding-bottom: 0; }
+.websearch-result-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--teal);
+  line-height: 1.4;
+}
+.websearch-result-url {
+  font-size: 10px;
+  color: var(--text-4);
+  font-family: var(--font-mono);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.websearch-result-snippet {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 3px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.websearch-query {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.websearch-query-text {
+  font-family: var(--font-mono);
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  color: var(--accent);
+}
+
+/* ═══════════════════ WEB FETCH ═══════════════════ */
+.webfetch-widget { border-color: rgba(168,85,247,0.15); }
+.webfetch-widget .widget-head { background: rgba(168,85,247,0.04); }
+.webfetch-widget .widget-badge { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(168,85,247,0.2); }
+.webfetch-url {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--teal);
+  word-break: break-all;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  background: var(--bg-3);
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+}
+.webfetch-preview {
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.6;
+}
+
+/* ═══════════════════ BASH / FILE TOOLS ═══════════════════ */
+.bash-widget { border-color: rgba(74,222,128,0.15); }
+.bash-widget .widget-head { background: rgba(74,222,128,0.04); }
+.bash-widget .widget-badge { background: var(--green-dim); color: var(--green); border: 1px solid rgba(74,222,128,0.2); }
+
+/* ── Bash output ── */
+.bash-output {
+  background: rgba(0,0,0,0.25);
+  border-radius: var(--r);
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--green);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 220px;
+  overflow-y: auto;
+  line-height: 1.6;
+  margin-top: 4px;
+  border: 1px solid rgba(74,222,128,0.1);
+}
+
+.bash-command {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  background: rgba(0,0,0,0.15);
+  padding: 5px 10px;
+  border-radius: var(--r);
+  margin-bottom: 6px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  border-left: 2px solid rgba(74,222,128,0.3);
+}
+
+.file-tool-widget { border-color: rgba(96,165,250,0.15); }
+.file-tool-widget .widget-head { background: rgba(96,165,250,0.04); }
+.file-tool-widget .widget-badge { background: var(--blue-dim); color: var(--blue); border: 1px solid rgba(96,165,250,0.2); }
+.file-tool-path {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--blue);
+  padding: 4px 8px;
+  background: var(--bg-3);
+  border-radius: var(--r);
+  border: 1px solid rgba(96,165,250,0.15);
+  margin-bottom: 6px;
+  word-break: break-all;
+}
+
+/* ── Tool widget code content ── */
+.file-tool-content {
+  background: var(--bg-1);
+  border-radius: 0 0 var(--r-l) var(--r-l);
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 280px;
+}
+
+.file-tool-content code.hljs {
+  display: block;
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.65;
+  background: transparent;
+  border: none;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.str-replace-old,
+.str-replace-new {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 7px 10px;
+  border-radius: var(--r);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 120px;
+  overflow-y: auto;
+  line-height: 1.6;
+}
+
+.str-replace-old {
+  color: var(--red);
+  background: rgba(248,113,113,0.06);
+  border-left: 3px solid rgba(248,113,113,0.4);
+}
+
+.str-replace-new {
+  color: var(--green);
+  background: rgba(74,222,128,0.06);
+  border-left: 3px solid rgba(74,222,128,0.4);
+  margin-top: 4px;
+}
+
+/* ═══════════════════ MCP REGISTRY ═══════════════════ */
+.mcp-widget { border-color: rgba(168,85,247,0.15); }
+.mcp-widget .widget-head { background: rgba(168,85,247,0.04); }
+.mcp-widget .widget-badge { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(168,85,247,0.2); }
+.mcp-result-item {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-s);
+}
+.mcp-result-item:last-child { border-bottom: none; }
+.mcp-result-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.mcp-result-desc { font-size: 11px; color: var(--text-3); margin-top: 2px; line-height: 1.5; }
+
+/* ── Tool raw data panel ── */
+.tool-raw-btn {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  background: var(--bg-4);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-4);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all .15s;
+  line-height: 1.4;
+  margin-left: 4px;
+}
+.tool-raw-btn:hover  { background: var(--bg-5); color: var(--text-3); border-color: var(--border-m); }
+.tool-raw-btn.active { color: var(--accent); border-color: rgba(168,85,247,.25); background: var(--accent-dim); }
+
+.tool-raw-panel {
+  display: none;
+  border-top: 1px solid var(--border-s);
+}
+.tool-raw-panel.open { display: block; }
+
+.tool-raw-content {
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow-y: auto;
+  line-height: 1.6;
+  background: rgba(0,0,0,.15);
+}
+
 </style>
 </head>
 
@@ -3073,7 +4140,7 @@ select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
           <button class="tb-icon" onclick="openCopyConvOverlay()" title="Copy Conversation">📋</button>
           <button class="tb-icon" onclick="refreshConv()" title="Refresh">↻</button>
           <button class="tb-icon" onclick="openConvInfo()" title="Info">ⓘ</button>
-          <button class="tb-icon" id="chatSearchBtn" onclick="toggleChatSearch()" title="Search messages">⌕</button>
+          <button class="tb-icon" id="chatSearchBtn" onclick="toggleChatSearch()" title="Search messages" style="font-size:17px">⌕</button>
           <button class="tb-icon" id="canvasToggleBtn" onclick="toggleCanvas()" title="Files &amp; Canvas">⊞</button>
           <button class="tb-icon" id="oneminaiPanelBtn" onclick="toggleOneminaiPanel()" title="1min.AI Tools" style="display:none">✦</button>
           <button class="tb-icon" id="flowithPanelBtn" onclick="toggleFlowithPanel()" title="Flowith Tools — Image &amp; Video Generation" style="display:none">⋆</button>
@@ -6418,6 +7485,10 @@ function buildMsgEl(msg) {
   }
 
   // Render blocks → HTML string
+  // Merge tool_result data onto tool_use blocks before rendering
+  // (handles both streamed and non-streamed / server-loaded messages)
+  mergeToolResults(blocks);
+
   let contentHtml = '';
   if (blocks.length) {
     for (const b of blocks) contentHtml += renderBlock(b, false, msg.sender);
@@ -6435,9 +7506,6 @@ function buildMsgEl(msg) {
     <div class="md-utils">
       <button class="md-util-btn copy"     onclick="copyMsgContent('${msg.uuid}', this)">
         <span>⎘</span><span>Copy</span>
-      </button>
-      <button class="md-util-btn collapse" onclick="toggleMsgCollapse('${msg.uuid}', this)">
-        <span>⊟</span><span>Collapse</span>
       </button>
     </div>` : '';
 
@@ -6486,17 +7554,1309 @@ function buildMsgEl(msg) {
 }
 
 /* ═══════════════════════════════════════════
+   TOOL WIDGET RENDERERS
+═══════════════════════════════════════════ */
+
+function _widgetId() {
+  return 'w_' + Math.random().toString(36).slice(2, 9);
+}
+
+function _toolWidget(cssClass, badgeHtml, title, statusIcon, bodyHtml, rawData) {
+  const wid     = _widgetId();
+  const rawJson = rawData != null ? JSON.stringify(rawData, null, 2) : null;
+
+  const rawBtn = rawJson
+    ? `<button class="tool-raw-btn" onclick="_toggleRaw('${wid}')" title="View raw data">{ }</button>`
+    : '';
+
+  const rawPanel = rawJson ? `
+    <div class="tool-raw-panel" id="raw_${wid}">
+      <div class="tool-raw-content">${esc(rawJson)}</div>
+    </div>` : '';
+
+  return `
+    <div class="widget-block ${cssClass}" id="${wid}">
+      <div class="widget-head">
+        ${badgeHtml}
+        <span class="widget-title">${esc(title)}</span>
+        <span class="widget-status">${statusIcon}</span>
+        ${rawBtn}
+      </div>
+      ${bodyHtml}
+      ${rawPanel}
+    </div>`;
+}
+
+function _toolHead(badgeCss, badgeText, title, statusIcon) {
+  return `<div class="widget-head">
+    <span class="widget-badge" style="${badgeCss}">${badgeText}</span>
+    <span class="widget-title">${esc(title)}</span>
+    <span class="widget-status">${statusIcon}</span>
+  </div>`;
+}
+
+function _toggleRaw(wid) {
+  const panel = document.getElementById('raw_' + wid);
+  if (!panel) return;
+  panel.classList.toggle('open');
+  const btn = document.querySelector('#' + wid + ' .tool-raw-btn');
+  if (btn) btn.classList.toggle('active');
+}
+
+function _streamingBody() {
+  return `<div class="widget-streaming">
+    <div class="think-pulse"></div>
+    <span>Fetching…</span>
+  </div>`;
+}
+
+// ── Weather ───────────────────────────────────────────────────────────────
+function renderWeatherTool(block, streaming) {
+  const input = block.input || {};
+  const loc   = input.location_name || input.city || 'Unknown location';
+
+  if (streaming && !block._result_parsed) {
+    return `<div class="widget-block weather-widget">
+      <div class="widget-head">
+        <span class="widget-badge" style="background:rgba(56,189,248,.1);color:var(--teal);border:1px solid rgba(56,189,248,.2)">🌤 WEATHER</span>
+        <span class="widget-title">${esc(loc)}</span>
+        <span class="widget-status">⟳ fetching</span>
+      </div>
+      <div class="widget-streaming"><div class="think-pulse"></div><span>Fetching weather…</span></div>
+    </div>`;
+  }
+
+  const { text: rawText } = _extractToolResult(block);
+
+  // rawText may be the parsed JSON object or a string we need to parse
+  let data = {};
+  if (rawText && typeof rawText === 'object' && !Array.isArray(rawText)) {
+    data = rawText;
+  } else if (typeof rawText === 'string') {
+    try { data = JSON.parse(rawText); } catch {}
+  }
+
+  const current = data.current || {};
+
+  const temp     = current.temperature ?? current.temp ?? null;
+  const desc     = current.condition_text || current.condition || current.description || '';
+  const humidity = current.humidity ?? null;
+  const wind     = current.wind_speed ?? current.wind_kph ?? current.wind_mph ?? null;
+  const feelsLike= current.feelslike_f ?? current.feelslike_c ?? null;
+  const isDay    = current.is_day !== false;
+
+  // Temperature unit: if temp > 55 it's almost certainly Fahrenheit
+  const isFahrenheit = temp !== null && temp > 55;
+  const unitSym = isFahrenheit ? '°F' : '°C';
+
+  function _weatherIcon(d) {
+    const dl = (d || '').toLowerCase();
+    if (dl.includes('thunder') || dl.includes('storm')) return '⛈';
+    if (dl.includes('snow') || dl.includes('blizzard')) return '❄️';
+    if (dl.includes('rain') || dl.includes('drizzle') || dl.includes('shower')) return '🌧';
+    if (dl.includes('cloud') || dl.includes('overcast')) return '☁️';
+    if (dl.includes('fog') || dl.includes('mist') || dl.includes('haze')) return '🌫';
+    if (dl.includes('partly')) return isDay ? '⛅' : '🌙';
+    if (dl.includes('clear') || dl.includes('sunny') || dl.includes('fair')) return isDay ? '☀️' : '🌙';
+    return '🌤';
+  }
+
+  const icon = _weatherIcon(desc);
+  const displayTemp = temp !== null
+    ? `${Math.round(temp)}${unitSym}`
+    : '—';
+
+  // Daily forecast (next 3 days)
+  const daily = data.daily || [];
+  const forecastHtml = daily.slice(0, 3).map(d => `
+    <div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px;color:var(--text-2);font-family:var(--font-mono)">
+      <span style="min-width:36px;color:var(--text-3)">${d.day_of_week ? d.day_of_week.slice(0,3) : ''}</span>
+      <span>${d.high != null ? Math.round(d.high) + unitSym : '—'}</span>
+      ${d.precipitation_chance != null
+        ? `<span style="color:var(--teal);margin-left:auto">${d.precipitation_chance}% 🌧</span>`
+        : ''}
+    </div>`).join('');
+
+  let detailChips = '';
+  if (humidity != null)  detailChips += `<div class="weather-detail-chip">💧 ${humidity}%</div>`;
+  if (wind     != null)  detailChips += `<div class="weather-detail-chip">💨 ${Math.round(wind)} ${isFahrenheit ? 'mph' : 'km/h'}</div>`;
+  if (feelsLike!= null)  detailChips += `<div class="weather-detail-chip">🌡 Feels ${Math.round(feelsLike)}${unitSym}</div>`;
+
+  const locationDisplay = data.location || loc;
+
+  const weatherBodyHtml = `<div class="widget-body">
+    <div class="weather-main">
+      <div class="weather-icon">${icon}</div>
+      <div>
+        <div class="weather-temp">${displayTemp}</div>
+        <div class="weather-desc">${esc(desc)}</div>
+        <div class="weather-location">📍 ${esc(locationDisplay)}</div>
+      </div>
+    </div>
+    ${detailChips ? `<div class="weather-details">${detailChips}</div>` : ''}
+    ${forecastHtml
+      ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-s)">${forecastHtml}</div>`
+      : ''}
+  </div>`;
+
+  return _toolWidget(
+    'weather-widget',
+    `<span class="widget-badge" style="background:rgba(56,189,248,.1);color:var(--teal);border:1px solid rgba(56,189,248,.2)">🌤 WEATHER</span>`,
+    locationDisplay,
+    '✓ done',
+    weatherBodyHtml,
+    { input: block.input, result: data }
+  );
+}
+
+// ── Map ───────────────────────────────────────────────────────────────────
+function renderMapTool(block, streaming) {
+  const input = block.input || {};
+  const title = input.title || 'Itinerary';
+
+  if (streaming && !block._result_parsed) {
+    return `<div class="widget-block map-widget">
+      <div class="widget-head">
+        <span class="widget-badge" style="background:var(--green-dim);color:var(--green);border:1px solid rgba(74,222,128,.2)">🗺 MAP</span>
+        <span class="widget-title">${esc(title)}</span>
+        <span class="widget-status">⟳ building</span>
+      </div>
+      <div class="widget-streaming"><div class="think-pulse"></div><span>Building map…</span></div>
+    </div>`;
+  }
+
+  const days      = input.days || [];
+  const narrative = input.narrative || '';
+
+  const { text: rawText } = _extractToolResult(block);
+  let enriched = {};
+
+  if (rawText && typeof rawText === 'object') {
+    enriched = rawText.enriched_places || {};
+  } else if (typeof rawText === 'string') {
+    try { const p = JSON.parse(rawText); enriched = p.enriched_places || {}; } catch {}
+  }
+
+  // Also check _result_parsed directly
+  if (!Object.keys(enriched).length && block._result_parsed) {
+    const items = Array.isArray(block._result_parsed) ? block._result_parsed : [block._result_parsed];
+    for (const item of items) {
+      if (!item) continue;
+      if (typeof item === 'object' && item.enriched_places) { enriched = item.enriched_places; break; }
+      if (item.type === 'text' && item.text) {
+        try { const p = JSON.parse(item.text); if (p.enriched_places) { enriched = p.enriched_places; break; } }
+        catch {}
+      }
+    }
+  }
+
+  let daysHtml = '';
+  for (const day of days) {
+    const locs = day.locations || [];
+    const locsHtml = locs.map(loc => {
+      const ep       = enriched[loc.place_id] || {};
+      const rating   = ep.rating ?? loc.rating;
+      const photo    = ep.photos?.[0]?.url || '';
+      const mapsUrl  = ep.maps_url
+        || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loc.name)}`;
+
+      return `
+        <div class="map-location-row">
+          <div class="map-loc-line">
+            <div class="map-loc-dot"></div>
+            <div class="map-loc-vline"></div>
+          </div>
+          <div class="map-loc-info" style="display:flex;gap:8px;align-items:flex-start">
+            ${photo
+              ? `<img src="${esc(photo)}"
+                      style="width:44px;height:44px;border-radius:var(--r);object-fit:cover;flex-shrink:0;border:1px solid var(--border);margin-top:2px"
+                      onerror="this.style.display='none'">`
+              : ''}
+            <div style="flex:1">
+              <div class="map-loc-name">
+                <a href="${esc(mapsUrl)}" target="_blank" rel="noopener"
+                   style="color:inherit;text-decoration:none"
+                   onmouseover="this.style.textDecoration='underline'"
+                   onmouseout="this.style.textDecoration='none'">${esc(loc.name)}</a>
+                ${rating != null
+                  ? `<span style="font-size:10px;color:var(--yellow);font-family:var(--font-mono);margin-left:5px">★ ${rating}</span>`
+                  : ''}
+              </div>
+              ${loc.arrival_time
+                ? `<div class="map-loc-time">🕐 ${esc(loc.arrival_time)}${loc.duration_minutes ? ` · ${loc.duration_minutes}min` : ''}</div>`
+                : ''}
+              ${loc.notes ? `<div class="map-loc-notes">${esc(loc.notes)}</div>` : ''}
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+
+    daysHtml += `
+      <div class="map-day-title">${days.length > 1 ? `Day ${day.day_number}: ` : ''}${esc(day.title || '')}</div>
+      <div class="map-locations">${locsHtml}</div>`;
+  }
+
+  const allLocs = days.flatMap(d => d.locations || []);
+  let mapsUrl = '';
+  if (allLocs.length >= 2) {
+    const origin    = encodeURIComponent(allLocs[0].name);
+    const dest      = encodeURIComponent(allLocs[allLocs.length - 1].name);
+    const waypoints = allLocs.slice(1, -1).map(l => encodeURIComponent(l.name)).join('|');
+    mapsUrl = `https://www.google.com/maps/dir/${origin}/${waypoints ? waypoints + '/' : ''}${dest}`;
+  }
+
+  return _toolWidget(
+    'map-widget',
+    `<span class="widget-badge" style="background:var(--green-dim);color:var(--green);border:1px solid rgba(74,222,128,.2)">🗺 MAP</span>`,
+    title, '✓ done',
+    `<div class="widget-body">
+      ${narrative ? `<div style="font-size:12px;color:var(--text-3);margin-bottom:10px;line-height:1.55">${esc(narrative)}</div>` : ''}
+      ${daysHtml}
+      ${mapsUrl ? `<a class="map-open-btn" href="${esc(mapsUrl)}" target="_blank" rel="noopener">🗺 Open in Google Maps</a>` : ''}
+    </div>`,
+    { title, location_count: allLocs.length }
+  );
+}
+
+// ── Places Search ─────────────────────────────────────────────────────────
+function renderPlacesSearchTool(block, streaming) {
+  const input   = block.input || {};
+  const queries = input.queries || (input.query ? [{ query: input.query }] : []);
+  const title   = queries.map(q => q.query).join(' · ').slice(0, 50) || 'Places';
+
+  if (streaming && !block._result_parsed) {
+    return `<div class="widget-block places-widget">
+      <div class="widget-head">
+        <span class="widget-badge" style="background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(251,191,36,.2)">📍 PLACES</span>
+        <span class="widget-title">${esc(title)}</span>
+        <span class="widget-status">⟳ searching</span>
+      </div>
+      <div class="widget-streaming"><div class="think-pulse"></div><span>Searching places…</span></div>
+    </div>`;
+  }
+
+  // Extract places from all possible locations
+  let places = [];
+
+  // 1. _result_parsed items
+  if (block._result_parsed) {
+    const items = Array.isArray(block._result_parsed) ? block._result_parsed : [block._result_parsed];
+    for (const item of items) {
+      if (!item) continue;
+      // Direct object with places array
+      if (typeof item === 'object' && Array.isArray(item.places)) { places = item.places; break; }
+      // Direct array of place objects
+      if (typeof item === 'object' && Array.isArray(item) && item[0]?.name) { places = item; break; }
+      // Text JSON
+      if (item.type === 'text' && item.text) {
+        try {
+          const p = JSON.parse(item.text);
+          if (p && Array.isArray(p.places)) { places = p.places; break; }
+          if (Array.isArray(p) && p[0]?.name) { places = p; break; }
+        } catch {}
+      }
+    }
+  }
+
+  // 2. _extractToolResult fallback
+  if (!places.length) {
+    const { text: rawText } = _extractToolResult(block);
+    if (rawText && typeof rawText === 'object') {
+      if (Array.isArray(rawText.places))  places = rawText.places;
+      else if (Array.isArray(rawText))    places = rawText;
+    } else if (typeof rawText === 'string') {
+      try { const p = JSON.parse(rawText); if (p.places) places = p.places; else if (Array.isArray(p)) places = p; }
+      catch {}
+    }
+  }
+
+  if (!places.length) {
+    return _toolWidget(
+      'places-widget',
+      `<span class="widget-badge" style="background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(251,191,36,.2)">📍 PLACES</span>`,
+      title, '✓ done',
+      `<div class="widget-body" style="font-size:12px;color:var(--text-3)">Searched: ${esc(title)}</div>`,
+      { queries: block.input?.queries }
+    );
+  }
+
+  const placesHtml = places.slice(0, 8).map(p => {
+    const name    = p.name || '?';
+    const addr    = p.address || p.vicinity || p.formatted_address || '';
+    const rating  = p.rating;
+    const mapsUrl = p.maps_url
+      || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}`;
+    const photo   = p.photos?.[0]?.url || '';
+    const hours   = p.weekday_hours || [];
+    const todayHours = hours.find(h => h.includes(
+      new Date().toLocaleDateString('en-US', { weekday: 'long' })
+    ));
+    const priceLevel = p.price_level;
+    const priceStr   = priceLevel ? '💰'.repeat(Math.min(priceLevel, 4)) : '';
+
+    return `
+      <div class="place-item">
+        ${photo
+          ? `<img src="${esc(photo)}"
+                  style="width:44px;height:44px;border-radius:var(--r);object-fit:cover;flex-shrink:0;border:1px solid var(--border)"
+                  onerror="this.outerHTML='<div class=\\'place-icon\\'>📍</div>'">`
+          : `<div class="place-icon">📍</div>`}
+        <div class="place-info">
+          <div class="place-name">
+            <a href="${esc(mapsUrl)}" target="_blank" rel="noopener"
+               style="color:inherit;text-decoration:none"
+               onmouseover="this.style.textDecoration='underline'"
+               onmouseout="this.style.textDecoration='none'">${esc(name)}</a>
+          </div>
+          ${addr ? `<div class="place-addr">${esc(addr.slice(0, 70))}</div>` : ''}
+          <div class="place-meta">
+            ${rating != null ? `<span class="place-rating">★ ${rating}</span>` : ''}
+            ${priceStr ? `<span style="font-size:10px;color:var(--yellow)">${priceStr}</span>` : ''}
+            ${todayHours
+              ? `<span class="place-type">${esc(todayHours.replace(/^[^:]+:\s*/, ''))}</span>`
+              : ''}
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  return _toolWidget(
+    'places-widget',
+    `<span class="widget-badge" style="background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(251,191,36,.2)">📍 PLACES</span>`,
+    title, '✓ done',
+    `<div class="widget-body">${placesHtml}</div>`,
+    { queries: block.input?.queries, place_count: places.length }
+  );
+}
+
+// ── Recipe ────────────────────────────────────────────────────────────────
+
+
+function renderRecipeTool(block, streaming) {
+  const input = block.input || {};
+  const title = input.title || 'Recipe';
+
+  if (streaming && !block._result_parsed) {
+    return `<div class="widget-block recipe-widget">
+      <div class="widget-head">
+        <span class="widget-badge" style="background:var(--oneminai-dim);color:var(--oneminai);border:1px solid var(--oneminai-mid)">🍽 RECIPE</span>
+        <span class="widget-title">${esc(title)}</span>
+        <span class="widget-status">⟳ preparing</span>
+      </div>
+      <div class="widget-streaming"><div class="think-pulse"></div><span>Preparing recipe…</span></div>
+    </div>`;
+  }
+
+  // Use result data if richer, else fall back to input
+  const { text: rawText, gallery } = _extractToolResult(block);
+  let rdata = input;
+  if (rawText && typeof rawText === 'object' && !Array.isArray(rawText)) {
+    rdata = Object.keys(rawText).length > 3 ? rawText : input;
+  } else if (typeof rawText === 'string') {
+    try { const p = JSON.parse(rawText); if (p && typeof p === 'object') rdata = p; } catch {}
+  }
+
+  const ingredients = rdata.ingredients || input.ingredients || [];
+  const steps       = rdata.steps       || input.steps       || [];
+  const notes       = rdata.notes       || input.notes       || '';
+  const description = rdata.description || input.description || '';
+  const servings    = rdata.base_servings ?? input.base_servings;
+
+  // Build ingredient id → name map
+  const ingMap = {};
+  for (const ing of ingredients) { if (ing.id) ingMap[ing.id] = ing.name; }
+
+  function resolveIng(text) {
+    return esc(text).replace(/\{(\w+)\}/g, (_, id) => {
+      const name = ingMap[id];
+      return name
+        ? `<strong style="color:var(--oneminai)">${esc(name)}</strong>`
+        : `{${esc(id)}}`;
+    });
+  }
+
+  const foodPhoto = gallery?.[0]?.url || '';
+
+  const ingredientsHtml = ingredients.map(ing => `
+    <div class="recipe-ingredient">
+      <span class="recipe-ingredient-amt">${ing.amount != null ? ing.amount : ''} ${esc(ing.unit || '')}</span>
+      <span class="recipe-ingredient-name">${esc(ing.name || '')}</span>
+    </div>`).join('');
+
+  const stepsHtml = steps.map((step, i) => {
+    const timer = step.timer_seconds
+      ? `<div class="recipe-step-timer">⏱ ${Math.ceil(step.timer_seconds / 60)}min</div>`
+      : '';
+    return `
+      <div class="recipe-step">
+        <div class="recipe-step-num">${i + 1}</div>
+        <div class="recipe-step-body">
+          ${step.title ? `<div class="recipe-step-title">${esc(step.title)}</div>` : ''}
+          <div class="recipe-step-text">${resolveIng(step.content || step.text || '')}</div>
+          ${timer}
+        </div>
+      </div>`;
+  }).join('');
+
+  const recipeBodyHtml = `
+    ${foodPhoto
+      ? `<img src="${esc(foodPhoto)}" alt="${esc(title)}" loading="lazy"
+              style="width:100%;height:160px;object-fit:cover;display:block;border-bottom:1px solid var(--border)"
+              onerror="this.style.display='none'">`
+      : ''}
+    <div class="widget-body">
+      ${description ? `<div style="font-size:12px;color:var(--text-3);margin-bottom:8px;line-height:1.55">${esc(description)}</div>` : ''}
+      <div class="recipe-meta">
+        ${servings != null ? `<span class="recipe-meta-chip">👥 ${servings} servings</span>` : ''}
+        ${ingredients.length ? `<span class="recipe-meta-chip">🧂 ${ingredients.length} ingredients</span>` : ''}
+        ${steps.length ? `<span class="recipe-meta-chip">📋 ${steps.length} steps</span>` : ''}
+      </div>
+      ${ingredients.length ? `<div class="recipe-section-title">Ingredients</div><div class="recipe-ingredients">${ingredientsHtml}</div>` : ''}
+      ${steps.length ? `<div class="recipe-section-title">Steps</div><div class="recipe-steps">${stepsHtml}</div>` : ''}
+      ${notes ? `<div class="recipe-notes">💡 ${esc(notes)}</div>` : ''}
+    </div>`;
+
+  return _toolWidget(
+    'recipe-widget',
+    `<span class="widget-badge" style="background:var(--oneminai-dim);color:var(--oneminai);border:1px solid var(--oneminai-mid)">🍽 RECIPE</span>`,
+    title, '✓ done', recipeBodyHtml,
+    { title, servings, ingredient_count: ingredients.length, step_count: steps.length }
+  );
+}
+
+// ── Message Compose ───────────────────────────────────────────────────────
+function renderMessageComposeTool(block, streaming) {
+  const input    = block.input || {};
+  const title    = input.summary_title || 'Message';
+  const variants = input.variants || [];
+  const kind     = input.kind || 'message';
+
+  if (streaming && !block._result_parsed) {
+    return `<div class="widget-block compose-widget">
+      ${_toolHead('', '✉ COMPOSE', title, '⟳ drafting')}
+      ${_streamingBody()}
+    </div>`;
+  }
+
+  const variantsHtml = variants.map((v, i) => {
+    const vid = 'comp_' + Math.random().toString(36).slice(2, 7);
+    return `
+      <div class="compose-variant">
+        ${v.label ? `<div class="compose-variant-label">${esc(v.label)}</div>` : ''}
+        <div class="compose-variant-body" id="${vid}">${esc(v.body || '')}</div>
+        <div class="compose-actions">
+          <button class="compose-btn" onclick="_composeCopy('${vid}',this)">⎘ Copy</button>
+          <button class="compose-btn" onclick="_composeInsert('${vid}')">↩ Insert</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  return _toolWidget(
+    'compose-widget',
+    `<span class="widget-badge" style="background:var(--violet-dim);color:var(--violet);border:1px solid rgba(192,132,252,.2)">✉ COMPOSE</span>`,
+    title,
+    '✓ done',
+    `<div class="widget-body">
+      <div style="font-size:10px;color:var(--text-3);font-family:var(--font-mono);margin-bottom:8px;text-transform:uppercase;letter-spacing:.07em">
+        ${esc(kind)}
+      </div>
+      ${variantsHtml}
+    </div>`,
+    { title, kind, variant_count: variants.length }
+  );
+}
+
+function _composeCopy(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent).then(() => {
+    btn.textContent = '✓ Copied';
+    setTimeout(() => { btn.textContent = '⎘ Copy'; }, 2000);
+  });
+}
+
+function _composeInsert(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const ta = document.getElementById('msgTa');
+  if (ta) {
+    ta.value = el.textContent;
+    resizeTa(ta);
+    updateCount(ta);
+    ta.focus();
+    toast('Inserted', 'ok');
+  }
+}
+
+// ── Sports ────────────────────────────────────────────────────────────────
+function renderSportsTool(block, streaming) {
+  const input    = block.input || {};
+  const league   = (input.league || input.sport || 'Sports').toUpperCase();
+  const dataType = input.data_type || 'scores';
+
+  if (streaming && !block._result_parsed) {
+    return `<div class="widget-block sports-widget">
+      <div class="widget-head">
+        <span class="widget-badge" style="background:var(--blue-dim);color:var(--blue);border:1px solid rgba(96,165,250,.2)">⚽ SPORTS</span>
+        <span class="widget-title">${esc(league)}</span>
+        <span class="widget-status">⟳ fetching</span>
+      </div>
+      <div class="widget-streaming"><div class="think-pulse"></div><span>Fetching data…</span></div>
+    </div>`;
+  }
+
+  // Extract raw result — may be in _result_parsed text items
+  let data = {};
+  const { text: rawText } = _extractToolResult(block);
+
+  if (rawText && typeof rawText === 'object' && !Array.isArray(rawText)) {
+    data = rawText;
+  } else if (typeof rawText === 'string') {
+    try { data = JSON.parse(rawText); } catch {}
+  }
+
+  // Also try reading directly from _result_parsed items
+  if (!Object.keys(data).length && block._result_parsed) {
+    const items = Array.isArray(block._result_parsed) ? block._result_parsed : [block._result_parsed];
+    for (const item of items) {
+      if (!item) continue;
+      // Direct object
+      if (typeof item === 'object' && (item.standings || item.matches || item.scores || item.league)) {
+        data = item; break;
+      }
+      // Text containing JSON
+      if (item.type === 'text' && item.text) {
+        try { const p = JSON.parse(item.text); if (p && typeof p === 'object') { data = p; break; } }
+        catch {}
+      }
+    }
+  }
+
+  const leagueName = data.league || data.competition || league;
+  const title      = data.title  || leagueName;
+
+  const standings = data.standings || [];
+  const matches   = data.matches || data.scores || data.games || data.results || [];
+
+  // ── Standings ──
+  if (standings.length > 0) {
+    const rowsHtml = standings.slice(0, 20).map(r => {
+      const teamName = (r.team && typeof r.team === 'object') ? r.team.name : (r.team || r.team_name || '?');
+      const pts      = r.points ?? r.pts ?? '—';
+      const isTop4   = r.rank <= 4;
+      const isRelegation = r.rank >= standings.length - 2;
+      const rowColor = isTop4 ? 'var(--teal)' : isRelegation ? 'var(--red)' : 'var(--text-2)';
+      return `
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border-s);font-size:12px">
+          <span style="font-family:var(--font-mono);color:var(--text-3);min-width:20px;text-align:right">${r.rank}</span>
+          <span style="flex:1;font-weight:${isTop4 ? '700' : '400'};color:${rowColor}">${esc(teamName)}</span>
+          <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">${r.wins ?? ''}W ${r.draws ?? ''}D ${r.losses ?? ''}L</span>
+          <span style="font-family:var(--font-mono);font-weight:700;color:var(--blue);min-width:36px;text-align:right">${pts}pts</span>
+        </div>`;
+    }).join('');
+
+    return _toolWidget(
+      'sports-widget',
+      `<span class="widget-badge" style="background:var(--blue-dim);color:var(--blue);border:1px solid rgba(96,165,250,.2)">⚽ SPORTS</span>`,
+      title,
+      '✓ done',
+      `<div class="widget-body">
+        <div class="sports-league-label">${esc(leagueName)} · Standings</div>
+        ${rowsHtml}
+      </div>`,
+      { input: block.input, data }
+    );
+  }
+
+  // ── Scores / matches ──
+  const matchesHtml = matches.slice(0, 10).map(m => {
+    const home      = (m.home_team && typeof m.home_team === 'object') ? m.home_team.name : (m.home_team || m.home || '?');
+    const away      = (m.away_team && typeof m.away_team === 'object') ? m.away_team.name : (m.away_team || m.away || '?');
+    const homeScore = m.home_score ?? m.score_home ?? null;
+    const awayScore = m.away_score ?? m.score_away ?? null;
+    const hasScore  = homeScore !== null && awayScore !== null;
+    const homeWon   = hasScore && Number(homeScore) > Number(awayScore);
+    const awayWon   = hasScore && Number(awayScore) > Number(homeScore);
+    const status    = m.status || m.state || '';
+    return `
+      <div class="sports-match">
+        <div class="sports-team ${homeWon ? 'winner' : ''}">${esc(home)}</div>
+        <div class="sports-score">${hasScore ? `${homeScore}–${awayScore}` : (status || 'vs')}</div>
+        <div class="sports-team-home ${awayWon ? 'winner' : ''}">${esc(away)}</div>
+      </div>`;
+  }).join('');
+
+  const noDataHtml = (!standings.length && !matches.length)
+    ? `<div style="font-size:12px;color:var(--text-3);font-family:var(--font-mono);padding:4px 0">
+        Data received for ${esc(leagueName)}
+       </div>`
+    : '';
+
+  return _toolWidget(
+    'sports-widget',
+    `<span class="widget-badge" style="background:var(--blue-dim);color:var(--blue);border:1px solid rgba(96,165,250,.2)">⚽ SPORTS</span>`,
+    title,
+    '✓ done',
+    `<div class="widget-body">
+      <div class="sports-league-label">${esc(leagueName)} · ${esc(dataType)}</div>
+      ${matchesHtml || noDataHtml}
+    </div>`,
+    { input: block.input, data }
+  );
+}
+
+// ── Image Search ──────────────────────────────────────────────────────────
+function renderImageSearchTool(block, streaming) {
+  const input = block.input || {};
+  const query = input.query || 'Images';
+
+  if (streaming && !block._result_parsed) {
+    return `<div class="widget-block imgsearch-widget">
+      <div class="widget-head">
+        <span class="widget-badge" style="background:var(--teal-dim);color:var(--teal);border:1px solid rgba(56,189,248,.2)">🖼 IMAGES</span>
+        <span class="widget-title">${esc(query)}</span>
+        <span class="widget-status">⟳ searching</span>
+      </div>
+      <div class="widget-streaming"><div class="think-pulse"></div><span>Searching images…</span></div>
+    </div>`;
+  }
+
+  // Extract images from all possible locations
+  let images = [];
+
+  // 1. gallery from _extractToolResult (image_gallery block type)
+  const { text: rawText, gallery } = _extractToolResult(block);
+  if (gallery && gallery.length) images = gallery;
+
+  // 2. _result_parsed items
+  if (!images.length && block._result_parsed) {
+    const items = Array.isArray(block._result_parsed) ? block._result_parsed : [block._result_parsed];
+    for (const item of items) {
+      if (!item) continue;
+      // image_gallery type item
+      if (item.type === 'image_gallery' && Array.isArray(item.images)) { images = item.images; break; }
+      // Object with images array
+      if (typeof item === 'object' && Array.isArray(item.images)) { images = item.images; break; }
+      // Array of image objects
+      if (typeof item === 'object' && Array.isArray(item) && item[0]?.url) { images = item; break; }
+      // Text JSON
+      if (item.type === 'text' && item.text) {
+        try {
+          const p = JSON.parse(item.text);
+          if (p && Array.isArray(p.images)) { images = p.images; break; }
+          if (p && Array.isArray(p.results)) { images = p.results; break; }
+          if (Array.isArray(p) && p[0]?.url) { images = p; break; }
+        } catch {}
+      }
+    }
+  }
+
+  // 3. rawText fallback
+  if (!images.length && rawText) {
+    if (typeof rawText === 'object') {
+      if (Array.isArray(rawText.images))  images = rawText.images;
+      else if (Array.isArray(rawText.results)) images = rawText.results;
+      else if (Array.isArray(rawText))    images = rawText;
+    } else if (typeof rawText === 'string') {
+      try {
+        const p = JSON.parse(rawText);
+        if (Array.isArray(p.images)) images = p.images;
+        else if (Array.isArray(p)) images = p;
+      } catch {}
+    }
+  }
+
+  if (!images.length) {
+    return _toolWidget(
+      'imgsearch-widget',
+      `<span class="widget-badge" style="background:var(--teal-dim);color:var(--teal);border:1px solid rgba(56,189,248,.2)">🖼 IMAGES</span>`,
+      query, '✓ done',
+      `<div class="widget-body" style="font-size:12px;color:var(--text-3)">Searched: "${esc(query)}"</div>`,
+      { query }
+    );
+  }
+
+  const gridHtml = images.slice(0, 9).map(img => {
+    const url     = img.url || img.thumbnail_url || img.image_url || img.src || '';
+    const imgTitle= img.title || img.alt || '';
+    const origin  = img.origin_url || img.source_url || img.link || '';
+    if (!url) return '';
+    const eUrl    = esc(url);
+    const eName   = esc(imgTitle || 'image');
+    return `
+      <div class="imgsearch-item">
+        <img src="${eUrl}" alt="${eName}" loading="lazy"
+             onclick="openInCanvas('${eUrl}','${eName}','image/jpeg')"
+             onerror="this.parentElement.style.display='none'">
+        ${imgTitle
+          ? `<div class="imgsearch-caption" title="${eName}">${esc(imgTitle.slice(0,40))}${imgTitle.length>40?'…':''}</div>`
+          : ''}
+      </div>`;
+  }).join('');
+
+  return _toolWidget(
+    'imgsearch-widget',
+    `<span class="widget-badge" style="background:var(--teal-dim);color:var(--teal);border:1px solid rgba(56,189,248,.2)">🖼 IMAGES</span>`,
+    query, '✓ done',
+    `<div class="widget-body">
+      <div class="imgsearch-query">🔍 <span style="font-family:var(--font-mono);color:var(--teal)">${esc(query)}</span>
+        <span style="color:var(--text-3);font-size:10px">${images.length} results</span>
+      </div>
+      <div class="imgsearch-grid">${gridHtml}</div>
+    </div>`,
+    { query, image_count: images.length }
+  );
+}
+
+// ── Web Search ────────────────────────────────────────────────────────────
+function renderWebSearchTool(block, streaming) {
+  const input = block.input || {};
+  const query = input.query || 'Search';
+
+  if (streaming && !block._result_parsed) {
+    return `<div class="widget-block websearch-widget">
+      <div class="widget-head">
+        <span class="widget-badge" style="background:var(--accent-dim);color:var(--accent);border:1px solid rgba(168,85,247,.2)">🔍 SEARCH</span>
+        <span class="widget-title">${esc(query)}</span>
+        <span class="widget-status">⟳ searching</span>
+      </div>
+      <div class="widget-streaming"><div class="think-pulse"></div><span>Searching the web…</span></div>
+    </div>`;
+  }
+
+  // Gather all knowledge items from _result_parsed
+  let results = [];
+  if (block._result_parsed) {
+    const items = Array.isArray(block._result_parsed) ? block._result_parsed : [block._result_parsed];
+    for (const item of items) {
+      if (!item) continue;
+      if (item.type === 'knowledge') { results.push(item); continue; }
+      // Array of knowledge items
+      if (Array.isArray(item)) {
+        const knowItems = item.filter(x => x && x.type === 'knowledge');
+        if (knowItems.length) { results = results.concat(knowItems); continue; }
+      }
+      // JSON text containing results
+      if (item.type === 'text' && item.text) {
+        try {
+          const p = JSON.parse(item.text);
+          if (Array.isArray(p)) {
+            const k = p.filter(x => x && (x.type === 'knowledge' || x.title));
+            if (k.length) results = results.concat(k);
+          } else if (p && Array.isArray(p.results)) {
+            results = results.concat(p.results);
+          }
+        } catch {}
+      }
+    }
+  }
+
+  // Fallback via _extractToolResult
+  if (!results.length) {
+    const { text: rawText } = _extractToolResult(block);
+    if (Array.isArray(rawText)) {
+      results = rawText.filter(r => r && (r.type === 'knowledge' || r.title || r.url));
+    } else if (rawText && typeof rawText === 'object' && Array.isArray(rawText._knowledge)) {
+      results = rawText._knowledge;
+    } else if (rawText && typeof rawText === 'object' && Array.isArray(rawText.results)) {
+      results = rawText.results;
+    }
+  }
+
+  const resultsHtml = results.slice(0, 6).map(r => {
+    const title   = r.title || '?';
+    const url     = r.url   || '';
+    const favicon = r.metadata?.favicon_url || '';
+    const source  = r.metadata?.site_name
+      || (url ? url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0] : '');
+    const dispUrl = url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60);
+
+    return `
+      <div class="websearch-result">
+        <div class="websearch-result-title" style="display:flex;align-items:center;gap:5px">
+          ${favicon ? `<img src="${esc(favicon)}" width="12" height="12" style="border-radius:2px;flex-shrink:0" onerror="this.style.display='none'">` : ''}
+          ${url
+            ? `<a href="${esc(url)}" target="_blank" rel="noopener"
+                 style="color:var(--teal);text-decoration:none"
+                 onmouseover="this.style.textDecoration='underline'"
+                 onmouseout="this.style.textDecoration='none'">${esc(title)}</a>`
+            : esc(title)}
+        </div>
+        ${source ? `<div class="websearch-result-url">${esc(source)}</div>` : ''}
+      </div>`;
+  }).join('');
+
+  return _toolWidget(
+    'websearch-widget',
+    `<span class="widget-badge" style="background:var(--accent-dim);color:var(--accent);border:1px solid rgba(168,85,247,.2)">🔍 SEARCH</span>`,
+    query, '✓ done',
+    `<div class="widget-body">
+      <div class="websearch-query">
+        🔍 <span class="websearch-query-text">${esc(query)}</span>
+        ${results.length ? `<span style="color:var(--text-3);font-size:10px">${results.length} results</span>` : ''}
+      </div>
+      ${resultsHtml || `<div style="font-size:12px;color:var(--text-3)">Search completed</div>`}
+    </div>`,
+    { query, result_count: results.length }
+  );
+}
+
+// ── Web Fetch ─────────────────────────────────────────────────────────────
+function renderWebFetchTool(block, streaming) {
+  const input  = block.input || {};
+  const url    = input.url || '';
+  const domain = url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
+
+  const dispContent = block._result_display;
+  const richLink    = dispContent?.type === 'rich_link' ? dispContent.link : null;
+  const favicon     = richLink?.icon_url || '';
+  const pageTitle   = richLink?.title || domain;
+
+  if (streaming && !block._result_parsed && !block._result_display) {
+    return `<div class="widget-block webfetch-widget">
+      <div class="widget-head">
+        <span class="widget-badge" style="background:var(--accent-dim);color:var(--accent);border:1px solid rgba(168,85,247,.2)">🌐 FETCH</span>
+        <span class="widget-title">${esc(domain || url)}</span>
+        <span class="widget-status">⟳ fetching</span>
+      </div>
+      <div class="widget-streaming"><div class="think-pulse"></div><span>Fetching page…</span></div>
+    </div>`;
+  }
+
+  // Extract result — knowledge items or text summary
+  let summary = '';
+  let itemCount = 0;
+
+  if (block._result_parsed) {
+    const items = Array.isArray(block._result_parsed)
+      ? block._result_parsed
+      : [block._result_parsed];
+
+    for (const item of items) {
+      if (!item) continue;
+      if (item.type === 'knowledge') {
+        itemCount++;
+        if (!summary && item.title) summary = item.title;
+      } else if (item.type === 'text' && item.text) {
+        // Plain text snippet — use first non-empty line as summary
+        const firstLine = item.text.trim().split('\n').find(l => l.trim().length > 10) || '';
+        if (!summary && firstLine) summary = firstLine.slice(0, 120);
+        itemCount++;
+      }
+    }
+  }
+
+  // Fallback via _extractToolResult
+  if (!summary) {
+    const { text: rawText } = _extractToolResult(block);
+    if (Array.isArray(rawText) && rawText.length) {
+      itemCount = rawText.length;
+      const first = rawText.find(r => r && (r.title || r.text));
+      if (first) summary = first.title || (first.text || '').slice(0, 120);
+    } else if (typeof rawText === 'string' && rawText.trim()) {
+      summary = rawText.trim().split('\n').find(l => l.trim().length > 10) || '';
+      summary = summary.slice(0, 120);
+      itemCount = 1;
+    }
+  }
+
+  const statusLine = itemCount > 0
+    ? `${itemCount} section${itemCount !== 1 ? 's' : ''} fetched`
+    : 'Page fetched';
+
+  const bodyHtml = `<div class="widget-body">
+    <div class="webfetch-url" style="display:flex;align-items:center;gap:6px">
+      ${favicon
+        ? `<img src="${esc(favicon)}" width="14" height="14"
+               style="border-radius:3px;flex-shrink:0"
+               onerror="this.style.display='none'">`
+        : '🌐'}
+      <a href="${esc(url)}" target="_blank" rel="noopener"
+         style="color:var(--teal);text-decoration:none;flex:1;overflow:hidden;
+                text-overflow:ellipsis;white-space:nowrap">${esc(pageTitle || url)}</a>
+    </div>
+    ${summary
+      ? `<div style="font-size:12px;color:var(--text-2);margin-top:6px;line-height:1.55">${esc(summary)}${summary.length >= 120 ? '…' : ''}</div>`
+      : ''}
+    <div style="font-size:10px;color:var(--text-3);font-family:var(--font-mono);margin-top:4px">${esc(statusLine)}</div>
+  </div>`;
+
+  return _toolWidget(
+    'webfetch-widget',
+    `<span class="widget-badge" style="background:var(--accent-dim);color:var(--accent);border:1px solid rgba(168,85,247,.2)">🌐 FETCH</span>`,
+    domain || url,
+    '✓ done',
+    bodyHtml,
+    { url, page_title: pageTitle, item_count: itemCount }
+  );
+}
+
+// ── Bash Tool ─────────────────────────────────────────────────────────────
+function renderBashTool(block, streaming) {
+  const input = block.input || {};
+  const desc  = input.description || input.command?.slice(0, 60) || 'bash';
+
+  // Build command display from all sources
+  let command = input.command || input.code || '';
+  // Also check display_content json_block
+  const tuDisp = block.display_content;
+  if (tuDisp && tuDisp.type === 'json_block' && tuDisp.json_block) {
+    try { command = JSON.parse(tuDisp.json_block).code || command; } catch {}
+  }
+  const shortCmd = command.replace(/\s+/g, ' ').trim().slice(0, 140);
+
+  if (streaming && !block._result_parsed && !block._result_display) {
+    return `<div class="widget-block bash-widget">
+      <div class="widget-head">
+        <span class="widget-badge" style="background:var(--green-dim);color:var(--green);border:1px solid rgba(74,222,128,.2)">💻 BASH</span>
+        <span class="widget-title">${esc(desc)}</span>
+        <span class="widget-status running">⟳ running</span>
+      </div>
+      <div class="widget-body">
+        ${shortCmd ? `<div class="bash-command">$ ${esc(shortCmd)}${command.length > 140 ? '…' : ''}</div>` : ''}
+        <div class="widget-streaming"><div class="think-pulse"></div><span>Running…</span></div>
+      </div>
+    </div>`;
+  }
+
+  // ── Extract stdout/stderr/returncode from all possible locations ──────────
+  let stdout = '', stderr = '', retcode = null;
+
+  function _parseBashResult(obj) {
+    if (!obj || typeof obj !== 'object') return false;
+    if (obj.stdout !== undefined || obj.returncode !== undefined) {
+      stdout  = String(obj.stdout  || '');
+      stderr  = String(obj.stderr  || '');
+      retcode = obj.returncode ?? null;
+      return true;
+    }
+    return false;
+  }
+
+  function _parseBashStr(s) {
+    if (!s || typeof s !== 'string') return false;
+    const t = s.trim();
+    if (t.startsWith('{') || t.startsWith('[')) {
+      try { return _parseBashResult(JSON.parse(t)); } catch {}
+    }
+    // Plain text output
+    stdout = s;
+    return true;
+  }
+
+  // Priority 1: _result_display json_block (tool_result display_content)
+  const resDisp = block._result_display;
+  if (!stdout && resDisp) {
+    if (resDisp.type === 'json_block' && resDisp.json_block) {
+      const jb = resDisp.json_block;
+      _parseBashResult(typeof jb === 'string' ? JSON.parse(jb) : jb);
+    } else if (resDisp.type === 'text' && resDisp.text) {
+      _parseBashStr(resDisp.text);
+    }
+  }
+
+  // Priority 2: _result_parsed items
+  if (!stdout && block._result_parsed) {
+    const items = Array.isArray(block._result_parsed)
+      ? block._result_parsed
+      : [block._result_parsed];
+    for (const item of items) {
+      if (!item) continue;
+      if (typeof item === 'object' && !item.type) {
+        if (_parseBashResult(item)) break;
+      }
+      if (item.type === 'text'       && _parseBashStr(item.text)) break;
+      if (item.type === 'json_block') {
+        try {
+          const jb = typeof item.json_block === 'string'
+            ? JSON.parse(item.json_block) : item.json_block;
+          if (_parseBashResult(jb)) break;
+        } catch {}
+      }
+    }
+  }
+
+  // Priority 3: _extractToolResult
+  if (!stdout) {
+    const { text: exText } = _extractToolResult(block);
+    if (exText && typeof exText === 'object') _parseBashResult(exText);
+    else if (typeof exText === 'string') _parseBashStr(exText);
+  }
+
+  // Priority 4: tool_use block display_content json_block
+  if (!stdout && tuDisp && tuDisp.type === 'json_block' && tuDisp.json_block) {
+    try {
+      const jb = typeof tuDisp.json_block === 'string'
+        ? JSON.parse(tuDisp.json_block) : tuDisp.json_block;
+      _parseBashResult(jb);
+    } catch {}
+  }
+
+  const statusIcon = retcode === 0    ? '✓ done'
+    : retcode !== null                ? `✗ exit ${retcode}`
+    :                                   '✓ done';
+
+  const bodyHtml = `<div class="widget-body">
+    ${shortCmd ? `<div class="bash-command">$ ${esc(shortCmd)}${command.length > 140 ? '…' : ''}</div>` : ''}
+    ${stdout
+      ? `<div class="bash-output">${esc(stdout)}</div>`
+      : `<div style="font-size:11px;color:var(--text-3);font-family:var(--font-mono);padding:4px 0">Command executed${retcode !== null ? ` (exit ${retcode})` : ''}</div>`}
+    ${stderr ? `<div class="bash-output" style="color:var(--red);margin-top:4px">${esc(stderr)}</div>` : ''}
+  </div>`;
+
+  return _toolWidget(
+    'bash-widget',
+    `<span class="widget-badge" style="background:var(--green-dim);color:var(--green);border:1px solid rgba(74,222,128,.2)">💻 BASH</span>`,
+    desc, statusIcon, bodyHtml,
+    { command, returncode: retcode, stdout: stdout.slice(0, 500), stderr: stderr.slice(0, 200) }
+  );
+}
+
+// ── Create File ───────────────────────────────────────────────────────────
+function renderCreateFileTool(block, streaming) {
+  const input = block.input || {};
+  const path  = input.path || 'file';
+  const fname = path.split('/').pop() || path;
+  const desc  = input.description || fname;
+
+  // Show code from display_content (tool_use update) or _result_display (tool_result)
+  // Try all sources in priority order
+  let content = '', lang = '';
+
+  const _tryCodeBlock = (src) => {
+    if (!src) return false;
+    const cb = src.type === 'json_block' ? src.json_block : null;
+    if (!cb) return false;
+    try {
+      const p = typeof cb === 'string' ? JSON.parse(cb) : cb;
+      if (p.code) { content = p.code; lang = p.language || ''; return true; }
+    } catch {}
+    return false;
+  };
+
+  _tryCodeBlock(block.display_content) ||
+  _tryCodeBlock(block._result_display) ||
+  // fallback: check input directly
+  (() => { if (block.input?.file_text) { content = block.input.file_text; } })();
+
+  const codeBlock = null;  // legacy ref — no longer needed
+
+  if (streaming && !block._result_parsed && !codeBlock) {
+    return `<div class="widget-block file-tool-widget">
+      ${_toolHead('', '📝 CREATE', fname, '⟳ writing')}
+      ${_streamingBody()}
+    </div>`;
+  }
+
+  // Check result display for success message
+  const resDisplay = block._result_display;
+  const resText    = resDisplay?.type === 'text' ? resDisplay.text : '';
+
+  // Syntax highlight the content
+  let highlighted = '';
+  if (content) {
+    const validLang = lang && hljs.getLanguage(lang) ? lang : 'plaintext';
+    try { highlighted = hljs.highlight(content.slice(0,600), { language: validLang }).value; }
+    catch { highlighted = esc(content.slice(0,600)); }
+  }
+
+  return `<div class="widget-block file-tool-widget">
+    ${_toolHead('', '📝 CREATE', fname, resText ? '✓ created' : '✓ done')}
+    <div class="widget-body">
+      <div class="file-tool-path">${esc(path)}</div>
+      ${highlighted
+        ? `<div class="file-tool-content">
+             <code class="hljs language-${esc(lang || 'plaintext')}">${highlighted}</code>
+             ${content.length > 600 ? `<div style="font-size:10px;color:var(--text-3);font-family:var(--font-mono);padding-top:4px">… ${content.length - 600} more chars</div>` : ''}
+           </div>`
+        : resText ? `<div style="font-size:11px;color:var(--green);font-family:var(--font-mono)">${esc(resText)}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function renderViewTool(block, streaming) {
+  const input = block.input || {};
+  const path  = input.path || 'file';
+  const fname = path.split('/').pop() || path;
+
+  if (streaming && !block._result_parsed) {
+    return `<div class="widget-block file-tool-widget">
+      ${_toolHead('', '👁 VIEW', fname, '⟳ reading')}
+      ${_streamingBody()}
+    </div>`;
+  }
+
+  // View result can be in _result_display (json_block) or _result_parsed
+  const resDisplay = block._result_display;
+  const codeBlock  = resDisplay?.type === 'json_block' ? resDisplay.json_block : null;
+
+  let content = '', lang = '';
+  if (codeBlock) {
+    try {
+      const parsed = typeof codeBlock === 'string' ? JSON.parse(codeBlock) : codeBlock;
+      content = parsed.code || '';
+      lang    = parsed.language || path.split('.').pop() || '';
+    } catch {}
+  }
+
+  // Also try _result_parsed for line-numbered view output
+  if (!content && block._result_parsed) {
+    const items = Array.isArray(block._result_parsed) ? block._result_parsed : [];
+    for (const item of items) {
+      if (item?.type === 'text' && item.text) {
+        content = item.text;
+        break;
+      }
+    }
+  }
+
+  let highlighted = '';
+  if (content) {
+    const validLang = lang && hljs.getLanguage(lang) ? lang : 'plaintext';
+    try { highlighted = hljs.highlight(content.slice(0, 800), { language: validLang }).value; }
+    catch { highlighted = esc(content.slice(0, 800)); }
+  }
+
+  // Fallback to text result
+  const { text } = _extractToolResult(block);
+  const rawText   = typeof text === 'string' ? text : '';
+
+  return `<div class="widget-block file-tool-widget">
+    ${_toolHead('', '👁 VIEW', fname, '✓ done')}
+    <div class="widget-body">
+      <div class="file-tool-path">${esc(path)}</div>
+      ${highlighted
+        ? `<div class="file-tool-content"><code class="hljs language-${esc(lang || 'plaintext')}">${highlighted}</code></div>`
+        : rawText
+          ? `<div class="file-tool-content">${esc(rawText.slice(0, 800))}${rawText.length > 800 ? '\n…' : ''}</div>`
+          : '<div style="font-size:11px;color:var(--text-3);font-family:var(--font-mono)">File viewed</div>'}
+    </div>
+  </div>`;
+}
+
+function renderStrReplaceTool(block, streaming) {
+  const input  = block.input || {};
+  const path   = input.path || 'file';
+  const fname  = path.split('/').pop() || path;
+  const oldStr = input.old_str || '';
+  const newStr = input.new_str || '';
+
+  const resDisplay = block._result_display;
+  const resText    = resDisplay?.type === 'text' ? resDisplay.text : null;
+  // Also check display_content on the tool_use block itself for the description
+  const tuDisplay  = block.display_content;
+  const tuText     = tuDisplay?.type === 'text' ? tuDisplay.text : null;
+
+  if (streaming && !block._result_parsed && !tuText) {
+    return `<div class="widget-block file-tool-widget">
+      ${_toolHead('', '✏ EDIT', fname, '⟳ editing')}
+      ${_streamingBody()}
+    </div>`;
+  }
+
+  return `<div class="widget-block file-tool-widget">
+    ${_toolHead('', '✏ EDIT', fname, resText || '✓ done')}
+    <div class="widget-body">
+      <div class="file-tool-path">${esc(path)}</div>
+      <div class="str-replace-diff">
+        ${oldStr ? `<div class="str-replace-old">- ${esc(oldStr.slice(0,200))}${oldStr.length>200?'\n…':''}</div>` : ''}
+        ${newStr ? `<div class="str-replace-new">+ ${esc(newStr.slice(0,200))}${newStr.length>200?'\n…':''}</div>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── MCP Registry ──────────────────────────────────────────────────────────
+function renderMCPRegistryTool(block, streaming) {
+  const input    = block.input || {};
+  const keywords = (input.keywords || []).join(', ') || 'search';
+
+  if (streaming && !block._result_parsed) {
+    return `<div class="widget-block mcp-widget">
+      ${_toolHead('', '🔌 MCP', keywords, '⟳ searching')}
+      ${_streamingBody()}
+    </div>`;
+  }
+
+  const { text } = _extractToolResult(block);
+  const _mcpData = (typeof text === 'object' && text !== null) ? text : {};
+  const items = _mcpData.connectors || _mcpData.results || _mcpData.packages
+    || (Array.isArray(text) ? text : []);
+
+  const itemsHtml = items.slice(0, 6).map(item => {
+    const name = item.name || item.title || item.package_name || '?';
+    const desc = item.description || item.summary || '';
+    return `
+      <div class="mcp-result-item">
+        <div class="mcp-result-name">🔌 ${esc(name)}</div>
+        ${desc ? `<div class="mcp-result-desc">${esc(desc)}</div>` : ''}
+      </div>`;
+  }).join('');
+
+  return _toolWidget(
+    'mcp-widget',
+    `<span class="widget-badge" style="background:var(--accent-dim);color:var(--accent);border:1px solid rgba(168,85,247,.2)">🔌 MCP</span>`,
+    keywords,
+    '✓ done',
+    `<div class="widget-body">
+      ${itemsHtml || '<div style="font-size:12px;color:var(--text-3)">Registry searched</div>'}
+    </div>`,
+    block._result_parsed ? { raw: block._result_parsed } : null
+  );
+}
+
+// ── Suggest Connectors ────────────────────────────────────────────────────
+function renderSuggestConnectorsTool(block, streaming) {
+  const input = block.input || {};
+  const title = input.title || input.query || 'Connectors';
+
+  if (streaming && !block._result_parsed) {
+    return `<div class="widget-block mcp-widget">
+      ${_toolHead('', '🔌 CONNECTORS', title, '⟳ suggesting')}
+      ${_streamingBody()}
+    </div>`;
+  }
+
+  const { text: _suggestText } = _extractToolResult(block);
+  const _suggestData = (typeof _suggestText === 'object' && _suggestText !== null) ? _suggestText : {};
+  const connectors = _suggestData.connectors || _suggestData.suggestions
+    || (Array.isArray(_suggestText) ? _suggestText : []);
+
+  const html = connectors.slice(0, 6).map(c => {
+    const name = c.name || c.title || '?';
+    const desc = c.description || '';
+    return `
+      <div class="mcp-result-item">
+        <div class="mcp-result-name">⚡ ${esc(name)}</div>
+        ${desc ? `<div class="mcp-result-desc">${esc(desc)}</div>` : ''}
+      </div>`;
+  }).join('');
+
+  return _toolWidget(
+    'mcp-widget',
+    `<span class="widget-badge" style="background:var(--accent-dim);color:var(--accent);border:1px solid rgba(168,85,247,.2)">🔌 CONNECTORS</span>`,
+    title,
+    '✓ done',
+    `<div class="widget-body">
+      ${html || '<div style="font-size:12px;color:var(--text-3)">Connectors suggested</div>'}
+    </div>`,
+    block._result_parsed ? { raw: block._result_parsed } : null
+  );
+}
+
+/* ═══════════════════════════════════════════
    BLOCK RENDERER
 ═══════════════════════════════════════════ */
 
-function renderBlock(block, streaming = false, sender = 'assistant') {
+function renderBlock(block, streaming, sender) {
+  if (sender === undefined) sender = 'assistant';
+
   switch (block.type) {
+
     case 'text': {
       const cursor = streaming ? '<span class="scursor"></span>' : '';
-      // console.log('renderBlock:', {text: block.text, sender, streaming}); // DEBUG
       if (sender === 'human') {
-        const escaped = esc(block.text || '').replace(/\n/g, '<br>');
-        return `<div class="md"><p>${escaped}</p></div>`;
+        return `<div class="md"><p>${esc(block.text || '').replace(/\n/g,'<br>')}</p></div>`;
       }
       return `<div class="md">${marked.parse(block.text || '')}${cursor}</div>`;
     }
@@ -6522,36 +8882,67 @@ function renderBlock(block, streaming = false, sender = 'assistant') {
     }
 
     case 'tool_use': {
-      // Artifacts and present_files are Claude-only
       const _prov = (S.tabAccount?.provider || 'claude').toLowerCase();
-      if (block.name === 'artifacts') {
-        if (_prov !== 'claude') return '';
-        return renderArtifactBlock(block, streaming);
-      }
-      if (block.name === 'present_files') {
-        if (_prov !== 'claude') return '';
-        return renderPresentFiles(block);
-      }
-      const tuId  = 'tu_' + Math.random().toString(36).slice(2, 9);
-      const input = JSON.stringify(block.input || {}, null, 2);
-      const stat  = streaming ? 'running' : 'done';
-      const statTxt = streaming ? '⟳ running' : '✓ done';
+
+      if (block.name === 'ask_user_input_v0')      return renderAskUserInputWidget(block, streaming);
+      if (block.name === 'artifacts')              return _prov === 'claude' ? renderArtifactBlock(block, streaming) : '';
+      if (block.name === 'present_files')          return _prov === 'claude' ? renderPresentFiles(block) : '';
+      if (block.name === 'weather_fetch')          return renderWeatherTool(block, streaming);
+      if (block.name === 'places_map_display_v0')  return renderMapTool(block, streaming);
+      if (block.name === 'places_search')          return renderPlacesSearchTool(block, streaming);
+      if (block.name === 'recipe_display_v0')      return renderRecipeTool(block, streaming);
+      if (block.name === 'message_compose_v1')     return renderMessageComposeTool(block, streaming);
+      if (block.name === 'fetch_sports_data')      return renderSportsTool(block, streaming);
+      if (block.name === 'image_search')           return renderImageSearchTool(block, streaming);
+      if (block.name === 'web_search')             return renderWebSearchTool(block, streaming);
+      if (block.name === 'web_fetch')              return renderWebFetchTool(block, streaming);
+      if (block.name === 'bash_tool')              return renderBashTool(block, streaming);
+      if (block.name === 'create_file')            return renderCreateFileTool(block, streaming);
+      if (block.name === 'str_replace')            return renderStrReplaceTool(block, streaming);
+      if (block.name === 'view')                   return renderViewTool(block, streaming);
+      if (block.name === 'search_mcp_registry')    return renderMCPRegistryTool(block, streaming);
+      if (block.name === 'suggest_connectors')     return renderSuggestConnectorsTool(block, streaming);
+
+      // Generic fallback
+      const tuId     = 'tu_' + Math.random().toString(36).slice(2, 9);
+      const inputObj = block.input || {};
+      const inputStr = JSON.stringify(inputObj, null, 2);
+      const stat     = streaming ? 'running' : 'done';
+      const statTxt  = streaming ? '⟳ running' : '✓ done';
+      const wid2     = _widgetId();
+      const rawJson  = JSON.stringify({
+        name:   block.name,
+        input:  inputObj,
+        result: block._result_parsed || null,
+      }, null, 2);
       return `
-        <div class="tool-block">
+        <div class="tool-block" id="${wid2}">
           <div class="tool-hd" onclick="toggleCollapse('${tuId}','tuc_${tuId}')">
             <span class="tool-badge call">TOOL</span>
             <span class="tool-name">${esc(block.name || 'tool')}</span>
             <span class="tool-status ${stat}">${statTxt}</span>
+            <button class="tool-raw-btn"
+                    onclick="event.stopPropagation();_toggleRaw('${wid2}')"
+                    title="Raw data">{ }</button>
             <span class="tool-chev" id="tuc_${tuId}"></span>
           </div>
-          <div class="tool-body" id="${tuId}">${esc(input)}</div>
+          <div class="tool-body" id="${tuId}">${esc(inputStr)}</div>
+          <div class="tool-raw-panel" id="raw_${wid2}">
+            <div class="tool-raw-content">${esc(rawJson)}</div>
+          </div>
         </div>`;
     }
+
+    case 'tool_result':
+      // tool_result blocks are consumed by mergeToolResults() before rendering.
+      // They should never reach here in normal flow, but render a minimal
+      // collapsed view just in case (e.g. human messages that contain results).
+      return '';
 
     case 'flowith_image': {
       const url = block.url || block.image_url || '';
       if (!url) return '';
-      const safeUrl = esc(url);
+      const safeUrl  = esc(url);
       const safeName = esc(url.split('/').pop().split('?')[0] || 'generated.png');
       return `<div class="flowith-chat-media">
         <div class="code-header" style="border-radius:var(--r-l) var(--r-l) 0 0">
@@ -6570,7 +8961,7 @@ function renderBlock(block, streaming = false, sender = 'assistant') {
     case 'flowith_video': {
       const url = block.url || block.video_url || '';
       if (!url) return '';
-      const safeUrl = esc(url);
+      const safeUrl  = esc(url);
       const safeName = esc(url.split('/').pop().split('?')[0] || 'generated.mp4');
       return `<div class="flowith-chat-media">
         <div class="code-header" style="border-radius:var(--r-l) var(--r-l) 0 0">
@@ -6585,25 +8976,9 @@ function renderBlock(block, streaming = false, sender = 'assistant') {
         </video>
       </div>`;
     }
-    case 'tool_result': {
-      const trId  = 'tr_' + Math.random().toString(36).slice(2, 9);
-      let txt   = '';
-      if (Array.isArray(block.content)) txt = block.content.map(c => c.text || '').join('\n');
-      else if (typeof block.content === 'string') txt = block.content;
-      else txt = JSON.stringify(block.content || {}, null, 2);
-      if (txt.length > 3000) txt = txt.slice(0, 3000) + '\n… (truncated)';
-      return `
-        <div class="tool-block">
-          <div class="tool-hd" onclick="toggleCollapse('${trId}','trc_${trId}')">
-            <span class="tool-badge result">RESULT</span>
-            <span class="tool-name">${esc(block.name || 'tool_result')}</span>
-            <span class="tool-chev" id="trc_${trId}"></span>
-          </div>
-          <div class="tool-body" id="${trId}">${esc(txt)}</div>
-        </div>`;
-    }
 
-    default: return '';
+    default:
+      return '';
   }
 }
 
@@ -6792,14 +9167,10 @@ let _bpOpen = false;
 
 function _setBranchPoint(uuid, label) {
   const inp     = document.getElementById('branchSel');
-  const pill    = document.getElementById('branchPillRow');
-  const pillLbl = document.getElementById('branchPillLabel');
   const ROOT    = '00000000-0000-4000-8000-000000000000';
   const isRoot  = !uuid || uuid === ROOT;
 
   if (inp) inp.value = uuid || ROOT;
-  if (pill) pill.style.display = isRoot ? 'none' : '';
-  if (pillLbl) pillLbl.textContent = isRoot ? '— root —' : (label || uuid.slice(0,8));
 
   const btn = document.getElementById('branchToggleBtn');
   if (btn) btn.classList.toggle('active', !isRoot);
@@ -6926,30 +9297,28 @@ function filterBranchPicker(q) {
 }
 
 function buildBranchSel() {
-    const sel    = document.getElementById('branchSel');
-    const ROOT   = '00000000-0000-4000-8000-000000000000';
-    const isRoot = !sel?.value || sel.value === ROOT;
-    
-    // Auto-advance to current leaf for normal (non-branched) chat
-    if (isRoot && S.convId) {
-        const conv = S.convs[S.convId];
-        if (conv?.chat_messages?.length) {
-            const chain = buildChain(conv);
-            if (chain.length > 0) {
-                const lastUuid = chain[chain.length - 1].uuid;
-                if (sel) sel.value = lastUuid;
-                // Keep pill hidden (user didn't explicitly set a branch)
-                document.getElementById('branchPillRow').style.display = 'none';
-                document.getElementById('branchToggleBtn')?.classList.remove('active');
-                return;
-            }
-        }
-    }
-    
-    _setBranchPoint(
-        sel?.value || ROOT,
-        isRoot ? '' : document.getElementById('branchPillLabel')?.textContent || ''
-    );
+  const sel    = document.getElementById('branchSel');
+  const ROOT   = '00000000-0000-4000-8000-000000000000';
+  const isRoot = !sel?.value || sel.value === ROOT;
+  
+  // Auto-advance to current leaf for normal (non-branched) chat
+  if (isRoot && S.convId) {
+      const conv = S.convs[S.convId];
+      if (conv?.chat_messages?.length) {
+          const chain = buildChain(conv);
+          if (chain.length > 0) {
+              const lastUuid = chain[chain.length - 1].uuid;
+              if (sel) sel.value = lastUuid;
+              document.getElementById('branchToggleBtn')?.classList.remove('active');
+              return;
+          }
+      }
+  }
+  
+  _setBranchPoint(
+      sel?.value || ROOT,
+      isRoot ? '' : ''
+  );
 }
 
 // Compat shims for old callers
@@ -7702,6 +10071,125 @@ async function doSend() {
   }
 }
 
+function mergeToolResults(contentBlocks) {
+  if (!contentBlocks || !contentBlocks.length) return contentBlocks;
+
+  // Index tool_use blocks by id
+  const tuById = {};
+  for (const b of contentBlocks) {
+    if (b.type === 'tool_use' && b.id) tuById[b.id] = b;
+  }
+
+  for (const b of contentBlocks) {
+    if (b.type !== 'tool_result') continue;
+
+    const tu = tuById[b.tool_use_id || b.id];
+    if (!tu) continue;
+
+    // Already merged (streaming path sets _result_parsed)
+    if (tu._result_parsed !== undefined) continue;
+
+    // b.content is the tool_result payload — array of {type,text} or plain string
+    const raw = b.content;
+    if (!raw) { tu._result_parsed = []; continue; }
+
+    // Normalise to array of items
+    const items = Array.isArray(raw)
+      ? raw
+      : (typeof raw === 'string'
+          ? [{ type: 'text', text: raw }]
+          : [raw]);
+
+    // Try to parse each text item as JSON so _extractToolResult can handle it
+    const parsed = items.map(item => {
+      if (!item || item.type !== 'text') return item;
+      const t = (item.text || '').trim();
+      if (t.startsWith('{') || t.startsWith('[')) {
+        try { return { type: 'text', text: item.text, _parsed: JSON.parse(t) }; }
+        catch {}
+      }
+      return item;
+    });
+
+    tu._result_parsed  = parsed;
+    tu._result_display = b.display_content || null;
+  }
+
+  return contentBlocks;
+}
+
+function _extractToolResult(block) {
+  const parsed  = block._result_parsed;
+  const display = block._result_display || null;
+
+  if (!parsed) return { text: null, images: [], gallery: null, display };
+
+  const items = Array.isArray(parsed) ? parsed : [parsed];
+
+  let text    = null;
+  let gallery = null;
+  const knowledgeItems = [];
+
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue;
+
+    switch (item.type) {
+      case 'text': {
+        // Fast path: mergeToolResults already parsed the JSON
+        if (item._parsed !== undefined) {
+          if (text === null) {
+            text = item._parsed;
+          } else if (typeof text === 'object' && typeof item._parsed === 'object'
+                     && !Array.isArray(text) && !Array.isArray(item._parsed)) {
+            Object.assign(text, item._parsed);
+          }
+          break;
+        }
+        const raw = item.text || '';
+        if (!raw) break;
+        try {
+          const inner = JSON.parse(raw);
+          if (text === null) text = inner;
+          else if (typeof text === 'object' && typeof inner === 'object'
+                   && !Array.isArray(text)) Object.assign(text, inner);
+        } catch {
+          if (text === null) text = raw;
+        }
+        break;
+      }
+      case 'image_gallery':
+        if (item.images && item.images.length) gallery = item.images;
+        break;
+      case 'knowledge':
+        knowledgeItems.push(item);
+        break;
+      case 'local_resource':
+        if (!text || typeof text !== 'object') text = {};
+        if (typeof text === 'object') text._local_resource = item;
+        break;
+      default:
+        break;
+    }
+  }
+
+  // display_content json_block fallback
+  if (!text && display && display.type === 'json_block' && display.json_block) {
+    try {
+      const j = typeof display.json_block === 'string'
+        ? JSON.parse(display.json_block)
+        : display.json_block;
+      text = j;
+    } catch {}
+  }
+
+  if (knowledgeItems.length > 0) {
+    if (text === null || typeof text === 'string') text = knowledgeItems;
+    else if (typeof text === 'object') text._knowledge = knowledgeItems;
+  }
+
+  return { text, images: [], gallery, display };
+}
+
 function handleStreamEv(ev, asstMsg, bodyElFn) {
   switch (ev.type) {
     case 'message_start':
@@ -7711,7 +10199,24 @@ function handleStreamEv(ev, asstMsg, bodyElFn) {
 
     case 'content_block_start': {
       const b = ev.content_block;
-      streamBlocks[ev.index] = { ...b, text: b.text||'', thinking: b.thinking||'', input_str:'' };
+      streamBlocks[ev.index] = {
+        ...b,
+        text:            b.text            || '',
+        thinking:        b.thinking        || '',
+        input_str:       '',
+        // tool_result fields
+        tool_use_id:     b.tool_use_id     || '',
+        // capture display_content if present on the block itself
+        display_content: b.display_content || null,
+      };
+      // If this is a tool_use block, immediately register it in asstMsg.content
+      // so tool_result merges can find it even if content_block_stop hasn't fired yet
+      if (b.type === 'tool_use' && b.id) {
+        const existing = asstMsg.content.find(c => c.type === 'tool_use' && c.id === b.id);
+        if (!existing) {
+          asstMsg.content.push(streamBlocks[ev.index]);
+        }
+      }
       break;
     }
 
@@ -7727,18 +10232,86 @@ function handleStreamEv(ev, asstMsg, bodyElFn) {
         streamBlocks[ev.index].type     = 'thinking';
         streamBlocks[ev.index].thinking += d.thinking;
       }
-      else if (d.type === 'input_json_delta')
+      else if (d.type === 'input_json_delta') {
         streamBlocks[ev.index].input_str = (streamBlocks[ev.index].input_str||'') + d.partial_json;
+      }
+      // In content_block_delta, add:
+      else if (d.type === 'tool_use_block_update_delta') {
+        if (!streamBlocks[ev.index]) {
+          streamBlocks[ev.index] = { type: 'tool_use', input_str: '', text: '', thinking: '' };
+        }
+        if (d.message)         streamBlocks[ev.index].message         = d.message;
+        if (d.display_content) streamBlocks[ev.index].display_content = d.display_content;
+        updateStreamDisplay(asstMsg, bodyElFn);
+      }
+      else if (d.type === 'citation_start_delta') {
+        // Store open citation — text between start and end should be linked
+        if (!streamBlocks[ev.index]) streamBlocks[ev.index] = { type: 'text', text: '', thinking: '', input_str: '' };
+        streamBlocks[ev.index]._openCitation = d.citation;
+      }
+
+      else if (d.type === 'citation_end_delta') {
+        if (streamBlocks[ev.index]) {
+          streamBlocks[ev.index]._openCitation = null;
+        }
+      }
       break;
     }
 
     case 'content_block_stop': {
       const b = streamBlocks[ev.index];
       if (b) {
+        // Parse accumulated JSON input
         if (b.input_str) {
           try { b.input = JSON.parse(b.input_str); } catch {}
         }
-        asstMsg.content.push({...b});
+
+        if (b.type === 'tool_result') {
+          // Find the matching tool_use by tool_use_id
+          const tuId = b.tool_use_id || '';
+
+          // Helper: merge result data onto a tool_use block
+          const mergeResult = (tu) => {
+            if (!tu) return;
+            // _result_parsed: the parsed array from the tool_result input_json_delta
+            tu._result_parsed  = Array.isArray(b.input) ? b.input
+                               : (b.input != null ? [b.input] : null);
+            // _result_display: the display_content from the tool_result block start
+            tu._result_display = b.display_content || null;
+          };
+
+          // 1. Check streamBlocks (may still be open)
+          let found = false;
+          for (const sb of Object.values(streamBlocks)) {
+            if (sb.type === 'tool_use' && sb.id === tuId) {
+              mergeResult(sb);
+              found = true;
+              break;
+            }
+          }
+          // 2. Check asstMsg.content (already stopped / pre-registered)
+          if (!found || true) {  // always sync both to keep in-sync
+            for (const cb of asstMsg.content) {
+              if (cb.type === 'tool_use' && cb.id === tuId) {
+                mergeResult(cb);
+                found = true;
+                break;
+              }
+            }
+          }
+
+          // Never push tool_result blocks to content — they are consumed by merging
+        } else if (b.type === 'tool_use') {
+          // Update the pre-registered entry rather than pushing a duplicate
+          const existing = asstMsg.content.find(c => c.type === 'tool_use' && c.id === b.id);
+          if (existing) {
+            Object.assign(existing, b);
+          } else {
+            asstMsg.content.push({...b});
+          }
+        } else {
+          asstMsg.content.push({...b});
+        }
       }
       break;
     }
@@ -7861,15 +10434,27 @@ function updateStreamDisplay(asstMsg, bodyElFn) {
   if (!el) return;
 
   let html = '';
-  for (const b of asstMsg.content) html += renderBlock(b, false, asstMsg.sender || 'assistant');
+  // Render finalised content blocks (tool_use with results merged)
+  for (const b of asstMsg.content) {
+    if (b.type === 'tool_result') continue;  // never render tool_result blocks directly
+    html += renderBlock(b, false, asstMsg.sender || 'assistant');
+  }
 
+  // Render still-streaming blocks that haven't been added to asstMsg.content yet
+  const contentUuids = new Set(asstMsg.content.map(b => b.id || b.uuid || '').filter(Boolean));
   const maxIdx = Object.keys(streamBlocks).length
     ? Math.max(...Object.keys(streamBlocks).map(Number))
-    : asstMsg.content.length - 1;
+    : -1;
 
-  for (let i = asstMsg.content.length; i <= maxIdx; i++) {
+  for (let i = 0; i <= maxIdx; i++) {
     const b = streamBlocks[i];
-    if (b) html += renderBlock(b, true);
+    if (!b) continue;
+    if (b.type === 'tool_result') continue;  // skip tool_result
+    // Skip if already rendered via asstMsg.content
+    if (b.type === 'tool_use' && b.id && contentUuids.has(b.id)) continue;
+    // Skip pure text/thinking blocks already in asstMsg.content
+    if (b.type !== 'tool_use' && i < asstMsg.content.length) continue;
+    html += renderBlock(b, true);
   }
 
   if (!html) {
@@ -8006,43 +10591,6 @@ function copyMsgAsMarkdown(uuid, btn) {
       btn.classList.remove('copied');
     }, 2000);
   });
-}
-
-// Toggle collapse/expand for long messages
-function toggleMsgCollapse(uuid, btn) {
-  const msgEl = document.querySelector(`.msg[data-uuid="${uuid}"] .msg-body`);
-  if (!msgEl) return;
-  
-  const contentWrap = msgEl.querySelector('.md-content-wrap');
-  if (!contentWrap) return;
-  
-  const isCollapsed = contentWrap.classList.contains('collapsed');
-  contentWrap.classList.toggle('collapsed', !isCollapsed);
-  
-  if (isCollapsed) {
-    btn.innerHTML = '<span>⊟</span><span>Collapse</span>';
-    btn.title = 'Collapse';
-  } else {
-    btn.innerHTML = '<span>⊞</span><span>Expand</span>';
-    btn.title = 'Expand';
-  }
-}
-
-function expandMsg(uuid) {
-  const contentWrap = document.querySelector(
-    `.msg[data-uuid="${uuid}"] .md-content-wrap`
-  );
-  if (!contentWrap) return;
-  contentWrap.classList.remove('collapsed');
-  
-  // Also update the collapse button label
-  const collapseBtn = document.querySelector(
-    `.msg[data-uuid="${uuid}"] .md-util-btn.collapse`
-  );
-  if (collapseBtn) {
-    collapseBtn.innerHTML = '<span>⊟</span><span>Collapse</span>';
-    collapseBtn.title = 'Collapse';
-  }
 }
 
 // Regenerate from a specific assistant message — works for Claude + Flowith
@@ -8476,11 +11024,13 @@ async function deleteConvFull(e, id) {
 }
 
 function toggleWebSearch() {
-  S.webSearchEnabled = !S.webSearchEnabled;
+  S.webSearch = !S.webSearch;
   const btn = document.getElementById('webSearchBtn');
   if (btn) {
-    btn.classList.toggle('on', S.webSearchEnabled);
-    btn.textContent = S.webSearchEnabled ? '🌐 Web Search: On' : '🌐 Web Search: Off';
+    btn.classList.toggle('on', S.webSearch);
+    const lbl = btn.querySelector('#webSearchLbl');
+    if (lbl) lbl.textContent = S.webSearch ? 'Web Search: on' : 'Web Search: off';
+    else btn.textContent = S.webSearch ? '🌐 Web Search: On' : '🌐 Web Search: Off';
   }
 }
 
@@ -8858,7 +11408,7 @@ async function _oneminaiAutoRefresh() {
         if (r.team_id) cached.team_id = r.team_id;
       }
       _cache_invalidate_client();
-      log && console.log('[1min.AI] token refreshed automatically');
+      console.log('[1min.AI] token refreshed automatically');
       return true;
     }
   } catch (e) {
@@ -9964,6 +12514,313 @@ async function omaiManualRefresh(btn) {
   }
 }
 
+/* ═══════════════════════════════════════════
+   ASK_USER_INPUT_V0 WIDGET
+═══════════════════════════════════════════ */
+
+const _askWidgets = {};
+
+// ── question type renderers ───────────────────────────────────────────────
+
+function _askRenderQuestion(widgetId, q, qi, state) {
+  const qtype   = q.type || 'single_select';
+  const options = q.options || [];
+  const isMulti = qtype === 'multi_select';
+  const isRank  = qtype === 'rank_priorities';
+  const isFree  = qtype === 'free_text';
+
+  let inputHtml = '';
+
+  if (isFree) {
+    const val = state.answers[qi] || '';
+    inputHtml = `
+      <textarea
+        class="ask-free-input"
+        id="${widgetId}_q${qi}"
+        placeholder="Type your answer…"
+        ${state.submitted ? 'disabled' : ''}
+        oninput="_askUpdateFreeText('${widgetId}',${qi},this.value)"
+      >${esc(val)}</textarea>`;
+
+  } else if (isRank) {
+    // answers[qi] is an ordered array of option indices
+    if (!Array.isArray(state.answers[qi])) {
+      state.answers[qi] = options.map((_, i) => i);
+    }
+    const order = state.answers[qi];
+    const items = order.map((oi, rank) => `
+      <div class="ask-rank-item"
+           id="${widgetId}_q${qi}_rank${rank}"
+           draggable="true"
+           data-widget="${widgetId}"
+           data-qi="${qi}"
+           data-rank="${rank}"
+           ondragstart="_askRankDragStart(event)"
+           ondragover="_askRankDragOver(event)"
+           ondrop="_askRankDrop(event)"
+           ondragend="_askRankDragEnd(event)">
+        <span class="ask-rank-handle">⠿</span>
+        <span class="ask-rank-num">${rank + 1}</span>
+        <span class="ask-rank-label">${esc(options[oi])}</span>
+        <div class="ask-rank-arrows">
+          <button class="ask-rank-arrow"
+                  onclick="_askRankMove('${widgetId}',${qi},${rank},-1)"
+                  ${rank === 0 ? 'disabled' : ''}>▲</button>
+          <button class="ask-rank-arrow"
+                  onclick="_askRankMove('${widgetId}',${qi},${rank},1)"
+                  ${rank === order.length - 1 ? 'disabled' : ''}>▼</button>
+        </div>
+      </div>`).join('');
+    inputHtml = `<div class="ask-rank-list" id="${widgetId}_q${qi}_list">${items}</div>`;
+
+  } else {
+    // single_select or multi_select
+    const optionsHtml = options.map((opt, oi) => {
+      const isSelected = isMulti
+        ? (Array.isArray(state.answers[qi]) && state.answers[qi].includes(oi))
+        : state.answers[qi] === oi;
+      return `
+        <div class="ask-option ${isMulti ? 'multi' : ''} ${isSelected ? 'selected' : ''}"
+             onclick="_askToggleOption('${widgetId}',${qi},${oi},${isMulti})">
+          <div class="ask-option-indicator"></div>
+          <span class="ask-option-label">${esc(opt)}</span>
+        </div>`;
+    }).join('');
+    inputHtml = `<div class="ask-options">${optionsHtml}</div>`;
+  }
+
+  return `
+    <div class="ask-question-block">
+      <div class="ask-question-text">${esc(q.question)}</div>
+      ${inputHtml}
+    </div>`;
+}
+
+// ── build full widget HTML ────────────────────────────────────────────────
+
+function _askBuildHtml(widgetId, state) {
+  const questions   = state.questions;
+  const answeredCls = state.submitted ? ' answered' : '';
+
+  const questionsHtml = questions
+    .map((q, qi) => _askRenderQuestion(widgetId, q, qi, state))
+    .join('');
+
+  const footerHtml = state.submitted
+    ? `<div class="ask-answered-note">✓ Answer submitted</div>`
+    : `<button class="ask-submit-btn"
+               onclick="_askSubmit('${widgetId}')"
+               ${_askAllAnswered(state) ? '' : 'disabled'}>
+         ↑ Send Answer
+       </button>`;
+
+  const titleText = questions.length === 1
+    ? questions[0].question
+    : `${questions.length} questions`;
+
+  return `
+    <div class="ask-widget-head">
+      <span class="ask-widget-badge">${state.submitted ? 'ANSWERED' : 'INPUT'}</span>
+      <span class="ask-widget-title">${esc(titleText)}</span>
+    </div>
+    <div class="ask-widget-body">
+      ${questionsHtml}
+      <div class="ask-submit-row">${footerHtml}</div>
+    </div>`;
+}
+
+// ── public: render (called from renderBlock) ──────────────────────────────
+
+function renderAskUserInputWidget(block, streaming) {
+  const input     = block.input || {};
+  const questions = input.questions || [];
+  if (!questions.length) return '';
+
+  const widgetId = 'ask_' + (block.id || Math.random().toString(36).slice(2, 9));
+
+  if (!_askWidgets[widgetId]) {
+    _askWidgets[widgetId] = {
+      questions,
+      answers:   questions.map(() => null),
+      submitted: false,
+    };
+  }
+
+  const state = _askWidgets[widgetId];
+
+  if (streaming) {
+    return `
+      <div class="ask-widget" id="${widgetId}">
+        <div class="ask-widget-head">
+          <span class="ask-widget-badge">INPUT</span>
+          <span class="ask-widget-title">Claude is asking…</span>
+          <div class="think-pulse" style="margin-left:auto"></div>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="ask-widget${state.submitted ? ' answered' : ''}" id="${widgetId}">
+      ${_askBuildHtml(widgetId, state)}
+    </div>`;
+}
+
+// ── re-render widget in place ─────────────────────────────────────────────
+
+function _askRerender(widgetId) {
+  const el    = document.getElementById(widgetId);
+  const state = _askWidgets[widgetId];
+  if (!el || !state) return;
+  el.className = `ask-widget${state.submitted ? ' answered' : ''}`;
+  el.innerHTML = _askBuildHtml(widgetId, state);
+}
+
+// ── interaction handlers ──────────────────────────────────────────────────
+
+function _askAllAnswered(state) {
+  return state.answers.every((a, i) => {
+    const q = state.questions[i];
+    if (!q) return true;
+    const t = q.type || 'single_select';
+    if (t === 'free_text')      return a && a.trim().length > 0;
+    if (t === 'multi_select')   return Array.isArray(a) && a.length > 0;
+    if (t === 'rank_priorities') return Array.isArray(a) && a.length > 0;
+    return a !== null;  // single_select
+  });
+}
+
+function _askToggleOption(widgetId, qi, oi, isMulti) {
+  const state = _askWidgets[widgetId];
+  if (!state || state.submitted) return;
+  if (isMulti) {
+    if (!Array.isArray(state.answers[qi])) state.answers[qi] = [];
+    const idx = state.answers[qi].indexOf(oi);
+    if (idx === -1) state.answers[qi].push(oi);
+    else            state.answers[qi].splice(idx, 1);
+  } else {
+    state.answers[qi] = oi;
+  }
+  _askRerender(widgetId);
+}
+
+function _askUpdateFreeText(widgetId, qi, value) {
+  const state = _askWidgets[widgetId];
+  if (!state || state.submitted) return;
+  state.answers[qi] = value;
+  // just update submit button — no full rerender needed
+  const btn = document.querySelector(`#${widgetId} .ask-submit-btn`);
+  if (btn) btn.disabled = !_askAllAnswered(state);
+}
+
+// ── rank drag-and-drop ────────────────────────────────────────────────────
+
+let _rankDragSrc = null;  // { widgetId, qi, rank }
+
+function _askRankDragStart(e) {
+  const el = e.currentTarget;
+  _rankDragSrc = {
+    widgetId: el.dataset.widget,
+    qi:       parseInt(el.dataset.qi),
+    rank:     parseInt(el.dataset.rank),
+  };
+  el.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function _askRankDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('drag-over');
+}
+
+function _askRankDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.ask-rank-item').forEach(el => {
+    el.classList.remove('drag-over', 'dragging');
+  });
+}
+
+function _askRankDrop(e) {
+  e.preventDefault();
+  const target = e.currentTarget;
+  target.classList.remove('drag-over');
+  if (!_rankDragSrc) return;
+
+  const destRank = parseInt(target.dataset.rank);
+  const srcRank  = _rankDragSrc.rank;
+  const widgetId = _rankDragSrc.widgetId;
+  const qi       = _rankDragSrc.qi;
+  _rankDragSrc   = null;
+
+  if (srcRank === destRank) return;
+
+  const state = _askWidgets[widgetId];
+  if (!state) return;
+
+  const order = [...state.answers[qi]];
+  const [moved] = order.splice(srcRank, 1);
+  order.splice(destRank, 0, moved);
+  state.answers[qi] = order;
+
+  _askRerender(widgetId);
+}
+
+// ── rank arrow buttons ────────────────────────────────────────────────────
+
+function _askRankMove(widgetId, qi, rank, dir) {
+  const state = _askWidgets[widgetId];
+  if (!state || state.submitted) return;
+
+  const order   = [...state.answers[qi]];
+  const newRank = rank + dir;
+  if (newRank < 0 || newRank >= order.length) return;
+
+  [order[rank], order[newRank]] = [order[newRank], order[rank]];
+  state.answers[qi] = order;
+
+  _askRerender(widgetId);
+}
+
+// ── submit ────────────────────────────────────────────────────────────────
+
+async function _askSubmit(widgetId) {
+  const state = _askWidgets[widgetId];
+  if (!state || state.submitted || !_askAllAnswered(state)) return;
+  if (!S.convId) return;
+
+  const lines = state.questions.map((q, qi) => {
+    const answer = state.answers[qi];
+    const qtype  = q.type || 'single_select';
+    const opts   = q.options || [];
+    let   answerText = '';
+
+    if (qtype === 'free_text') {
+      answerText = (answer || '').trim();
+    } else if (qtype === 'multi_select' && Array.isArray(answer)) {
+      answerText = answer.map(i => opts[i]).filter(Boolean).join(', ');
+    } else if (qtype === 'rank_priorities' && Array.isArray(answer)) {
+      answerText = answer.map((oi, rank) => `${rank + 1}. ${opts[oi]}`).join(', ');
+    } else {
+      answerText = opts[answer] ?? String(answer);
+    }
+
+    return `Q: ${q.question}\nA: ${answerText}`;
+  });
+
+  const replyText = lines.join('\n');
+
+  state.submitted = true;
+  _askRerender(widgetId);
+
+  const ta = document.getElementById('msgTa');
+  if (ta) {
+    ta.value = replyText;
+    resizeTa(ta);
+    updateCount(ta);
+  }
+
+  await doSend();
+}
 /* ═══════════════════════════════════════════
    BOOT
 ═══════════════════════════════════════════ */
