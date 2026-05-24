@@ -291,6 +291,61 @@ async def _make_claude_client(acct: dict) -> ClaudeClient:
     await client.init(timeout=60, auto_close=True, close_delay=120)
     return client
 
+async def _fetch_claude_usage(acct: dict) -> dict | None:
+    """Fetch real usage data from Claude's account/usage endpoint."""
+    client = await _make_claude_client(acct)
+    try:
+        raw = await client._get(f"{CLAUDE_BASE_URL}/api/organizations/{client._organization_id}/usage")
+        await client.close()
+        
+        # Normalize to a consistent windows shape
+        # The endpoint returns named keys like "five_hour", "seven_day" etc.
+        # We normalize them to the short keys used everywhere else ("5h", "7d")
+        KEY_MAP = {
+            "five_hour":   "5h",
+            "seven_day":   "7d",
+            "one_hour":    "1h",
+            "one_day":     "1d",
+            "thirty_day":  "30d",
+        }
+        windows = {}
+        for raw_key, data in raw.items():
+            if not isinstance(data, dict):
+                continue
+            short_key = KEY_MAP.get(raw_key, raw_key)
+            util = data.get("utilization", 0) or 0
+            resets_at_str = data.get("resets_at")
+            resets_at_ts = None
+            if resets_at_str:
+                try:
+                    from datetime import datetime, timezone
+                    dt = datetime.fromisoformat(resets_at_str.replace("Z", "+00:00"))
+                    resets_at_ts = int(dt.timestamp())
+                except Exception:
+                    pass
+            
+            util /= 100.0 # Normalize
+            
+            # Determine status from utilization
+            if util >= 1.0:
+                status = "exceeded_limit"
+            elif util >= 0.9:
+                status = "approaching_limit"
+            else:
+                status = "within_limit"
+            windows[short_key] = {
+                "utilization": util,
+                "status":      status,
+                "resets_at":   resets_at_ts,
+            }
+        
+        return {"windows": windows, "type": None, "_raw": raw}
+    except Exception as exc:
+        log.warning("Claude usage fetch for '%s': %s", acct.get("name","?"), exc)
+        try: await client.close()
+        except Exception: pass
+        return None
+
 def _chatwithai_headers() -> dict:
     return {
         "Accept": "text/event-stream",
@@ -4296,18 +4351,9 @@ async def get_usage(acct):
 
     if provider == FLOWITH_PROVIDER:
         credits = await _flowith_get_credits(acct)
-        total   = (credits.get("total") or credits.get("credits_total")
-                   if isinstance(credits, dict) else credits) if credits is not None else None
-        # cache locally for sidebar bar
-        if total is not None:
-            def _fc_cache(store_data):
-                pass  # credits cached via the response below
-            pass
-        return jsonify({
-            "provider":      "flowith",
-            "credits":       credits,
-            "credits_total": total,
-        })
+        total = (credits.get("total") or credits.get("credits_total")
+                 if isinstance(credits, dict) else credits) if credits is not None else None
+        return jsonify({"provider": "flowith", "credits": credits, "credits_total": total})
 
     if provider == ONEMINAI_PROVIDER:
         try:
@@ -4323,55 +4369,30 @@ async def get_usage(acct):
 
     if provider == CHATWITHAI_PROVIDER:
         return jsonify({"provider": "chatwithai"})
-    
+
     # ── Claude ────────────────────────────────────────────────────────────
-    now_dt  = datetime.now(timezone.utc)
-    cut_24h = (now_dt - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
-    cut_1h  = (now_dt - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
-
-    data    = store.read()
-    msg_log = next(
-        (a.get("message_log", []) for a in data["accounts"]
-         if a["name"] == acct["name"]), [])
-    msgs_24h = [m for m in msg_log if m.get("sent_at", "") > cut_24h]
-    msgs_1h  = [m for m in msg_log if m.get("sent_at", "") > cut_1h]
-
-    by_model: dict = {}
-    for m in msgs_24h:
-        k = m.get("model", "")
-        by_model[k] = by_model.get(k, 0) + 1
-    by_model = dict(sorted(by_model.items(), key=lambda x: -x[1]))
+    usage = await _fetch_claude_usage(acct)
+    if usage:
+        _save_quota_snapshot(acct["name"], usage)
+        return jsonify({
+            "provider": "claude",
+            "quota":    usage,
+            "windows":  usage.get("windows", {}),
+        })
 
     snap = _get_latest_quota(acct["name"])
-    result = {
-        "provider":    "claude",
-        "quota":       snap,
-        "local_stats": {
-            "messages_24h": len(msgs_24h),
-            "messages_1h":  len(msgs_1h),
-            "by_model":     by_model,
-        },
-    }
-    if snap and "windows" in snap:
-        result["windows"]   = snap["windows"]
-        if "remaining" in snap:
-            result["remaining"] = snap["remaining"]
-
-    return jsonify(result)
+    return jsonify({
+        "provider": "claude",
+        "quota":    snap,
+        "windows":  (snap or {}).get("windows", {}),
+    })
 
 @app.route("/api/usage/all", methods=["GET"])
 async def get_usage_all():
-    """
-    Return quota/credit snapshot for every configured account.
-    Staggered requests (controlled by _POLLING_CFG) to avoid rate limits.
-    ChatWithAI accounts are skipped (no quota concept).
-    """
-    import time as _time
-    data     = store.read()
-    results  = {}
-    stagger  = float(_POLLING_CFG.get("stagger_delay_sec", 2.5))
-    timeout  = float(_POLLING_CFG.get("request_timeout_sec", 30))
-    first    = True
+    data    = store.read()
+    results = {}
+    stagger = float(_POLLING_CFG.get("stagger_delay_sec", 2.5))
+    first   = True
 
     for acct in data["accounts"]:
         name     = acct["name"]
@@ -4421,10 +4442,29 @@ async def get_usage_all():
             }
 
         elif provider == CLAUDE_PROVIDER:
-            snap = _get_latest_quota(name)
-            results[name] = {"provider": "claude", "quota": snap}
+            if not acct.get("session_key"):
+                results[name] = {"provider": "claude", "quota": None}
+                continue
+            if not first:
+                await asyncio.sleep(stagger)
+            first = False
+            usage = await _fetch_claude_usage(acct)
+            if usage:
+                _save_quota_snapshot(name, usage)
+                results[name] = {
+                    "provider": "claude",
+                    "quota":    usage,
+                    "windows":  usage.get("windows", {}),
+                }
+            else:
+                snap = _get_latest_quota(name)
+                results[name] = {
+                    "provider": "claude",
+                    "quota":    snap,
+                    "windows":  (snap or {}).get("windows", {}),
+                }
 
-        # chatwithai — omit entirely
+        # chatwithai — omit
 
     return jsonify(results)
 

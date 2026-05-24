@@ -5060,115 +5060,163 @@ function _cacheFlowith(name, credits) {
 }
 
 function _cacheClaude(name, payload) {
-  // payload = raw /api/usage body or d.quota from /api/usage/all
-  const windows   = payload.windows || {};
-  const winKey    = Object.keys(windows)[0];
-  const win       = winKey ? windows[winKey] : null;
-  const resetsAt  = win?.resets_at ?? payload.resetsAt ?? null;
-  const remaining = payload.remaining ?? null;
-  let   pct       = win?.utilization ?? null;
-  if (pct !== null && resetsAt && resetsAt * 1000 < Date.now()) pct = 0;
-  if (pct === null) return;   // nothing useful to cache
-  quotaCache[name] = { provider: 'claude', pct, resetsAt, remaining, window: winKey };
+  // payload is the raw usage endpoint response OR a saved snapshot
+  // Shape: { windows: { "5h": { utilization, status, resets_at }, ... }, type, ... }
+  const windows = payload.windows || {};
+  if (!Object.keys(windows).length) return;
+
+  const STATUS_RANK = { exceeded_limit: 3, approaching_limit: 2, within_limit: 1 };
+
+  const parsed = Object.entries(windows).map(([key, w]) => {
+    if (!w) return null;
+    const rawUtil = w.utilization ?? 0;
+    const util    = Math.min(rawUtil, 1.0);   // clamp to 100% for bar display
+    if (w.resets_at && w.resets_at * 1000 < Date.now()) return null; // window reset
+    return {
+        key,
+        util,       // clamped for bar width
+        rawUtil,    // raw for status
+        status:   w.status || 'within_limit',
+        rank:     STATUS_RANK[w.status] ?? 0,
+        resetsAt: w.resets_at ?? null,
+    };
+}).filter(Boolean);
+
+  if (!parsed.length) return;
+
+  // Worst first (highest rank, then highest utilization)
+  parsed.sort((a, b) => b.rank - a.rank || b.util - a.util);
+
+  quotaCache[name] = {
+    provider:  'claude',
+    windows:   parsed,
+    limitType: payload.type || null,
+  };
 }
 
 /* ── Render the sidebar quota/credits bar for the ACTIVE tab account ── */
+// REPLACE _renderSidebarBar — fix the resetsAt * 1000 bug in Claude section
 function _renderSidebarBar() {
-  const wrap = document.getElementById('quotaWrap');
-  
-  const acct     = getTabAccount();
+  const wrap   = document.getElementById('quotaWrap');
+  const acct   = getTabAccount();
   const provider = (acct?.provider || 'claude').toLowerCase();
-  
-  if (provider === 'chatwithai') {
-    wrap.style.display = 'none';
-    return;
-  }
+
+  if (provider === 'chatwithai') { wrap.style.display = 'none'; return; }
 
   const name   = getTabAccountName();
   const cached = name ? quotaCache[name] : null;
-  if (!cached) { wrap.style.display = 'none'; return; }
-  
-  const label  = document.getElementById('quotaLabel');
-  const pct    = document.getElementById('quotaPct');
-  const fill   = document.getElementById('quotaBarFill');
-  const detail = document.getElementById('quotaDetail');
+  if (!cached)  { wrap.style.display = 'none'; return; }
 
+  // ── 1min.AI ──────────────────────────────────────────────────────────
   if (cached.provider === 'oneminai') {
     const cr = cached.credits;
-    if (cr === null || cr === undefined) { wrap.style.display = 'none'; return; }
-    wrap.style.display  = 'block';
-    label.textContent   = 'Credits (1min.AI)';
-    pct.textContent     = cr.toLocaleString();
-    fill.style.width    = cr > 0 ? '100%' : '0%';
-    fill.className      = 'quota-bar-fill';
-    detail.textContent  = `${cr.toLocaleString()} credits remaining`;
+    if (cr == null) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'block';
+    const label  = document.getElementById('quotaLabel');
+    const pctEl  = document.getElementById('quotaPct');
+    const fill   = document.getElementById('quotaBarFill');
+    const detail = document.getElementById('quotaDetail');
+    label.textContent  = 'Credits · 1min.AI';
+    pctEl.textContent  = typeof cr === 'number' ? cr.toLocaleString() : String(cr);
+    fill.style.width   = '100%';
+    fill.className     = 'quota-bar-fill';
+    detail.textContent = `${typeof cr === 'number' ? cr.toLocaleString() : cr} credits remaining`;
     const omaiCr = document.getElementById('omaiCreditsDisplay');
-    if (omaiCr) omaiCr.textContent = `✦ ${cr.toLocaleString()} credits`;
+    if (omaiCr) omaiCr.textContent = `✦ ${typeof cr === 'number' ? cr.toLocaleString() : cr} credits`;
     return;
   }
 
+  // ── Flowith ───────────────────────────────────────────────────────────
   if (cached.provider === 'flowith') {
-    const cr = cached.credits;
-    if (cr === null || cr === undefined) { wrap.style.display = 'none'; return; }
-    const crNum  = typeof cr === 'number' ? cr : parseFloat(cr);
-    const crFmt2 = isNaN(crNum) ? String(cr) : crNum.toFixed(2);
-    const crFmt1 = isNaN(crNum) ? String(cr) : crNum.toFixed(1);
-
+    const cr    = cached.credits;
+    if (cr == null) { wrap.style.display = 'none'; return; }
+    const crNum = typeof cr === 'number' ? cr : parseFloat(cr);
     wrap.style.display = 'block';
-    label.textContent  = 'Credits (Flowith)';
-    pct.textContent    = crFmt1;
-
-    // Same as oneminai: 100% width if any credits remaining, 0% if none
+    const label  = document.getElementById('quotaLabel');
+    const pctEl  = document.getElementById('quotaPct');
+    const fill   = document.getElementById('quotaBarFill');
+    const detail = document.getElementById('quotaDetail');
+    label.textContent  = 'Credits · Flowith';
+    pctEl.textContent  = isNaN(crNum) ? String(cr) : crNum.toFixed(1);
     fill.style.width   = crNum > 0 ? '100%' : '0%';
-    fill.className     = 'quota-bar-fill' +
-      (crNum < 1   ? ' crit' :
-       crNum < 5   ? ' warn' : '');
-    detail.textContent = `${crFmt2} credits remaining`;
-
-    // Update panel header badge
+    fill.className     = 'quota-bar-fill' + (crNum < 1 ? ' crit' : crNum < 5 ? ' warn' : '');
+    detail.textContent = `${isNaN(crNum) ? String(cr) : crNum.toFixed(2)} credits remaining`;
     const fwCr = document.getElementById('flowithCreditsDisplay');
-    if (fwCr) fwCr.textContent = `⋆ ${crFmt1} credits`;
-
-    // Update account switcher mini-badge if visible
+    if (fwCr) fwCr.textContent = `⋆ ${isNaN(crNum) ? String(cr) : crNum.toFixed(1)} credits`;
     renderAccountMenu();
     return;
   }
 
-  // Claude
-  const { pct: utilization, resetsAt, remaining, window: winKey } = cached;
-  wrap.style.display = 'block';
-  const pctNum = Math.round((utilization || 0) * 100);
-  pct.textContent  = `${pctNum}%`;
-  fill.style.width = `${pctNum}%`;
-  fill.className   = 'quota-bar-fill' +
-    (pctNum >= 90 ? ' crit' : pctNum >= 70 ? ' warn' : '');
-  label.textContent = winKey ? `Usage (${winKey} window)` : 'Usage';
+  // ── Claude — one bar per window ───────────────────────────────────────
+  if (cached.provider !== 'claude') { wrap.style.display = 'none'; return; }
 
-  let txt = remaining != null ? `${remaining} msgs remaining` : `${pctNum}% used`;
-  if (resetsAt) {
-    const diff = resetsAt * 1000 - Date.now();
-    if (diff > 0) {
-      const hrs  = Math.floor(diff / 3_600_000);
-      const mins = Math.floor((diff % 3_600_000) / 60_000);
-      txt += ` · resets in ${hrs > 0 ? hrs + 'h ' : ''}${mins}m`;
-    } else {
-      txt = 'Quota reset — usage cleared';
+  const wins = cached.windows || [];
+  if (!wins.length) { wrap.style.display = 'none'; return; }
+
+  const WIN_LABELS = {
+    '5h': '5-hour', '1h': '1-hour', '7d': '7-day',
+    '1d': '1-day',  '30d': '30-day',
+  };
+
+  wrap.style.display = 'block';
+
+  const barsHtml = wins.map((w, i) => {
+    const pctNum   = Math.round((w.util ?? 0) * 100);  // already clamped to 100
+    const overPct  = w.rawUtil != null ? Math.round(w.rawUtil * 100) : pctNum;
+    // Show overage if applicable
+    const pctDisplay = overPct > 100 ? `${overPct}%` : `${pctNum}%`;
+
+    const winLabel = WIN_LABELS[w.key] || w.key;
+    const fillCls  = 'quota-bar-fill' +
+      (pctNum >= 90 || w.status === 'exceeded_limit'    ? ' crit' :
+       pctNum >= 70 || w.status === 'approaching_limit' ? ' warn' : '');
+
+    let statusTxt = '';
+    if      (w.status === 'exceeded_limit')    statusTxt = ' exceeded';
+    else if (w.status === 'approaching_limit') statusTxt = ' nearing';
+
+    let resetTxt = '';
+    if (w.resetsAt) {
+      // resetsAt is Unix SECONDS — multiply by 1000 for ms comparison
+      const diff = w.resetsAt * 1000 - Date.now();
+      if (diff > 0) {
+        const hrs  = Math.floor(diff / 3_600_000);
+        const mins = Math.floor((diff % 3_600_000) / 60_000);
+        resetTxt = ` · ↺ ${hrs > 0 ? hrs + 'h ' : ''}${mins}m`;
+      }
     }
-  }
-  detail.textContent = txt;
+
+    const marginTop = i > 0
+      ? 'margin-top:8px;padding-top:8px;border-top:1px solid var(--border-s);'
+      : '';
+
+    return `
+      <div style="${marginTop}">
+        <div class="quota-row">
+          <span class="quota-label">${winLabel}${statusTxt}</span>
+          <span class="quota-pct">${pctDisplay}${resetTxt}</span>
+        </div>
+        <div class="quota-bar-bg">
+          <div class="${fillCls}" style="width:${pctNum}%"></div>
+        </div>
+      </div>`;
+  }).join('');
+
+  wrap.innerHTML = barsHtml;
 }
 
 /* ── Called from the SSE stream handler when Claude sends message_limit ── */
 function updateQuotaFromStream(msgLimit) {
   if (!msgLimit) return;
   const name = getTabAccountName();
-  if (name) _cacheClaude(name, msgLimit);
+  if (!name) return;
+  _cacheClaude(name, msgLimit);
   _renderSidebarBar();
   renderAccountMenu();
-  renderAccountList();
 }
 
 /* ── Mini bar shown inside the account switcher / settings list ── */
+// REPLACE buildMiniQuotaHtml — Claude section only
 function buildMiniQuotaHtml(acctName) {
   const acct     = S.accounts.find(a => a.name === acctName);
   const provider = (acct?.provider || 'claude').toLowerCase();
@@ -5177,38 +5225,40 @@ function buildMiniQuotaHtml(acctName) {
 
   if (provider === 'oneminai') {
     const cr = cached.credits;
-    if (cr === null || cr === undefined) return '';
-    const crFmt = typeof cr === 'number' ? cr.toLocaleString() : String(cr);
+    if (cr == null) return '';
     return `<div class="mini-quota">
-      <span class="mini-quota-pct"
-            style="min-width:auto;font-size:9px;color:var(--oneminai)">
-        ✦ ${crFmt} credits
+      <span class="mini-quota-pct" style="min-width:auto;font-size:9px;color:var(--oneminai)">
+        ✦ ${typeof cr === 'number' ? cr.toLocaleString() : cr} credits
       </span>
     </div>`;
   }
 
   if (provider === 'flowith') {
     const cr = cached.credits;
-    if (cr === null || cr === undefined) return '';
-    const crFmt = typeof cr === 'number' ? cr.toFixed(2) : String(cr);
+    if (cr == null) return '';
     return `<div class="mini-quota">
-      <span class="mini-quota-pct"
-            style="min-width:auto;font-size:9px;color:var(--flowith)">
-        ⋆ ${crFmt} credits
+      <span class="mini-quota-pct" style="min-width:auto;font-size:9px;color:var(--flowith)">
+        ⋆ ${typeof cr === 'number' ? cr.toFixed(2) : cr} credits
       </span>
     </div>`;
   }
 
   if (provider !== 'claude') return '';
 
-  let { pct: utilization, resetsAt } = cached;
-  if (resetsAt && resetsAt * 1000 < Date.now()) utilization = 0;
-  const pctNum    = Math.round((utilization || 0) * 100);
-  const fillClass = pctNum >= 90 ? ' crit' : pctNum >= 70 ? ' warn' : '';
+  // New shape: cached.windows = [{ key, util, status, rank, resetsAt }, ...]
+  const wins = cached.windows;
+  if (!wins?.length) return '';
+
+  // Show worst window (first, already sorted worst-first)
+  const w      = wins[0];
+  const pctNum = Math.round((w.util ?? 0) * 100);
+  const fillClass = pctNum >= 90 || w.status === 'exceeded_limit' ? ' crit'
+                  : pctNum >= 70 || w.status === 'approaching_limit' ? ' warn' : '';
 
   let resetStr = '';
-  if (resetsAt) {
-    const diff = resetsAt * 1000 - Date.now();
+  if (w.resetsAt) {
+    // resetsAt is Unix seconds
+    const diff = w.resetsAt * 1000 - Date.now();
     if (diff > 0) {
       const hrs  = Math.floor(diff / 3_600_000);
       const mins = Math.floor((diff % 3_600_000) / 60_000);
@@ -5216,14 +5266,18 @@ function buildMiniQuotaHtml(acctName) {
     }
   }
 
+  const WIN_LABELS = { '5h':'5h', '1h':'1h', '7d':'7d', '1d':'1d', '30d':'30d' };
+  const winLbl = WIN_LABELS[w.key] || w.key;
+
   return `<div class="mini-quota">
     <div class="mini-quota-bar-bg">
-      <div class="mini-quota-bar-fill${fillClass}" style="width:${pctNum}%;color:var(--claude)"></div>
+      <div class="mini-quota-bar-fill${fillClass}" style="width:${pctNum}%"></div>
     </div>
-    <span class="mini-quota-pct" style="color:var(--claude)">${pctNum}%</span>
-    ${resetStr ? `<span class="mini-quota-reset" style="color:var(--claude)">↺ ${resetStr}</span>` : ''}
+    <span class="mini-quota-pct">${pctNum}% ${winLbl}</span>
+    ${resetStr ? `<span class="mini-quota-reset">↺ ${resetStr}</span>` : ''}
   </div>`;
 }
+
 
 function closeAcctMenu() {
   document.getElementById('acctMenu')?.classList.add('hidden');
@@ -5232,7 +5286,6 @@ function closeAcctMenu() {
 function _closeAcctOnOutside(e) {
   if (!document.getElementById('acctSwitcher')?.contains(e.target)) closeAcctMenu();
 }
-
 
 function toggleAcctMenu() {
   const menu   = document.getElementById('acctMenu');
@@ -7641,27 +7694,30 @@ function handleStreamEv(ev, asstMsg, bodyElFn) {
       streamBlocks = {}; asstMsg.content = [];
       if (ev.message?.uuid) asstMsg.uuid = ev.message.uuid;
       break;
+
     case 'content_block_start': {
       const b = ev.content_block;
       streamBlocks[ev.index] = { ...b, text: b.text||'', thinking: b.thinking||'', input_str:'' };
       break;
     }
+
     case 'content_block_delta': {
       if (!streamBlocks[ev.index]) {
         const dtype = ev.delta?.type === 'thinking_delta' ? 'thinking' : 'text';
         streamBlocks[ev.index] = { type: dtype, text:'', thinking:'', input_str:'' };
       }
       const d = ev.delta;
-      if (d.type === 'text_delta')          streamBlocks[ev.index].text      += d.text;
+      if (d.type === 'text_delta')
+        streamBlocks[ev.index].text += d.text;
       else if (d.type === 'thinking_delta') {
-        streamBlocks[ev.index].type = 'thinking';
-        streamBlocks[ev.index].thinking  += d.thinking;
+        streamBlocks[ev.index].type     = 'thinking';
+        streamBlocks[ev.index].thinking += d.thinking;
       }
-      else if (d.type === 'input_json_delta') {
+      else if (d.type === 'input_json_delta')
         streamBlocks[ev.index].input_str = (streamBlocks[ev.index].input_str||'') + d.partial_json;
-      }
       break;
     }
+
     case 'content_block_stop': {
       const b = streamBlocks[ev.index];
       if (b) {
@@ -7674,7 +7730,6 @@ function handleStreamEv(ev, asstMsg, bodyElFn) {
     }
 
     case 'flowith_image': {
-      // Injected by backend when image URL detected
       asstMsg.content = [{ type: 'flowith_image', url: ev.image_url }];
       updateStreamDisplay(asstMsg, bodyElFn);
       return;
@@ -7685,62 +7740,88 @@ function handleStreamEv(ev, asstMsg, bodyElFn) {
       updateStreamDisplay(asstMsg, bodyElFn);
       return;
     }
+
     case 'message_delta':
       if (ev.delta?.stop_reason) asstMsg.stop_reason = ev.delta.stop_reason;
       break;
+
     case 'message_stop':
       break;
+
+    case 'message_limit':
+      updateQuotaFromStream(ev.message_limit);
+      return;
+
     case 'error': {
-      const errEl = bodyElFn();
+      const errEl  = bodyElFn();
+      const errType = ev.error?.type || '';
+
       // Auto-refresh 1min.AI token on auth errors
-      const _errType0 = ev.error?.type || '';
-      if (_errType0 === 'authentication_error' && getTabProvider() === 'oneminai') {
+      if (errType === 'authentication_error' && getTabProvider() === 'oneminai') {
         _oneminaiAutoRefresh().then(ok => {
           if (ok) toast('Token refreshed — please resend your message', 'ok');
           else    toast('1min.AI auth failed — check your API key in Settings', 'err');
         });
       }
-      if (errEl) {
-        const errType = ev.error?.type || '';
-        let displayMsg = ev.error?.message || JSON.stringify(ev.error || ev);
 
-        if (errType === 'rate_limit_error') {
-          // ev.error.message is itself a JSON string — parse it
-          let inner = {};
-          try { inner = JSON.parse(displayMsg); } catch {}
+      let displayMsg = ev.error?.message || JSON.stringify(ev.error || ev);
 
-          const resetsAt = inner.resetsAt || inner.resets_at || null;
-          let resetStr   = '';
-          if (resetsAt) {
-            const d = new Date(resetsAt * 1000);
-            resetStr = ` Resets at <strong>${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</strong> (${d.toLocaleDateString()}).`;
+      if (errType === 'rate_limit_error') {
+        let inner = {};
+        try { inner = JSON.parse(displayMsg); } catch {}
+
+        const wins        = inner.windows || {};
+        const STATUS_RANK = { exceeded_limit: 3, approaching_limit: 2, within_limit: 1 };
+        const WIN_LABELS  = { '5h': '5-hour', '1h': '1-hour', '7d': '7-day', '1d': '1-day', '30d': '30-day' };
+
+        // Update quota cache from the error payload so sidebar refreshes
+        if (Object.keys(wins).length) {
+          const name = getTabAccountName();
+          if (name) {
+            _cacheClaude(name, inner);
+            _renderSidebarBar();
+            renderAccountMenu();
           }
-
-          // Find the most-exceeded window for a human-readable reason
-          let windowNote = '';
-          const wins = inner.windows || {};
-          for (const [label, wdata] of Object.entries(wins)) {
-            if (wdata?.status === 'exceeded_limit') {
-              const pct = wdata.utilization != null
-                ? ` (${Math.round(wdata.utilization * 100)}% of ${label} limit used)`
-                : '';
-              windowNote = pct;
-              break;
-            }
-          }
-
-          displayMsg = `Rate limit reached${windowNote}.${resetStr}`;
         }
 
+        const parts = Object.entries(wins)
+          .map(([k, w]) => {
+            if (!w) return null;
+            const pct   = Math.round((w.utilization ?? 0) * 100);
+            const lbl   = WIN_LABELS[k] || k;
+            const st    = w.status === 'exceeded_limit'
+              ? 'exceeded'
+              : w.status === 'approaching_limit'
+                ? 'nearing limit'
+                : 'ok';
+            let reset = '';
+            if (w.resets_at) {
+              const diff = w.resets_at * 1000 - Date.now();
+              if (diff > 0) {
+                const hrs  = Math.floor(diff / 3_600_000);
+                const mins = Math.floor((diff % 3_600_000) / 60_000);
+                reset = `, resets in ${hrs > 0 ? hrs + 'h ' : ''}${mins}m`;
+              }
+            }
+            return `${lbl}: ${pct}% (${st}${reset})`;
+          })
+          .filter(Boolean);
+
+        displayMsg = parts.length
+          ? `Rate limit reached — ${parts.join(' · ')}`
+          : 'Rate limit reached';
+      }
+
+      if (errEl) {
         const errDiv = document.createElement('div');
-        errDiv.style.cssText = 'color:var(--red);font-size:13px;padding:6px 0';
-        errDiv.textContent = `⚠ ${displayMsg}`;
+        errDiv.style.cssText = 'color:var(--red);font-size:13px;padding:6px 0;line-height:1.6';
+        errDiv.innerHTML = `⚠ ${esc(displayMsg)}`;
         errEl.innerHTML = '';
         errEl.appendChild(errDiv);
-
       }
       return;
     }
+
     case 'cloudflare_challenge': {
       beginCF();
       const errEl = bodyElFn();
@@ -7753,9 +7834,11 @@ function handleStreamEv(ev, asstMsg, bodyElFn) {
       }
       return;
     }
+
     case 'ping':
       return;
   }
+
   updateStreamDisplay(asstMsg, bodyElFn);
 }
 
