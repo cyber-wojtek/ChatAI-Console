@@ -1,100 +1,126 @@
 # ✦ ChatAI Console
 
-A self-hosted, free web chat interface for [Claude](https://claude.ai), [ChatWithAI.app](https://chatwithai.app), [1min.AI](https://1min.ai), and [Flowith.io](https://flowith.io), powered by the reverse-engineered `claude_webapi`, `oneminai_webapi` and `flowith_webapi` libraries. Multi-account management, real-time streaming, file uploads, conversation branching, usage tracking, and a Galaxy-themed UI — all in a single Quart app.
+A self-hosted web chat interface for [Claude](https://claude.ai),
+[ChatWithAI.app](https://chatwithai.app), [1min.AI](https://1min.ai),
+and [Flowith.io](https://flowith.io), powered by the reverse-engineered
+`claude_webapi`, `1minai_webapi`, and `flowith_webapi` libraries.
+
+Multi-account management, real-time streaming, file uploads, conversation
+branching, usage tracking, and a Galaxy-themed UI — all in a single Quart app.
 
 ## Features
 
-- **Multi-Account** — Add, switch, and manage Claude or MiniApps accounts. Accounts are persisted in a local JSON store.
-- **Real-Time Streaming** — Server-Sent Events deliver tokens as they're generated, with inline thinking block rendering.
-- **File Uploads** — Attach  files up to 100 MB. Upload metadata tracked locally.
-- **Conversation Management** — Create, rename, pin, search, branch, and delete conversations.
-- **Artifacts & Canvas** — Split-pane canvas preview for code, HTML, SVG, and Mermaid diagram artifacts.
-- **In-Chat Search** — Search within the current conversation with match navigation.
-- **Usage & Quota Tracking** — Per-account usage snapshots, message history, and visual quota bars in the sidebar.
-- **Galaxy UI** — Dark-mode SPA built with Space Grotesk, JetBrains Mono, and Tokyo Night syntax highlighting.
-- **Local-First** — All data lives in `data/accounts.json`. No external database.
+- **Multi-Account** — Add, switch, and manage Claude, ChatWithAI, 1min.AI,
+  and Flowith accounts. Persisted in Redis (auto-started).
+- **Real-Time Streaming** — SSE delivers tokens as generated, with inline
+  thinking-block rendering.
+- **File Uploads** — Attach files up to 100 MB. Upload metadata tracked locally.
+- **Conversation Management** — Create, rename, pin, search, branch, and delete.
+- **Artifacts & Canvas** — Split-pane preview for code, HTML, SVG, and Mermaid.
+- **In-Chat Search** — Search messages with match navigation.
+- **Usage & Quota** — Per-account usage snapshots and visual quota bars.
+- **Image & Video Generation** — Flowith and 1min.AI generation in-chat.
+- **HTTP/2** — Self-signed TLS cert eliminates browser connection-limit stalls.
+- **Galaxy UI** — Dark-mode SPA with Space Grotesk and Tokyo Night highlighting.
+
+---
 
 ## Quick Start
 
-**Requirements:** Python 3.10+
+**Requirements:** Python 3.10+, `redis-server` on PATH
 
 ```sh
 git clone https://github.com/cyber-wojtek/ChatAI-Console.git
 cd ChatAI-Console
-pip install quart claude_webapi oneminai_webapi flowith_webapi hypercorn requests filelock
+
+# Full setup: installs deps, generates TLS cert, updates .gitignore
+python setup.py
+
+# Start the server
 python app.py
+
+# Open in browser (accept the self-signed cert warning once)
+# Chrome/Edge: Advanced → Proceed to localhost
+# Firefox:     Advanced → Accept the Risk
 ```
 
-Open **http://localhost:5000**, add an account, and start chatting.
+Open **https://localhost:5000**, add an account, and start chatting.
+
+> **Redis** is started and stopped automatically by `app.py`.
+> Set `REDIS_URL` to use an external Redis instance instead.
+
+> **TLS / HTTP/2** — the self-signed cert is generated locally and never
+> leaves your machine. It is valid for 825 days. Run `python setup.py --cert`
+> to regenerate it.
+
+---
+
+## Setup Options
+
+```sh
+python setup.py           # full setup (recommended)
+python setup.py --deps    # only install Python dependencies
+python setup.py --cert    # only regenerate TLS cert
+python setup.py --check   # only check system requirements
+```
+
+---
 
 ## Authentication
 
-Accounts are added via the sidebar → account switcher → **＋ Add Account**.
+Accounts are added via the sidebar → account switcher → **Manage Accounts**.
 
 ### Claude
 
-Two options:
-
 **Option A — Session key (manual)**
-1. Log in to claude.ai
-2. Open DevTools (`F12`) → **Application** → **Cookies**
-3. Copy the `sessionKey` value and paste it into the session key field
-4. Organization ID is optional — discovered automatically if omitted
+1. Log in to [claude.ai](https://claude.ai)
+2. DevTools (`F12`) → **Application** → **Cookies** → copy `sessionKey`
+3. Paste into the session key field (Organization ID is optional)
 
-**Option B — Google sign-in (via browser extension)**
-1. Install the [ChatAI Console OAuth Bridge](https://github.com/cyber-wojtek/ChatAI-Console-Extension.git) extension
-2. Enable the bridge from the extension popup
-3. Click **Sign in with Google for Claude** in the account form
-4. Complete Google sign-in in the popup — the auth code is filled in automatically
+**Option B — Google sign-in (via extension)**
+1. Install the
+   [ChatAI Console OAuth Bridge](https://github.com/cyber-wojtek/ChatAI-Console-Extension)
+2. Click **Sign in with Google for Claude** — auth code is filled automatically
 
 ### 1min.AI
 
-Two options:
-
-**Option A — Extract JWT from browser (manual)**
+**Option A — Extract JWT (manual)**
 1. Sign in at [app.1min.ai](https://app.1min.ai)
-2. Open DevTools (`F12`) → **Network**
-3. Click any request to `api.1min.ai` (e.g. `/users`)
-4. Under **Request Headers**, find `X-Auth-Token: Bearer eyJ…`
-5. Copy everything after `Bearer ` — that is your token
-6. Paste it into the **API Key** field when adding the account
+2. DevTools → **Network** → any request to `api.1min.ai`
+3. **Request Headers** → `X-Auth-Token: Bearer eyJ…` — copy after `Bearer `
 
-> The token expires after ~7 days.
+> Token expires after ~7 days.
 
-**Option B — Google sign-in (via browser extension)**
-1. Install the [ChatAI Console OAuth Bridge](https://github.com/cyber-wojtek/ChatAI-Console-Extension.git) extension
-2. Enable the bridge from the extension popup
-3. Click **Sign in with Google for 1min.AI** in the account form
-4. Complete Google sign-in in the popup — the JWT is captured and filled in automatically
+**Option B — Google sign-in (via extension)**
+1. Install the OAuth Bridge extension
+2. Click **Sign in with Google for 1min.AI** — JWT is captured automatically
 
 ### Flowith.io
 
-Two options:
-
 **Option A — JWT token (manual)**
 1. Sign in at [flowith.io](https://flowith.io) with Google
-2. After the OAuth redirect, the `access_token` appears in the URL hash:
+2. After redirect, copy `access_token` from the URL hash:
    `https://flowith.io/#access_token=eyJ…`
-3. Copy the token and paste it into the **API Key / Token** field when adding the account
 
-> The token is a Supabase JWT. It remains valid for the duration of your session.
-
-**Option B — Google sign-in (via browser extension)**
-1. Install the [ChatAI Console OAuth Bridge](https://github.com/cyber-wojtek/ChatAI-Console-Extension.git) extension
-2. Enable the bridge from the extension popup
-3. Click **Sign in with Google for Flowith** in the account form
-4. The extension intercepts the Supabase redirect on `flowith.io` and fills in the token automatically
+**Option B — Google sign-in (via extension)**
+1. Install the OAuth Bridge extension
+2. Click **Sign in with Google for Flowith** — token is captured automatically
 
 ### Auto-Seeding Accounts
 
-Create a `keys.py` in the project root to auto-load accounts on startup:
+Create `keys.py` in the project root to pre-load accounts on startup:
 
 ```python
+# keys.py  — never commit this file
 ACCOUNTS = [
-    ("claude", "Account Name", "sk-ant-..."),
-    ("claude", "Account Name With Org", "org-uuid", "sk-ant-..."),
+    ("claude",   "Personal",  "sk-ant-..."),
+    ("claude",   "Work",      "org-uuid", "sk-ant-..."),
+    ("1minai", "1min",      "eyJ..."),
+    ("flowith",  "Flowith",   "eyJ..."),
 ]
 ```
+
+---
 
 ## Keyboard Shortcuts
 
@@ -107,6 +133,8 @@ ACCOUNTS = [
 | `Ctrl+Shift+K` | Focus search |
 | `Escape` | Close modals / canvas |
 
+---
+
 ## API Reference
 
 ### Health
@@ -114,55 +142,38 @@ ACCOUNTS = [
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/health` | Health check |
+| `GET` | `/api/ping` | Ping |
+| `GET` | `/api/init` | Bootstrap data (accounts + pinned convs in one request) |
 
 ### Accounts
 
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/accounts` | List all accounts |
-| `POST` | `/api/accounts` | Add account |
+| `POST` | `/api/accounts` | Add or update account |
 | `DELETE` | `/api/accounts/<name>` | Delete account |
 | `POST` | `/api/accounts/<name>/activate` | Set active account |
 
 ```sh
-# Add Claude account with session key
-curl -X POST http://localhost:5000/api/accounts \
+# Claude — session key
+curl -X POST https://localhost:5000/api/accounts \
   -H 'Content-Type: application/json' \
-  -d '{
-    "name": "My Claude",
-    "provider": "claude",
-    "session_key": "sk-ant-...",
-    "organization_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-  }'
+  -d '{"name":"My Claude","provider":"claude","session_key":"sk-ant-..."}'
 
-# Add Claude account via Google auth code (from OAuth flow)
-curl -X POST http://localhost:5000/api/accounts \
+# Claude — Google auth code
+curl -X POST https://localhost:5000/api/accounts \
   -H 'Content-Type: application/json' \
-  -d '{
-    "name": "My Claude",
-    "provider": "claude",
-    "claude_code": "4/0A..."
-  }'
+  -d '{"name":"My Claude","provider":"claude","claude_code":"4/0A..."}'
 
-# Add 1min.AI account
-curl -X POST http://localhost:5000/api/accounts \
+# 1min.AI
+curl -X POST https://localhost:5000/api/accounts \
   -H 'Content-Type: application/json' \
-  -d '{
-    "name": "My 1min.AI",
-    "provider": "oneminai",
-    "api_key": "eyJ..."
-  }'
-```
+  -d '{"name":"My 1min","provider":"oneminai","api_key":"eyJ..."}'
 
-```sh
-# Add Flowith account with JWT token
-curl -X POST http://localhost:5000/api/accounts \
+# Flowith
+curl -X POST https://localhost:5000/api/accounts \
   -H 'Content-Type: application/json' \
-  -d '{
-    "name": "My Flowith",
-    "provider": "flowith",
-    "api_key": "eyJ..."
-  }'
+  -d '{"name":"My Flowith","provider":"flowith","api_key":"eyJ..."}'
 ```
 
 ### Conversations
@@ -171,8 +182,10 @@ curl -X POST http://localhost:5000/api/accounts \
 |---|---|---|
 | `GET` | `/api/conversations` | List conversations |
 | `POST` | `/api/conversations` | Create conversation |
-| `GET` | `/api/conversations/<id>` | Get conversation |
+| `GET` | `/api/conversations/<id>` | Get conversation with messages |
 | `PUT` | `/api/conversations/<id>` | Update conversation |
+| `DELETE` | `/api/conversations/<id>` | Delete conversation |
+| `PATCH` | `/api/conversations/<id>/rename` | Rename conversation |
 | `POST` | `/api/conversations/<id>/stop` | Stop generation |
 
 ### Messages
@@ -187,15 +200,24 @@ curl -X POST http://localhost:5000/api/accounts \
 |---|---|---|
 | `POST` | `/api/conversations/<id>/upload` | Upload file |
 | `GET` | `/api/conversations/<id>/download` | Download sandbox file |
-| `GET` | `/api/local/uploads/<id>` | Get upload metadata |
-| `POST` | `/api/oneminai/upload` | Upload file via 1min.AI Asset API |
+| `GET` | `/api/local/uploads/<id>` | Upload metadata |
+| `POST` | `/api/oneminai/upload` | Upload via 1min.AI Asset API |
+
+### Models
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/models` | Models for active account |
+| `GET` | `/api/oneminai/models` | 1min.AI model catalog |
+| `GET` | `/api/flowith/models` | Flowith model catalog |
 
 ### Usage
 
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/usage` | Current usage snapshot |
-| `GET` | `/api/usage/history` | Quota history |
+| `GET` | `/api/usage/all` | Usage for all accounts |
+| `GET` | `/api/usage/history` | Quota snapshot history |
 | `GET` | `/api/usage/messages` | Message log |
 
 ### Settings & Preferences
@@ -203,56 +225,102 @@ curl -X POST http://localhost:5000/api/accounts \
 | Method | Endpoint | Description |
 |---|---|---|
 | `PATCH` | `/api/settings` | Update Claude account settings |
+| `GET` | `/api/settings/polling` | Get polling config |
+| `PATCH` | `/api/settings/polling` | Update polling config |
 | `GET` | `/api/preferences` | Get preferences |
 | `PATCH` | `/api/preferences` | Update preferences |
 
-### OAuth (used by the browser extension)
+### 1min.AI Generation
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/oauth/claude/begin` | Start Claude Google OAuth session |
-| `GET` | `/api/oauth/claude/ext-pending` | Polled by extension to find waiting Claude sessions |
-| `POST` | `/api/oauth/claude/ext-callback` | Receive auth code from extension |
-| `GET` | `/api/oauth/claude/status?state=` | Poll for completed Claude OAuth |
-| `GET` | `/api/oauth/chatwithai/begin` | Start ChatWithAI Google OAuth session |
-| `GET` | `/api/oauth/chatwithai/ext-pending` | Polled by extension for waiting sessions |
-| `POST` | `/api/oauth/chatwithai/ext-callback` | Receive auth from extension |
-| `GET` | `/api/oauth/chatwithai/status?state=` | Poll for completed ChatWithAI OAuth |
-| `GET` | `/api/oauth/oneminai/begin` | Start 1min.AI Google OAuth session |
-| `GET` | `/api/oauth/oneminai/owns-state` | Check if state belongs to Console |
-| `GET` | `/api/oauth/oneminai/ext-pending` | Polled by extension for waiting sessions |
-| `POST` | `/api/oauth/oneminai/ext-callback` | Receive Google access token from extension |
-| `GET` | `/api/oauth/oneminai/status?state=` | Poll for completed 1min.AI OAuth |
+| `POST` | `/api/oneminai/image` | Generate image(s) |
+| `POST` | `/api/oneminai/music` | Generate music |
+| `POST` | `/api/oneminai/tts` | Text-to-speech |
+| `POST` | `/api/oneminai/content-tool` | Grammar / summarize / translate |
+
+### Flowith Generation
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/flowith/image` | Generate image |
+| `POST` | `/api/flowith/video` | Generate video |
+| `GET` | `/api/flowith/credits` | Credit balance |
+| `POST` | `/api/flowith/session-cycle` | Refresh credits |
+| `POST` | `/api/flowith/refresh` | Refresh Flowith JWT |
+
+### OAuth (browser extension)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/oauth/claude/begin` | Start Claude OAuth |
+| `GET` | `/api/oauth/claude/ext-pending` | Extension polling |
+| `POST` | `/api/oauth/claude/ext-callback` | Receive auth code |
+| `GET` | `/api/oauth/claude/status` | Poll completion |
+| `GET` | `/api/oauth/oneminai/begin` | Start 1min.AI OAuth |
+| `GET` | `/api/oauth/oneminai/ext-pending` | Extension polling |
+| `POST` | `/api/oauth/oneminai/ext-callback` | Receive Google token |
+| `GET` | `/api/oauth/oneminai/status` | Poll completion |
+| `GET` | `/api/oauth/flowith/begin` | Start Flowith OAuth |
+| `GET` | `/api/oauth/flowith/url` | Supabase OAuth URL |
+| `GET` | `/api/oauth/flowith/ext-pending` | Extension polling |
+| `POST` | `/api/oauth/flowith/ext-callback` | Receive tokens |
+| `GET` | `/api/oauth/flowith/status` | Poll completion |
+
+### Cloudflare Challenge (1min.AI)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/oneminai/cf-pending` | Extension polling |
+| `POST` | `/api/oneminai/cf-callback` | Receive cf_clearance |
+| `GET` | `/api/oneminai/cf-status` | Poll resolution |
+
+---
 
 ## Architecture
 
 ```
 ChatAI-Console/
-├── app.py                  # Quart backend — routes, streaming, account management
-├── keys.py                 # (Optional) auto-seed account credentials
-├── data/
-│   └── accounts.json       # Persistent JSON store (auto-created)
+├── app.py          # Quart backend — routes, streaming, account management
+├── setup.py        # Install helper — deps, cert, .gitignore
+├── gen_cert.py     # Standalone cert generator
+├── keys.py         # (Optional) auto-seed credentials — never commit
+├── cert.pem        # (Generated) TLS cert — never commit
+├── key.pem         # (Generated) TLS private key — never commit
 └── templates/
-    └── index.html          # Single-page Galaxy-themed frontend
+    └── index.html  # Single-page Galaxy UI
 ```
 
-The backend bridges the reverse-engineered APIs and the frontend, exposing REST endpoints for account management, conversation handling, file uploads, and OAuth flows. The frontend is a dynamic SPA that consumes these endpoints to provide a seamless chat experience.
+The backend bridges the reverse-engineered APIs and the frontend via REST + SSE.
+All four providers share the same conversation/message API surface — the
+frontend is provider-agnostic.
+
+---
 
 ## Dependencies
 
 | Package | Purpose |
 |---|---|
-| [Quart](https://quart.palletsprojects.com/) | Async web framework (Flask-compatible) |
-| [Claude-API](https://github.com/cyber-wojtek/Claude-API/) | Reverse-engineered async Claude.ai client |
-| [1MinAI-API](https://github.com/cyber-wojtek/1MinAI-API/) | Reverse-engineered async 1min.AI client |
-| [Flowith-API](https://github.com/cyber-wojtek/Flowith-API/) | Async Flowith.io client |
-| [marked.js](https://marked.js.org/) | Markdown rendering (frontend) |
-| [highlight.js](https://highlightjs.org/) | Syntax highlighting (frontend) |
+| [Quart](https://quart.palletsprojects.com/) | Async web framework |
+| [Hypercorn](https://hypercorn.readthedocs.io/) | HTTP/2 ASGI server |
+| [redis-py](https://github.com/redis/redis-py) | Redis client + locking |
+| [Claude-API](https://github.com/cyber-wojtek/Claude-API/) | Claude.ai client |
+| [1MinAI-API](https://github.com/cyber-wojtek/1MinAI-API/) | 1min.AI client |
+| [Flowith-API](https://github.com/cyber-wojtek/Flowith-API/) | Flowith.io client |
+| [httpx](https://www.python-httpx.org/) | Outbound HTTP |
+| [marked.js](https://marked.js.org/) | Markdown rendering |
+| [highlight.js](https://highlightjs.org/) | Syntax highlighting |
+
+---
 
 ## Related
 
-- [ChatAI Console OAuth Bridge](https://github.com/cyber-wojtek/ChatAI-Console-Extension.git) — Browser extension for Google sign-in
-- [1MinAI-API](https://github.com/cyber-wojtek/1MinAI-API/) — Underlying async Python client for 1min.AI
+- [ChatAI Console OAuth Bridge](https://github.com/cyber-wojtek/ChatAI-Console-Extension)
+  — Browser extension for Google sign-in
+- [1MinAI-API](https://github.com/cyber-wojtek/1MinAI-API/)
+- [Flowith-API](https://github.com/cyber-wojtek/Flowith-API/)
+
+---
 
 ## License
 

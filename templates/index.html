@@ -2147,6 +2147,11 @@ a:hover { text-decoration:underline; }
   flex-shrink: 0;
 }
 
+@keyframes omai-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 /* ── Toolbar button active for omai panel ── */
 #oneminaiPanelBtn.active {
   background: var(--oneminai-dim);
@@ -2799,6 +2804,137 @@ select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
 }
 .bex-active-pill-x:hover { color: var(--teal); }
 
+/* ── Cloudflare challenge card ── */
+#cfOverlay {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+  width: min(360px, 94vw);
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp .2s var(--ease);
+  /* reuse the same card pattern as polling-panel */
+  background: linear-gradient(180deg, var(--bg-1), #080816);
+  border: 1px solid var(--oneminai-mid);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-xl), 0 0 40px rgba(249,115,22,0.04);
+}
+#cfOverlay.active { display: flex; }
+
+#cfOverlay .cf-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px 10px;
+  border-bottom: 1px solid var(--oneminai-mid);
+  background: linear-gradient(90deg, var(--oneminai-dim), transparent);
+  flex-shrink: 0;
+}
+#cfOverlay .cf-head-icon {
+  width: 24px; height: 24px;
+  background: var(--oneminai-dim);
+  border: 1px solid var(--oneminai-mid);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; flex-shrink: 0;
+}
+#cfOverlay .cf-head-title {
+  font-family: var(--font-head);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--oneminai);
+  flex: 1;
+}
+#cfOverlay .cf-head-sub {
+  font-size: 10px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  margin-top: 1px;
+}
+#cfOverlay .cf-head-close {
+  width: 22px; height: 22px;
+  border-radius: 5px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  color: var(--text-3);
+  font-size: 11px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all .15s;
+  flex-shrink: 0;
+}
+#cfOverlay .cf-head-close:hover { background: var(--bg-4); color: var(--text); }
+
+#cfOverlay .cf-body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+#cfOverlay .cf-desc {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+#cfOverlay .cf-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+}
+#cfOverlay .cf-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--text-4);
+  flex-shrink: 0;
+  transition: all .3s var(--ease);
+}
+#cfOverlay .cf-dot.waiting {
+  background: var(--yellow);
+  box-shadow: 0 0 8px rgba(250,204,21,.4);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+#cfOverlay .cf-dot.done {
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(74,222,128,.5);
+  animation: none;
+}
+#cfOverlay .cf-status-txt {
+  font-size: 11px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#cfOverlay .cf-bar-wrap {
+  height: 2px;
+  background: var(--bg-5);
+  border-radius: 2px;
+  overflow: hidden;
+}
+#cfOverlay .cf-bar {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--oneminai), #ea580c);
+  animation: indeterminate 1.3s ease-in-out infinite;
+}
+#cfOverlay .cf-bar.done {
+  width: 100% !important;
+  animation: none;
+  background: linear-gradient(90deg, var(--green), #22c55e);
+}
+#cfOverlay .cf-foot {
+  padding: 2px 14px 12px;
+  display: flex;
+  gap: 8px;
+}
+
 </style>
 </head>
 
@@ -2953,19 +3089,45 @@ select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
         <div class="drop-overlay-s">Images, PDFs, code &amp; more</div>
       </div>
 
-      <!-- Cloudflare challenge overlay — compact floating card -->
+      <!-- Simple floating card, no iframe -->
       <div id="cfOverlay">
-        <div class="cf-titlebar">
-          <div class="cf-header">⚠ Cloudflare — 1min.AI</div>
-          <button class="cf-expand-btn" onclick="toggleCFExpand()" id="cfExpandBtn" title="Toggle size">⤢</button>
-          <button class="cf-close" onclick="closeCFOverlay()" title="Dismiss">✕ Dismiss</button>
+        <div class="cf-head">
+          <div class="cf-head-icon">⚡</div>
+          <div style="flex:1;min-width:0">
+            <div class="cf-head-title">Cloudflare · 1min.AI</div>
+            <div class="cf-head-sub">security check required</div>
+          </div>
+          <button class="cf-head-close" onclick="closeCFOverlay()">✕</button>
         </div>
-        <div class="cf-sub">Complete the Cloudflare check below. The console will detect clearance automatically.</div>
-        <div class="cf-frame-wrap">
-          <iframe id="cfFrame" src="https://app.1min.ai" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+
+        <div class="cf-body">
+          <div class="cf-desc">
+            A popup has opened on <strong>app.1min.ai</strong> — complete the Cloudflare
+            checkbox there. The console will resume automatically once cleared.
+          </div>
+
+          <div class="cf-status-row">
+            <div class="cf-dot waiting" id="cfDot"></div>
+            <div class="cf-status-txt" id="cfStatusTxt">Waiting for Cloudflare clearance…</div>
+          </div>
+
+          <div class="cf-bar-wrap">
+            <div class="cf-bar" id="cfBar"></div>
+          </div>
         </div>
-        <div class="cf-footer">
-          <div class="cf-status" id="cfStatus">Waiting for challenge…</div>
+
+        <div class="cf-foot">
+          <button class="btn-pri" onclick="openCFPopup()"
+                  style="flex:1;padding:8px 12px;font-size:12px;
+                        background:var(--oneminai-dim);
+                        border:1px solid var(--oneminai-mid);
+                        color:var(--oneminai);box-shadow:none;">
+            ↗ Open popup
+          </button>
+          <button class="btn-sec" onclick="closeCFOverlay()"
+                  style="padding:8px 14px;font-size:12px;">
+            Dismiss
+          </button>
         </div>
       </div>
 
@@ -3691,6 +3853,15 @@ const S = {
   chatQuery:     '',
 };
 
+let _activeNavCtl = null;
+
+function _cancelPending() {
+  if (_activeNavCtl) {
+    _activeNavCtl.abort();
+    _activeNavCtl = null;
+  }
+}
+
 const contentCache = {};
 
 /* ═══════════════════════════════════════════
@@ -3839,6 +4010,7 @@ async function init() {
     } else if (_initProv === 'flowith') {
       _fetchAndCacheFlowithModels().catch(() => {});
     } else if (_initProv === 'oneminai') {
+      _omaiScheduleRefresh(); // <-- ADD THIS LINE
       fetchOneminaiModels(false).catch(() => {});
     }
     else {
@@ -3998,6 +4170,7 @@ async function apiFetch(url, opts = {}) {
   const name = getTabAccountName();
   if (name) opts.headers['X-Account-Name'] = name;
   const r = await fetch(url, opts);
+  if (!r.ok && r.status !== 404) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
 
@@ -4009,14 +4182,18 @@ async function apiFetchRaw(url, opts = {}) {
   return fetch(url, opts);
 }
 
-async function loadPinnedIds() {
-  try { S.pinnedIds = await apiFetch('/api/local/conversations'); } catch { S.pinnedIds = []; }
+async function loadPinnedIds(signal) {
+  try {
+    S.pinnedIds = await apiFetch('/api/local/conversations', { signal });
+  } catch(e) {
+    if (e.name !== 'AbortError') S.pinnedIds = [];
+  }
 }
-async function loadAllConvs() {
+
+async function loadAllConvs(signal) {
   if (!getTabAccount()) { S.allConvs = []; return; }
   try {
-    // apiFetch already sends X-Account-Name
-    const data = await apiFetch('/api/conversations');
+    const data = await apiFetch('/api/conversations', { signal });
     const arr = Array.isArray(data) ? data : [];
     S.allConvs = arr.map(c => {
       if (c.uuid) return c;
@@ -4029,7 +4206,10 @@ async function loadAllConvs() {
       };
     });
     for (const c of S.allConvs) if (c.uuid) S.convs[c.uuid] = c;
-  } catch { S.allConvs = []; }
+  } catch(e) {
+    if (e.name === 'AbortError') return; // clean cancel, don't wipe data
+    S.allConvs = [];
+  }
 }
 
 function getPinnedSet() { return new Set((S.pinnedIds || []).map(p => p.conv_uuid)); }
@@ -4520,6 +4700,7 @@ function applyProviderUI(acct) {
   }
 
   if (provider === 'oneminai') {
+    _omaiScheduleRefresh(); // <-- ADD THIS LINE
     // Fetch 1min.AI models eagerly on account switch
     fetchOneminaiModels(false).catch(() => {});
     // Fetch credits eagerly
@@ -5206,6 +5387,11 @@ function filterAccounts(val) {
 
 /* Switch the account for THIS TAB only — no server state change */
 async function switchTabAccount(name) {
+  // Cancel anything in flight from previous account
+  _cancelPending();
+  _activeNavCtl = new AbortController();
+  const signal = _activeNavCtl.signal;
+
   closeAcctMenu();
   const acct = S.accounts.find(a => a.name === name);
   if (!acct) { toast(`Account "${name}" not found`, 'err'); return; }
@@ -5221,29 +5407,37 @@ async function switchTabAccount(name) {
   setStatus(true, acct.organization_id);
   renderAccountMenu();
   applyProviderUI(acct);
-  // Warm ChatWithAI model cache eagerly on account resolution
-  const _raProv = (S.tabAccount?.provider || 'claude').toLowerCase();
-  if (_raProv === 'chatwithai' && !_chatwithaiModelCache.models.length) {
-    _fetchAndCacheChatwithaiModels().catch(() => {});
-  }
 
-  const _swProv = (acct.provider || 'claude').toLowerCase();
-  if (['claude', 'oneminai'].includes(_swProv)) fetchQuota();
-  if (_swProv === 'chatwithai') {
-    // Fetch models eagerly — applyProviderUI will also try but this
-    // ensures the cache is ready before the selector renders.
-    _fetchAndCacheChatwithaiModels().catch(() => {});
-  }
-  if (_swProv === 'flowith') {
-    apiFetch('/api/flowith/credits').then(d => {
-      const raw = d.credits?.total ?? d.credits?.credits_total ?? d.credits_total ?? null;
+  const prov = (acct.provider || 'claude').toLowerCase();
+  if (['claude', 'oneminai'].includes(prov)) fetchQuota();
+  if (prov === 'flowith') {
+    apiFetch('/api/flowith/credits', { signal }).then(d => {
+      const raw = d.credits?.total ?? d.credits_total ?? null;
       if (raw != null) { _cacheFlowith(acct.name, raw); _renderSidebarBar(); renderAccountMenu(); }
     }).catch(() => {});
   }
 
-  await Promise.all([loadPinnedIds(), loadAllConvs()]);
+  try {
+    // Sequential, not parallel — avoids hammering the server
+    await loadPinnedIds(signal);
+    if (signal.aborted) return;
+    await loadAllConvs(signal);
+    if (signal.aborted) return;
+  } catch(e) {
+    if (e.name === 'AbortError') return;
+  }
+
   renderSidebar();
-  toast(`Tab switched to ${name}`, 'ok');
+  toast(`Switched to ${name}`, 'ok');
+
+  // Models fetch in background — don't block the UI
+  if (prov === 'chatwithai') {
+    _fetchAndCacheChatwithaiModels().catch(() => {});
+  } else if (prov === 'flowith') {
+    _fetchAndCacheFlowithModels().catch(() => {});
+  } else if (prov === 'oneminai') {
+    fetchOneminaiModels(false).catch(() => {});
+  }
 }
 
 /* Make an account the server-wide active (affects other tabs that haven't
@@ -5511,14 +5705,16 @@ function openSettings() {
 /* ═══════════════════════════════════════════
    CONVERSATIONS
 ═══════════════════════════════════════════ */
-async function fetchConvMeta(id) {
-  const data = await apiFetch(`/api/conversations/${id}`);
+async function fetchConvMeta(id, signal) {
+  const data = await apiFetch(`/api/conversations/${id}`, { signal });
   if (!data.error) {
     S.convs[id] = data;
     if (data.name) {
       apiFetch(`/api/local/conversations/${id}`, {
-        method:'PATCH', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ display_name: data.name })
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: data.name }),
+        signal,
       }).catch(() => {});
     }
   }
@@ -5536,6 +5732,11 @@ async function newConv() {
 }
 
 async function selectConv(id, acct, skipPush) {
+  // Cancel any previous in-flight conversation load
+  _cancelPending();
+  _activeNavCtl = new AbortController();
+  const signal = _activeNavCtl.signal;
+
   S.convId = id;
   document.getElementById('chat').classList.remove('hidden');
   document.getElementById('chat').style.display = 'flex';
@@ -5545,23 +5746,25 @@ async function selectConv(id, acct, skipPush) {
   if (skipPush) history.replaceState({ convId: id }, '', _urlPath);
   else          history.pushState(   { convId: id }, '', _urlPath);
   renderSidebar();
-  // switch this tab's account if the caller requests one that isn't active yet
+
   if (acct && acct !== getTabAccountName()) {
     await switchTabAccount(acct);
   }
 
-  /* Always fetch full conversation data (with chat_messages) */
   const cached = S.convs[id];
   if (!cached || !cached.chat_messages) {
-    try { await fetchConvMeta(id); } catch {}
+    try {
+      await fetchConvMeta(id, signal);
+    } catch(e) {
+      if (e.name === 'AbortError') return; // user navigated away, stop
+    }
   }
+
+  if (signal.aborted) return; // check again after any await
+
   renderMsgs();
   syncToolbar();
   buildBranchSel();
-  const _scSel = S.canvasOpen && S.canvasTab === 'files' &&
-    ((S.tabAccount?.provider || 'claude').toLowerCase() === 'claude' ||
-     (S.tabAccount?.provider || '').toLowerCase() === 'flowith');
-  if (_scSel) renderCanvasFiles();
   const c = S.convs[id];
   const name = c?.name || 'Conversation';
   document.title = name + ' — ChatAI Console';
@@ -7485,6 +7688,14 @@ function handleStreamEv(ev, asstMsg, bodyElFn) {
       break;
     case 'error': {
       const errEl = bodyElFn();
+      // Auto-refresh 1min.AI token on auth errors
+      const _errType0 = ev.error?.type || '';
+      if (_errType0 === 'authentication_error' && getTabProvider() === 'oneminai') {
+        _oneminaiAutoRefresh().then(ok => {
+          if (ok) toast('Token refreshed — please resend your message', 'ok');
+          else    toast('1min.AI auth failed — check your API key in Settings', 'err');
+        });
+      }
       if (errEl) {
         const errType = ev.error?.type || '';
         let displayMsg = ev.error?.message || JSON.stringify(ev.error || ev);
@@ -7527,7 +7738,7 @@ function handleStreamEv(ev, asstMsg, bodyElFn) {
       return;
     }
     case 'cloudflare_challenge': {
-      showCFOverlay(ev.state);
+      beginCF();
       const errEl = bodyElFn();
       if (errEl) {
         const d = document.createElement('div');
@@ -7911,9 +8122,7 @@ function _reschedulePoller() {
   if (!_pollCfg.auto_poll_credits) return;
   const ms = Math.max(10_000, (_pollCfg.poll_interval_sec || 90) * 1000);
   _pollTimer = setInterval(() => {
-    _pollAllAccounts();
-    // Also refresh credits for every flowith account in the background
-    _pollAllFlowithCredits().catch(() => {});
+    _pollAllAccounts(); // already covers flowith
   }, ms);
 }
 
@@ -7974,11 +8183,15 @@ async function _pollAllFlowithCredits() {
 
   let changed = false;
   for (const acct of flowithAccounts) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+
     try {
       const d = await fetch('/api/flowith/credits', {
         headers: { 'X-Account-Name': acct.name },
-        signal: AbortSignal.timeout(15_000),
+        signal: controller.signal
       }).then(r => r.json());
+      clearTimeout(timer);
       const raw = d.credits?.total ?? d.credits?.credits_total ?? d.credits_total ?? null;
       if (raw != null) {
         _cacheFlowith(acct.name, raw);
@@ -8498,6 +8711,91 @@ async function _flowithRefreshCredits(showToast = false) {
     const num    = cached?.credits ?? null;
     const display = num != null ? num.toFixed(2) : '?';
     toast(`Flowith credits: ${display}`, 'ok');
+  }
+}
+
+// ── 1min.AI auto-refresh on 401 ────────────────────────────────────────────
+async function _oneminaiAutoRefresh() {
+  const acct = getTabAccount();
+  if (!acct || acct.provider !== 'oneminai') return false;
+  try {
+    const r = await apiFetch('/api/oneminai/refresh', { method: 'POST' });
+    if (r.access_token) {
+      // Update in-memory account so next request uses the new token
+      if (S.tabAccount) S.tabAccount.api_key = r.access_token;
+      const cached = S.accounts.find(a => a.name === acct.name);
+      if (cached) {
+        cached.api_key = r.access_token;
+        if (r.team_id) cached.team_id = r.team_id;
+      }
+      _cache_invalidate_client();
+      log && console.log('[1min.AI] token refreshed automatically');
+      return true;
+    }
+  } catch (e) {
+    console.warn('[1min.AI] auto-refresh failed:', e.message);
+  }
+  return false;
+}
+
+// ── 1min.AI proactive token refresh scheduler ──────────────────────────
+let _omaiRefreshTimer = null;
+
+function _omaiScheduleRefresh() {
+  if (_omaiRefreshTimer) { clearTimeout(_omaiRefreshTimer); _omaiRefreshTimer = null; }
+  const acct = getTabAccount();
+  if (!acct || (acct.provider || '').toLowerCase() !== 'oneminai') return;
+  if (!acct.api_key) return;
+
+  let expiresAt = 0;
+  try {
+    const parts   = acct.api_key.split('.');
+    const payload = JSON.parse(atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')));
+    expiresAt     = (payload.exp || 0) * 1000;
+  } catch (_) { return; }
+
+  const now    = Date.now();
+  const margin = 5 * 60 * 1000; // refresh 5 min before expiry
+  const delay  = expiresAt - now - margin;
+
+  if (delay <= 0) {
+    _omaiDoRefresh();
+    return;
+  }
+
+  _omaiRefreshTimer = setTimeout(_omaiDoRefresh, delay);
+  const mins = Math.round(delay / 60000);
+  console.debug(`[1min.AI] token refresh scheduled in ~${mins} min`);
+}
+
+async function _omaiDoRefresh() {
+  _omaiRefreshTimer = null;
+  const acct = getTabAccount();
+  if (!acct || (acct.provider || '').toLowerCase() !== 'oneminai') return;
+
+  try {
+    const r = await apiFetch('/api/oneminai/refresh', { method: 'POST' });
+    if (r.access_token) {
+      if (S.tabAccount) {
+        S.tabAccount.api_key = r.access_token;
+        if (r.team_id) S.tabAccount.team_id = r.team_id;
+      }
+      const cached = S.accounts.find(a => a.name === acct.name);
+      if (cached) {
+        cached.api_key = r.access_token;
+        if (r.team_id) cached.team_id = r.team_id;
+      }
+      _cache_invalidate_client();
+      console.debug('[1min.AI] token refreshed automatically');
+      // Reschedule for the new token's expiry
+      _omaiScheduleRefresh();
+    } else {
+      console.warn('[1min.AI] auto-refresh returned no access_token:', r);
+    }
+  } catch (err) {
+    console.warn('[1min.AI] auto-refresh failed:', err.message);
+    // Retry in 2 minutes if it failed
+    _omaiRefreshTimer = setTimeout(_omaiDoRefresh, 2 * 60 * 1000);
   }
 }
 
@@ -9386,28 +9684,71 @@ function openInCanvasRaw(content, name, mime) {
 /* ═══════════════════════════════════════════
    CLOUDFLARE CHALLENGE OVERLAY
 ═══════════════════════════════════════════ */
-let _cfPollTimer = null;
 let _cfState     = null;
+let _cfPollTimer = null;
+let _cfPopup     = null;
 
 function showCFOverlay(state) {
   _cfState = state;
   document.getElementById('cfOverlay').classList.add('active');
-  document.getElementById('cfStatus').textContent = 'Waiting for challenge completion…';
-  document.getElementById('cfStatus').className   = 'cf-status';
+  _cfSetStatus('Click "Open popup" to complete the Cloudflare check', false);
+  openCFPopup();
+}
+
+function beginCF() {
+  const acctName = getTabAccountName() || '';
+  fetch('/api/oneminai/cf-begin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account_name: acctName }),
+  }).then(r => {
+    if (!r.ok) { toast('Failed to start Cloudflare check', 'err'); return; }
+    return r.json();
+  }).then(d => {
+    if (d && d.ok && d.state) {
+      showCFOverlay(d.state);
+    }
+  }).catch(() => {
+    toast('Failed to start Cloudflare check', 'err');
+  });
+}
+
+function openCFPopup() {
+  if (_cfPopup && !_cfPopup.closed) { _cfPopup.focus(); return; }
+  const w = 520, h = 600;
+  const l = Math.round(screen.width  / 2 - w / 2);
+  const t = Math.round(screen.height / 2 - h / 2);
+  _cfPopup = window.open(
+    'https://app.1min.ai',
+    'chatai_cf_check',
+    `width=${w},height=${h},left=${l},top=${t},resizable=yes`
+  );
+  _cfSetStatus('Complete the Cloudflare check in the popup…', false);
   _cfStartPoll();
 }
 
 function closeCFOverlay() {
-  document.getElementById('cfOverlay').classList.remove('active');
-  if (_cfPollTimer) { clearTimeout(_cfPollTimer); _cfPollTimer = null; }
   _cfState = null;
+  if (_cfPollTimer) { clearTimeout(_cfPollTimer); _cfPollTimer = null; }
+  if (_cfPopup && !_cfPopup.closed) _cfPopup.close();
+  _cfPopup = null;
+  document.getElementById('cfOverlay').classList.remove('active');
 }
 
-function toggleCFExpand() {
-  const overlay = document.getElementById('cfOverlay');
-  const btn     = document.getElementById('cfExpandBtn');
-  const expanded = overlay.classList.toggle('expanded');
-  if (btn) btn.textContent = expanded ? '⤡' : '⤢';
+function _cfSetStatus(msg, done) {
+  const dot = document.getElementById('cfDot');
+  const txt = document.getElementById('cfStatusTxt');
+  const bar = document.getElementById('cfBar');
+  if (txt) txt.textContent = msg;
+  if (done) {
+    dot?.classList.remove('waiting');
+    dot?.classList.add('done');
+    bar?.classList.add('done');
+  } else {
+    dot?.classList.remove('done');
+    dot?.classList.add('waiting');
+    bar?.classList.remove('done');
+  }
 }
 
 function _cfStartPoll() {
@@ -9418,22 +9759,80 @@ function _cfStartPoll() {
 async function _cfPoll() {
   if (!_cfState) return;
   try {
-    const acctName = document.querySelector('[data-active-account]')?.dataset.activeAccount
-                  || (window._activeAccountName ?? '');
-    const r = await fetch(`/api/oneminai/cf-status?state=${encodeURIComponent(_cfState)}`, {
-      signal: AbortSignal.timeout(3000),
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+
+    const r = await fetch(
+      `/api/oneminai/cf-status?state=${encodeURIComponent(_cfState)}`,
+      { signal: controller.signal }
+    );
+
+    clearTimeout(timer);
+
     if (r.ok) {
       const d = await r.json();
       if (d.done) {
-        document.getElementById('cfStatus').textContent = 'Cloudflare cleared — you can resend your message.';
-        document.getElementById('cfStatus').className   = 'cf-status ok';
-        setTimeout(closeCFOverlay, 2200);
+        _cfSetStatus('✓ Cloudflare cleared — resuming…', true);
+        if (_cfPopup && !_cfPopup.closed) _cfPopup.close();
+        _cfPopup = null;
+        setTimeout(closeCFOverlay, 2000);
         return;
       }
     }
   } catch { /* keep polling */ }
-  _cfPollTimer = setTimeout(_cfPoll, 1800);
+  _cfPollTimer = setTimeout(_cfPoll, 1500);
+}
+
+/* ── 1min.AI manual token refresh ── */
+async function omaiManualRefresh(btn) {
+  if (!btn) btn = document.getElementById('omaiRefreshBtn');
+  const acct = getTabAccount();
+  if (!acct || (acct.provider || '').toLowerCase() !== 'oneminai') {
+    toast('Switch to a 1min.AI account first', 'err');
+    return;
+  }
+
+  // Spinning state
+  if (btn) btn.classList.add('spinning');
+
+  try {
+    const r = await apiFetch('/api/oneminai/refresh', { method: 'POST' });
+
+    if (r.access_token) {
+      // Patch in-memory account objects so next request uses new token
+      if (S.tabAccount) {
+        S.tabAccount.api_key = r.access_token;
+        if (r.team_id) S.tabAccount.team_id = r.team_id;
+      }
+      const cached = S.accounts.find(a => a.name === acct.name);
+      if (cached) {
+        cached.api_key = r.access_token;
+        if (r.team_id) cached.team_id = r.team_id;
+      }
+      // Force cache invalidation so next account list load is fresh
+      _cache_invalidate_client();
+
+      // Fetch fresh credits immediately after token rotation
+      try {
+        const usage = await apiFetch('/api/usage');
+        if (usage.provider === 'oneminai' && usage.credits != null) {
+          _cacheOneminai(acct.name, usage.credits);
+          _renderSidebarBar();
+          renderAccountMenu();
+          _renderOmaiPanelFromCache();
+        }
+      } catch { /* non-fatal */ }
+
+      toast('1min.AI token refreshed ✓', 'ok');
+    } else {
+      const msg = r.error || 'Refresh failed — check server logs';
+      toast(msg, 'err');
+    }
+  } catch (err) {
+    toast('Refresh error: ' + err.message, 'err');
+  } finally {
+    if (btn) btn.classList.remove('spinning');
+  }
 }
 
 /* ═══════════════════════════════════════════

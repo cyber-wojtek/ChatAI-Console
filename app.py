@@ -16,13 +16,24 @@ import re
 import secrets
 import sys
 import threading
+import atexit
+import signal
+import subprocess
+import shutil
 import uuid as uuid_lib
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 import argparse
-from hypercorn.asyncio import serve
+import hypercorn.asyncio
+import hypercorn.config
+import multiprocessing
+from bs4 import BeautifulSoup
+import redis
+import time as _time
+import argparse
 from hypercorn.config import Config
+from hypercorn.asyncio import serve
 
 
 from quart import (
@@ -30,36 +41,31 @@ from quart import (
     request, stream_with_context,
 )
 
-from quart_cors import cors
-
-import requests as http_client
+import httpx as http_client
 
 from claude_webapi import ClaudeClient
 from flowith_webapi import FlowithClient
 from oneminai_webapi import OneMinAIClient
+
+# Alias: older call-sites used stop_conversation_response; the library
+# exposes stop_response — add a forward-compatible shim at import time.
+if not hasattr(ClaudeClient, "stop_conversation_response"):
+    ClaudeClient.stop_conversation_response = ClaudeClient.stop_response  # type: ignore[attr-defined]
 from oneminai_webapi.exceptions import CloudflareError as OneMinAICFError
 from claude_webapi.constants import CLAUDE_BASE_URL
 from claude_webapi.exceptions import (
     APIError, AuthenticationError, QuotaExceededError,
 )
-
+from urllib.parse import urlparse, urljoin, quote, unquote
 
 # Shared session for ChatWithAI — connection-pooled, keep-alive enabled.
-_CHATWITHAI_SESSION = None  # lazy-initialised in _get_chatwithai_session()
+_CHATWITHAI_SESSION = None  # lazy-initialised in _get_chatwithai_client()
 
 
-def _get_chatwithai_session() -> "http_client.Session":
+def _get_chatwithai_client() -> "http_client.Client":
     global _CHATWITHAI_SESSION
     if _CHATWITHAI_SESSION is None:
-        from requests.adapters import HTTPAdapter
-        s = http_client.Session()
-        adapter = HTTPAdapter(
-            pool_connections=4,
-            pool_maxsize=20,
-            max_retries=0,
-        )
-        s.mount("https://", adapter)
-        s.mount("http://", adapter)
+        s = http_client.Client()
         _CHATWITHAI_SESSION = s
     return _CHATWITHAI_SESSION
 
@@ -149,96 +155,130 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
+STORE_KEY = "chatai:store"
+STORE_LOCK_KEY = "chatai:store_lock"
 
-class JSONStore:
-    """Thread-safe JSON file store with file-level locking for multi-worker safety."""
+STORE_KEY = "chatai:store"
+STORE_LOCK_KEY = "chatai:store_lock"
 
-    def __init__(self, path: Path):
-        self.path      = path
-        self._lock     = threading.Lock()
-        self._fl_lock  = None  # lazy filelock
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        log.info("JSON store ready  %s", self.path)
+# ── Redis auto-start ──────────────────────────────────────────────────────────
 
-    def _get_fl(self):
-        """Lazy-init a FileLock for cross-process mutual exclusion."""
-        if self._fl_lock is None:
-            try:
-                from filelock import FileLock
-                self._fl_lock = FileLock(str(self.path) + ".lock", timeout=15)
-            except ImportError:
-                # Fallback: no cross-process lock (single-worker or dev mode)
-                log.warning(
-                    "filelock not installed — multi-worker persistence "
-                    "may have race conditions. Run: pip install filelock"
-                )
-                self._fl_lock = _NullLock()
-        return self._fl_lock
+_redis_proc = None
 
-    def _load_unlocked(self) -> dict:
-        """Load from disk. Must be called with file lock already held."""
-        if self.path.exists():
-            try:
-                with open(self.path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    data.setdefault("accounts", [])
-                    return data
-            except (json.JSONDecodeError, OSError) as e:
-                log.warning("Failed to load %s: %s  — starting fresh", self.path, e)
-        return {"accounts": []}
+def _start_redis():
+    global _redis_proc
+    if not shutil.which("redis-server"):
+        log.warning("redis-server not found — install it or set REDIS_URL manually")
+        return
+    _redis_proc = subprocess.Popen(
+        ["redis-server", "--daemonize", "no", "--loglevel", "warning"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    r = redis.Redis()
+    for _ in range(50):
+        try:
+            r.ping()
+            log.info("Redis started (pid %d)", _redis_proc.pid)
+            return
+        except Exception:
+            _time.sleep(0.1)
+    log.warning("Redis didn't respond in time")
 
-    def _save_unlocked(self, data: dict):
-        """Save to disk. Must be called with file lock already held."""
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        tmp.replace(self.path)
+@atexit.register
+def _stop_redis():
+    if _redis_proc:
+        _redis_proc.terminate()
+        try:
+            _redis_proc.wait(timeout=5)
+        except Exception:
+            _redis_proc.kill()
+        log.info("Redis stopped")
+
+#_start_redis()
+
+# ── RedisStore ────────────────────────────────────────────────────────────────
+
+class RedisStore:
+    def __init__(self, redis_url: str = "redis://localhost:6379/0"):
+        self._r = redis.Redis.from_url(redis_url, decode_responses=True)
+        self._local_lock = threading.Lock()
+        self._ensure_initialized()
+        log.info("Redis store ready  %s", redis_url)
+
+    def _ensure_initialized(self):
+        if not self._r.exists(STORE_KEY):
+            self._r.set(STORE_KEY, json.dumps({"accounts": []}))
 
     def read(self) -> dict:
-        """Always read fresh from disk (safe for multi-worker)."""
-        with self._lock:
-            with self._get_fl():
-                return self._load_unlocked()
+        raw = self._r.get(STORE_KEY)
+        if not raw:
+            return {"accounts": []}
+        data = json.loads(raw)
+        data.setdefault("accounts", [])
+        return data
 
     def mutate(self, fn):
-        """
-        Read-modify-write under both the thread lock and the file lock.
-        fn receives the current data dict and may modify it in place.
-        """
-        with self._lock:
-            with self._get_fl():
-                data = self._load_unlocked()
+        with self._local_lock:
+            with self._r.lock(STORE_LOCK_KEY, timeout=15, blocking_timeout=15):
+                raw = self._r.get(STORE_KEY)
+                data = json.loads(raw) if raw else {"accounts": []}
+                data.setdefault("accounts", [])
                 fn(data)
-                self._save_unlocked(data)
+                self._r.set(STORE_KEY, json.dumps(data, ensure_ascii=False))
+                
+    def migrate_from_json(self, json_store: "JSONStore"):
+        data = json_store.read()
+        with self._local_lock:
+            with self._r.lock(STORE_LOCK_KEY, timeout=15, blocking_timeout=15):
+                self._r.set(STORE_KEY, json.dumps(data, ensure_ascii=False))
 
+class JSONStore:
+    def __init__(self, path: Path):
+        self.path = path
+        self._lock = threading.Lock()
+        self._ensure_file()
+        self._data: dict = {}
+        with open(self.path, "r", encoding="utf-8") as f:
+            self._data = json.load(f)
 
-class _NullLock:
-    """No-op context manager used as a fallback when filelock isn't installed."""
-    def __enter__(self):  return self
-    def __exit__(self, *_): pass
-    def acquire(self, *a, **kw): pass
-    def release(self): pass
+    def _ensure_file(self):
+        if not self.path.exists():
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps({"accounts": []}))
 
-store = JSONStore(STORE_PATH)
+    def read(self) -> dict:
+        with self._lock:
+            return self._data
 
+    def mutate(self, fn):
+        with self._lock:
+            data = self._data
+            fn(data)
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.save()
+                
+    def save(self):
+        with self._lock:
+            log.info("Saving JSON store to %s", self.path)
+            with open(self.path, "w", encoding="utf-8") as f:
+                json.dump(self._data, f, ensure_ascii=False, indent=2)
+                
+    def migrate_from_redis(self, redis_store: RedisStore):
+        data = redis_store.read()
+        with self._lock:
+            self._data = data
+            with open(self.path, "w", encoding="utf-8") as f:
+                json.dump(self._data, f, ensure_ascii=False, indent=2)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Async event loop bridge
-# ═══════════════════════════════════════════════════════════════════════════════
+#REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+store = JSONStore(path=Path("data/store.json"))  
+#redis_ = RedisStore(redis_url=REDIS_URL)
+#store.migrate_from_redis(redis_)  # one-time migration from Redis to JSON file
+#store = RedisStore(redis_url=REDIS_URL)
 
-_loop = asyncio.new_event_loop()
-_loop_thread = threading.Thread(target=_loop.run_forever, daemon=True, name="async-loop")
-_loop_thread.start()
-
-
-async def _run_coro(coro):
-    """Run *coro* on the background event-loop and await its result."""
-    future = asyncio.run_coroutine_threadsafe(coro, _loop)
-    return await asyncio.wrap_future(future)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 # Claude client + streaming
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -275,7 +315,7 @@ async def _chatwithai_fetch_models() -> list[dict]:
     if _CHATWITHAI_MODEL_CACHE["models"] and now_ts - _CHATWITHAI_MODEL_CACHE["fetched_at"] < 900:
         return _CHATWITHAI_MODEL_CACHE["models"]
     url = f"{CHATWITHAI_API_BASE}/api/v1/chatwithai/chats/models"
-    resp = _get_chatwithai_session().get(url, headers=_chatwithai_headers(), timeout=20)
+    resp = _get_chatwithai_client().get(url, headers=_chatwithai_headers(), timeout=20)
     if resp.status_code != 200:
         return _CHATWITHAI_MODEL_CACHE["models"]
     payload = resp.json()
@@ -300,46 +340,83 @@ async def _chatwithai_fetch_models() -> list[dict]:
 
 # _sync_stream_claude: must be plain def, not async def
 def _sync_stream_claude(acct: dict, conv_id: str, payload: dict):
+    """Stream a Claude completion using claude_webapi's streaming API."""
     import queue as _queue
     q = _queue.Queue()
-    account_name = acct["name"]
+
+    prompt      = payload.get("prompt", "")
+    model       = payload.get("model", "claude-sonnet-4-6")
+    parent_uuid = payload.get("parent_message_uuid", "00000000-0000-4000-8000-000000000000")
+    file_uuids  = payload.get("files", [])
+    style_raw   = (payload.get("personalized_styles") or [None])[0]
+
+    def emit(obj: dict) -> bytes:
+        return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")
 
     async def producer():
         client = None
         try:
             client = ClaudeClient(acct["session_key"], acct.get("organization_id") or None)
             await client.init(timeout=60, auto_close=True, close_delay=30)
-            url  = client._org_url(f"chat_conversations/{conv_id}/completion")
-            body = json.dumps(payload).encode()
-            session = client._ensure_session()
-            async with session.post(
-                url, data=body,
-                headers={"Accept": "text/event-stream", "Content-Length": str(len(body))},
-                timeout=3600,
-            ) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    q.put(APIError(f"HTTP {resp.status}: {text[:300]}", status_code=resp.status))
-                    return
-                async for raw_chunk, _ in resp.content.iter_chunks():
-                    if raw_chunk:
-                        q.put(raw_chunk)
-                        # quota snapshot parsing omitted for brevity — add back here
+
+            # Ensure conversation exists server-side
+            await client.ensure_conversation(conv_id)
+
+            accumulated = ""
+            async for chunk in client._send_stream(
+                conv_id             = conv_id,
+                prompt              = prompt,
+                files               = [],          # already uploaded; pass UUIDs below
+                model               = model,
+                parent_uuid         = parent_uuid,
+                attachments         = None,
+                is_new_conversation = False,
+                style               = style_raw,
+            ):
+                # _send_stream yields ModelOutput with text_delta
+                if chunk.text_delta:
+                    q.put(emit({
+                        "type":  "content_block_delta",
+                        "index": 0,
+                        "delta": {"type": "text_delta", "text": chunk.text_delta},
+                    }))
+                new_parent = chunk.metadata.get("parent_message_uuid")
+                if new_parent and new_parent != parent_uuid:
+                    q.put(emit({
+                        "type":    "message_start",
+                        "message": {"uuid": new_parent},
+                    }))
+                    parent_uuid_ref = new_parent  # noqa: F841
+
+            q.put(emit({"type": "message_stop"}))
+        except QuotaExceededError as exc:
+            q.put(emit({"type": "error", "error": {"type": "rate_limit_error",
+                        "message": str(exc)}}))
         except Exception as exc:
-            q.put(exc)
+            q.put(emit({"type": "error", "error": {"type": "api_error",
+                        "message": str(exc)}}))
         finally:
             if client:
                 try: await client.close()
                 except Exception: pass
             q.put(None)
 
+    # Inject file UUIDs into the payload so the underlying client picks them up
+    # by patching _send_stream via the already-resolved file_uuids list.
+    # We monkey-patch _upload_file_list to return the pre-resolved UUIDs.
+    _orig_upload = ClaudeClient._upload_file_list
+
+    async def _noop_upload(self, conv_id_, files_):  # noqa: D401
+        return file_uuids or []
+
+    ClaudeClient._upload_file_list = _noop_upload
     asyncio.run_coroutine_threadsafe(producer(), _loop)
+    ClaudeClient._upload_file_list = _orig_upload
+
     while True:
         item = q.get()
         if item is None:
             break
-        if isinstance(item, Exception):
-            raise item
         yield item
 
 
@@ -354,10 +431,9 @@ def _sync_stream_oneminai(acct, conv_id, prompt, model, *, human_uuid, asst_uuid
     async def producer():
         client = None
         try:
-            key = acct.get("api_key") or acct.get("session_key", "")
-            client = OneMinAIClient(api_key=key)
-            if acct.get("team_id"):
-                client._team_id = acct["team_id"]
+            client = await _make_oneminai_client(acct)
+            # Ensure team_id is resolved before streaming
+            await client._get_team_id()
             q.put(emit({"type": "message_start", "message": {"uuid": asst_uuid, "model": model}}))
             q.put(emit({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}))
             async for chunk in await client.chat(
@@ -372,12 +448,14 @@ def _sync_stream_oneminai(acct, conv_id, prompt, model, *, human_uuid, asst_uuid
             q.put(emit({"type": "message_stop"}))
         except OneMinAICFError as exc:
             state = secrets.token_hex(16)
-            with _cf_lock:
-                _cf_pending[state] = {
+            def _store_cf(d):
+                d.setdefault("_cf_pending", {})[state] = {
                     "account_name": acct.get("name", ""),
                     "done": False,
                     "cf_clearance": None,
                 }
+            store.mutate(_store_cf)
+            
             log.warning("1min.AI Cloudflare challenge: %s  state=%s", exc.challenge_type, state)
             q.put(emit({
                 "type":           "cloudflare_challenge",
@@ -466,76 +544,77 @@ def _sync_stream_chatwithai_messages(
 
     resp = None
     try:
-        resp = _get_chatwithai_session().post(
+        with _get_chatwithai_client().stream(
+            "POST",
             url,
             json=payload,
             headers=_chatwithai_headers(),
-            stream=True,
             timeout=(10, timeout),
-        )
+        ) as resp:
+            if resp.status_code != 200:
+                err = {"type": "error",
+                    "error": {"type": "api_error",
+                                "message": f"HTTP {resp.status_code}"}}
+                yield emit(err)
+                return
 
-        if resp.status_code != 200:
-            err = {"type": "error",
-                   "error": {"type": "api_error",
-                              "message": f"HTTP {resp.status_code}"}}
-            yield emit(err)
-            return
+            buffer = b""
+            done = False
 
-        buffer = b""
-        done = False
-
-        for raw_chunk in resp.iter_content(chunk_size=4096, decode_unicode=False):
-            if not raw_chunk:
-                continue
-
-            buffer += raw_chunk
-            *lines, buffer = buffer.split(b"\n")
-
-            for line_bytes in lines:
-                if not line_bytes or not line_bytes.startswith(b"data:"):
+            for raw_chunk in resp.iter_bytes(chunk_size=256):
+                if not raw_chunk:
                     continue
 
-                try:
-                    line = line_bytes.decode("utf-8", errors="replace")
-                except Exception:
-                    continue
+                buffer += raw_chunk
+                *lines, buffer = buffer.split(b"\n")
 
-                data_str = line[5:].strip()
-                if not data_str:
-                    continue
+                for line_bytes in lines:
+                    if not line_bytes or not line_bytes.startswith(b"data:"):
+                        continue
 
-                try:
-                    evt = json.loads(data_str)
-                except json.JSONDecodeError:
-                    continue
+                    try:
+                        line = line_bytes.decode("utf-8", errors="replace")
+                    except Exception:
+                        continue
 
-                evt_type = evt.get("event_type", "")
-                evt_data = evt.get("data") or {}
+                    data_str = line[5:].strip()
+                    if not data_str:
+                        continue
 
-                if evt_type in _TERMINAL_EVENTS:
-                    done = True
+                    try:
+                        evt = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+
+                    evt_type = evt.get("event_type", "")
+                    evt_data = evt.get("data") or {}
+
+                    if evt_type in _TERMINAL_EVENTS:
+                        done = True
+                        break
+
+                    if evt_type == "message_created":
+                        _new_uuid = evt_data.get("id")
+                        if _new_uuid:
+                            message_uuid = _new_uuid
+                        for block in _start_blocks():
+                            yield block
+                        continue
+
+                    if evt_type == "ai_response_chunk":
+                        for block in _start_blocks():
+                            yield block
+                        chunk_text = evt_data.get("chunk") or ""
+                        if chunk_text:
+                            text_accum.append(chunk_text)
+                            yield emit({
+                                "type": "content_block_delta",
+                                "index": 0,
+                                "delta": {"type": "text_delta", "text": chunk_text},
+                            })
+
+                if done:
                     break
-
-                if evt_type == "message_created":
-                    _new_uuid = evt_data.get("id")
-                    if _new_uuid:
-                        message_uuid = _new_uuid
-                    yield from _start_blocks()
-                    continue
-
-                if evt_type == "ai_response_chunk":
-                    yield from _start_blocks()
-                    chunk_text = evt_data.get("chunk") or ""
-                    if chunk_text:
-                        text_accum.append(chunk_text)
-                        yield emit({
-                            "type": "content_block_delta",
-                            "index": 0,
-                            "delta": {"type": "text_delta", "text": chunk_text},
-                        })
-
-            if done:
-                break
 
         # flush leftover buffer
         if buffer and not done:
@@ -550,7 +629,8 @@ def _sync_stream_chatwithai_messages(
                                 chunk_text = evt.get("data", {}).get("chunk") or ""
                                 if chunk_text:
                                     text_accum.append(chunk_text)
-                                    yield from _start_blocks()
+                                    for block in _start_blocks():
+                                        yield block
                                     yield emit({
                                         "type": "content_block_delta",
                                         "index": 0,
@@ -616,12 +696,15 @@ async def _make_oneminai_client(acct: dict) -> OneMinAIClient:
     team_id = acct.get("team_id", "")
     if not key:
         raise ValueError(f"1min.AI account '{acct.get('name','?')}' is missing api_key")
-    client = OneMinAIClient(api_key=key)
+    cf      = acct.get("cf_clearance")
+    ua      = acct.get("user_agent")
+    client  = OneMinAIClient(
+        api_key      = key,
+        cf_clearance = cf or None,
+        user_agent   = ua or None,
+    )
     if team_id:
         client._team_id = team_id   # skip the /users round-trip
-    cf = acct.get("cf_clearance")
-    if cf:
-        client.update_cf_clearance(cf)
     return client
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -856,6 +939,10 @@ def _account_to_public(a: dict) -> dict:
     }
     return pub
 
+_loop = asyncio.new_event_loop()
+_loop_thread = threading.Thread(target=_loop.run_forever, daemon=True, name="async-loop")
+_loop_thread.start()
+
 def _seed_from_env():
     try:
         from keys import CLAUDE_ACCOUNTS
@@ -913,8 +1000,7 @@ async def _warm_model_caches():
         await asyncio.sleep(1)
 
 
-_seed_from_env() 
-asyncio.run_coroutine_threadsafe(_warm_model_caches(), _loop)
+_seed_from_env()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1654,7 +1740,6 @@ async def _flowith_session_cycle(
     so cycling ensures the balance is current even if one call fails.
     Returns the last successful upsert payload or {}.
     """
-    import asyncio as _asyncio
     session_id = str(_uuid_mod_session.uuid4())
     payload = {
         "p_session_id":        session_id,
@@ -1677,7 +1762,7 @@ async def _flowith_session_cycle(
         except Exception as exc:
             log.warning("Flowith session-cycle upsert %d/%d: %s", i+1, cycles, exc)
 
-        await _asyncio.sleep(delay_sec)
+        await asyncio.sleep(delay_sec)
 
         # remove
         try:
@@ -1691,7 +1776,7 @@ async def _flowith_session_cycle(
         payload["p_session_id"] = session_id
 
         if i < cycles - 1:
-            await _asyncio.sleep(delay_sec)
+            await asyncio.sleep(delay_sec)
             
     # finally, upsert one last time to ensure we end with a fresh session and updated credits
     try:
@@ -1710,8 +1795,20 @@ async def _flowith_session_cycle(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 app = Quart(__name__)
-app = cors(app, allow_origin="*", allow_methods=["GET", "POST", "OPTIONS"],
-           allow_headers=["Content-Type", "X-Account-Name", "Cache-Control", "Pragma", "Expires"])
+
+@app.after_request
+def _cors(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = \
+        "Content-Type, X-Account-Name, Cache-Control, Pragma, Expires, X-Frame-Options, X-XSS-Protection, X-Content-Type-Options"
+    return response
+
+@app.route("/", methods=["OPTIONS"])
+@app.route("/<path:_>", methods=["OPTIONS"])
+async def _options_handler(_=None):
+    return "", 204
+
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 app.config["RESPONSE_TIMEOUT"] = None      # disable response timeout
 app.config["BODY_TIMEOUT"] = None          # disable body receive timeout
@@ -1795,34 +1892,11 @@ def cache_json(ttl_sec: float = 5.0, key_fn=None):
 
     return deco
 
-@app.after_request
-def _cors_for_extension(response):
-    """Allow browser-extension popups and content scripts to reach local endpoints."""
-    if request.path.startswith("/api/oauth/") or request.path == "/api/ping":
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Account-Name, Cache-Control, Pragma, Expires"
-    return response
-
-
-@app.route("/api/oauth/<path:subpath>", methods=["OPTIONS"])
-async def _oauth_preflight(path, subpath):
-    """Handle CORS preflight for all /api/oauth/* routes."""
-    allow_origin = "*"
-    if request.headers.get("Origin") and request.headers["Origin"] != "null":
-        allow_origin = request.headers["Origin"]
-    response = Response()
-    response.headers["Access-Control-Allow-Origin"] = allow_origin
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Account-Name, Cache-Control, Pragma, Expires"
-    return response
-
-
 
 # ── 1min.AI conversation list ─────────────────────────────────────────────────
 
 async def _list_convs_oneminai(acct: dict, search: str | None = None, limit: int = 50):
-    """List 1min.AI conversations, optionally filtered by *search* query."""
+    """List 1min.AI conversations via the client library."""
     client = await _make_oneminai_client(acct)
     try:
         records = await client.list_conversations()
@@ -1853,11 +1927,12 @@ async def _list_convs_oneminai(acct: dict, search: str | None = None, limit: int
 
 
 async def _create_conv_oneminai(acct: dict, title: str = "New conversation") -> str:
-    """Create a server-side conversation and return its UUID."""
+    """Create a server-side 1min.AI conversation and return its UUID."""
     client = await _make_oneminai_client(acct)
     try:
         rec = await client.create_conversation(title)
         await client.close()
+        log.info("1min.AI conversation created: %s", rec.conversation_id[:8])
         return rec.conversation_id
     except Exception as exc:
         log.warning("1min.AI create_conversation: %s", exc)
@@ -1867,7 +1942,7 @@ async def _create_conv_oneminai(acct: dict, title: str = "New conversation") -> 
 
 
 async def _get_conv_oneminai(acct: dict, conv_id: str) -> dict:
-    """Fetch a conversation + its messages from 1min.AI and return Claude-shaped dict."""
+    """Fetch a 1min.AI conversation + messages and return Claude-shaped dict."""
     client = await _make_oneminai_client(acct)
     root   = "00000000-0000-4000-8000-000000000000"
     try:
@@ -1875,7 +1950,7 @@ async def _get_conv_oneminai(acct: dict, conv_id: str) -> dict:
         msg_recs = await client.get_conversation_messages(conv_id)
         await client.close()
     except Exception as exc:
-        log.warning("1min.AI get_conversation: %s", exc)
+        log.warning("1min.AI get_conversation %s: %s", conv_id[:8], exc)
         try: await client.close()
         except Exception: pass
         return {
@@ -1914,16 +1989,28 @@ async def _get_conv_oneminai(acct: dict, conv_id: str) -> dict:
 
 
 async def _upload_file_oneminai(acct: dict, conv_id: str, f) -> dict:
-    """Upload a file to 1min.AI Asset API. f = werkzeug FileStorage."""
+    """Upload a file to 1min.AI Asset API using the client library."""
     file_bytes = f.read()
     mime       = f.content_type or "application/octet-stream"
     fname      = f.filename or "upload"
-    client     = await _make_oneminai_client(acct)
+    # Determine AssetType from mime
+    from oneminai_webapi import AssetType as _AT
+    if mime.startswith("image/"):
+        atype = _AT.IMAGE
+    elif mime.startswith("audio/"):
+        atype = _AT.AUDIO
+    elif mime.startswith("video/"):
+        atype = _AT.VIDEO
+    else:
+        atype = _AT.DOCUMENT
+    client = await _make_oneminai_client(acct)
     try:
-        asset = await client.upload_asset(data=file_bytes, filename=fname, mime_type=mime)
+        asset = await client.upload_asset(
+            data=file_bytes, filename=fname, mime_type=mime, asset_type=atype
+        )
         await client.close()
     except Exception as exc:
-        logging.warning("1min.AI upload_asset: %s", exc)
+        log.warning("1min.AI upload_asset: %s", exc)
         try: await client.close()
         except Exception: pass
         raise RuntimeError(str(exc)) from exc
@@ -1941,7 +2028,7 @@ async def _upload_file_oneminai(acct: dict, conv_id: str, f) -> dict:
 # ── 1min.AI conversation rename ──────────────────────────────────────────────
 
 async def _rename_conv_oneminai(acct: dict, conv_id: str, title: str) -> dict:
-    """Rename a 1min.AI conversation via the updated await client."""
+    """Rename a 1min.AI conversation via the client library."""
     client = await _make_oneminai_client(acct)
     try:
         rec = await client.rename_conversation(conv_id, title)
@@ -1952,7 +2039,7 @@ async def _rename_conv_oneminai(acct: dict, conv_id: str, title: str) -> dict:
             "updated_at": _now(),
         }
     except Exception as exc:
-        log.warning("1min.AI rename_conversation: %s", exc)
+        log.warning("1min.AI rename_conversation %s: %s", conv_id[:8], exc)
         try: await client.close()
         except Exception: pass
         return {"uuid": conv_id, "name": title, "updated_at": _now()}
@@ -1967,16 +2054,20 @@ async def _sync_generate_music_oneminai(
     instrumental: bool = False,
     duration: float | None = None,
 ) -> dict:
-    """Generate music via 1min.AI and return a response dict."""
+    """Generate music via 1min.AI using the client library."""
+    from oneminai_webapi.constants import MusicModel
     client = await _make_oneminai_client(acct)
     try:
         kwargs: dict = {"instrumental": instrumental}
         if duration is not None:
-            kwargs["duration"] = duration
+            kwargs["duration"] = float(duration)
         result = await client.generate_music(prompt, model=model, **kwargs)
         await client.close()
-        return {"audio_url": result.audio_url, "model": result.model,
-                "record_id": result.record_id}
+        return {
+            "audio_url": result.audio_url,
+            "model":     result.model,
+            "record_id": result.record_id,
+        }
     except Exception as exc:
         try: await client.close()
         except Exception: pass
@@ -1993,17 +2084,20 @@ async def _sync_generate_image_oneminai(
     height: int = 1024,
     num_images: int = 1,
 ) -> dict:
-    """Generate image(s) via 1min.AI."""
+    """Generate image(s) via 1min.AI using the client library."""
     client = await _make_oneminai_client(acct)
     try:
         result = await client.generate_image(
-            prompt, model=model,
-            width=width, height=height, num_images=num_images,
+            prompt,
+            model      = model,
+            width      = int(width),
+            height     = int(height),
+            num_images = int(num_images),
         )
         await client.close()
         return {
-            "images": [{"url": img.url} for img in result.images],
-            "model":  result.model,
+            "images":    [{"url": img.url} for img in result.images if img.url],
+            "model":     result.model,
             "record_id": result.record_id,
         }
     except Exception as exc:
@@ -2021,13 +2115,21 @@ async def _sync_tts_oneminai(
     voice: str,
     speed: float = 1.0,
 ) -> dict:
-    """Text-to-speech via 1min.AI."""
+    """Text-to-speech via 1min.AI using the client library."""
     client = await _make_oneminai_client(acct)
     try:
-        result = await client.text_to_speech(text, model=model, voice=voice, speed=speed)
+        result = await client.text_to_speech(
+            text,
+            model = model,
+            voice = voice,
+            speed = float(speed),
+        )
         await client.close()
-        return {"audio_url": result.audio_url, "model": result.model,
-                "record_id": result.record_id}
+        return {
+            "audio_url": result.audio_url,
+            "model":     result.model,
+            "record_id": result.record_id,
+        }
     except Exception as exc:
         try: await client.close()
         except Exception: pass
@@ -2043,8 +2145,8 @@ async def _sync_content_tool_oneminai(
     **kwargs: str,
 ) -> str:
     """
-    Run a content-tool call (summarize, translate, grammar, etc.)
-    and return the result text.
+    Run a content-tool call via the 1min.AI client library.
+    Supported tools: grammar, paraphrase, rewrite, summarize, expand, shorten, translate.
     """
     _TOOL_MAP = {
         "grammar":    "check_grammar",
@@ -2061,10 +2163,16 @@ async def _sync_content_tool_oneminai(
     client = await _make_oneminai_client(acct)
     try:
         method = getattr(client, method_name)
+        language = kwargs.get("language", "English")
+        tone     = kwargs.get("tone")
         if tool == "translate":
-            result = await method(prompt, kwargs.get("language", "English"))
+            result = await method(prompt, language)
+        elif tool in ("paraphrase", "rewrite") and tone:
+            result = await method(prompt, tone=tone, language=language)
+        elif tool in ("summarize", "expand", "shorten"):
+            result = await method(prompt, language=language)
         else:
-            result = await method(prompt, **{k: v for k, v in kwargs.items() if k != "language"})
+            result = await method(prompt)
         await client.close()
         return result.text
     except Exception as exc:
@@ -2077,12 +2185,9 @@ async def _sync_content_tool_oneminai(
 async def ping():
     return jsonify({"ok": True})
 
+# Warm model caches in background after loop is started
 def _warm_model_caches_sync():
     asyncio.run_coroutine_threadsafe(_warm_model_caches(), _loop)
-
-# Start warm-up thread after store is ready
-_warm_thread = threading.Thread(target=_warm_model_caches_sync, daemon=True, name="model-warmer")
-_warm_thread.start()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2192,12 +2297,12 @@ def api_error_handler(fn):
                 "error": str(exc)
             }), 429
 
-        except http_client.Timeout:
+        except (http_client.TimeoutException, http_client.ReadTimeout):
             return jsonify({
                 "error": "Upstream request timed out"
             }), 504
 
-        except http_client.ConnectionError:
+        except http_client.ConnectError:
             return jsonify({
                 "error": "Cannot reach upstream API"
             }), 502
@@ -2422,11 +2527,6 @@ async def health():
             result["default_model"] = "claude-sonnet-4-6"
     
     return jsonify(result)
-
-
-# ── Cloudflare clearance pending sessions (1min.AI) ───────────────────────────
-_cf_pending: dict = {}  # state -> {account_name, done, cf_clearance}
-_cf_lock = threading.Lock()
 
 
 _STATE_TTL_SEC = 300  # 5 minutes
@@ -2660,41 +2760,21 @@ async def oauth_oneminai_ext_callback():
         _oauth_complete(state, {"error": "no_token"})
         return jsonify({"ok": False, "error": "no_token"}), 400
 
-    # Exchange Google access token → 1min.AI JWT
+    # Exchange Google access token → 1min.AI JWT using OneMinAIClient.oauth_login
     try:
-        resp = http_client.post(
-            "https://api.1min.ai/auth/oauth",
-            json={
-                "oauthToken": oauth_token,
-                "referral":   {"referrerId": None, "source": None},
-            },
-            headers={
-                "Content-Type":  "application/json",
-                "Origin":        "https://app.1min.ai",
-                "Referer":       "https://app.1min.ai/",
-                "X-App-Version": "1.1.45",
-                "X-Auth-Token":  "Bearer",
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        body    = resp.json()
-        user    = body["user"]
-        api_key = user["token"]
-        email   = user.get("email", "")
-        teams   = user.get("teams", [])
-        team_id = teams[0]["teamId"] if teams else ""
-
-        _oauth_complete(state, {
-            "api_key": api_key,
-            "team_id": team_id,
-            "email":   email,
-        })
+        _tmp_client = OneMinAIClient()
+        user_rec    = await _tmp_client.oauth_login(oauth_token)
+        api_key     = _tmp_client._api_key
+        team_id     = user_rec.team_id
+        email       = user_rec.email
+        await _tmp_client.close()
+        _oauth_complete(state, {"api_key": api_key, "team_id": team_id, "email": email})
         log.info("1min.AI OAuth success: %s  team=%s", email, team_id)
         return jsonify({"ok": True, "email": email})
-
     except Exception as exc:
         log.warning("1min.AI OAuth exchange failed: %s", exc)
+        try: await _tmp_client.close()
+        except Exception: pass
         _oauth_complete(state, {"error": str(exc)})
         return jsonify({"ok": False, "error": str(exc)}), 400
 
@@ -2846,13 +2926,34 @@ async def oauth_flowith_owns_state():
 
 # ── 1min.AI Cloudflare clearance — extension-driven cookie relay ──────────────
 
+@app.route("/api/oneminai/cf-begin", methods=["POST"])
+async def oneminai_cf_begin():
+    """Called by backend when CF clearance is needed. Creates a pending state for the extension to claim."""
+    data         = await _get_json()
+    account_name = data.get("account_name", "").strip()
+    if not account_name:
+        return jsonify({"ok": False, "error": "missing_account_name"}), 400
+
+    state = secrets.token_hex(16)
+
+    def fn(store_data):
+        pending = store_data.setdefault("_cf_pending", {})
+        pending[state] = {
+            "account_name": account_name,
+            "done": False,
+            "cf_clearance": None,
+        }
+
+    store.mutate(fn)
+    log.info("1min.AI CF clearance requested for account '%s', state=%s…", account_name, state[:8])
+    return jsonify({"ok": True, "state": state})
+
 @app.route("/api/oneminai/cf-pending")
 async def oneminai_cf_pending():
     """Extension content script polls this; returns the first unsatisfied CF state."""
-    with _cf_lock:
-        for state, entry in _cf_pending.items():
-            if not entry["done"]:
-                return jsonify({"state": state, "account_name": entry["account_name"]})
+    for state, entry in store.read().setdefault("_cf_pending", {}).items():
+        if not entry["done"]:
+            return jsonify({"state": state, "account_name": entry["account_name"]})
     return jsonify({"state": None})
 
 
@@ -2866,40 +2967,49 @@ async def oneminai_cf_callback():
     if not state or not cf_clearance:
         return jsonify({"ok": False, "error": "missing_fields"}), 400
 
-    with _cf_lock:
-        entry = _cf_pending.get(state)
+    store_snapshot = store.read()
+    entry = store_snapshot.get("_cf_pending", {}).get(state)
     if not entry:
         return jsonify({"ok": False, "error": "unknown_state"}), 400
     if entry["done"]:
         return jsonify({"ok": True})
 
-    entry.update({"cf_clearance": cf_clearance, "done": True})
-
-    # Persist cf_clearance on the account so future clients use it
     acct_name = entry["account_name"]
-    def fn(data):
-        for a in data["accounts"]:
+
+    user_agent_hdr = (await _get_json()).get("user_agent", "").strip() if False else ""
+
+    def fn(d):
+        pending = d.get("_cf_pending", {})
+        if state in pending:
+            pending[state]["cf_clearance"] = cf_clearance
+            pending[state]["done"] = True
+        for a in d["accounts"]:
             if a["name"] == acct_name:
                 a["cf_clearance"] = cf_clearance
                 break
+
     store.mutate(fn)
-    log.info("1min.AI cf_clearance received for account '%s'", acct_name)
+    log.info("1min.AI CF clearance received for account '%s', state=%s…", acct_name, state[:8])
     return jsonify({"ok": True})
 
 
 @app.route("/api/oneminai/cf-status")
 async def oneminai_cf_status():
     """Frontend polls this to know when the CF challenge is resolved."""
+    store_snapshot = store.read()
     state = request.args.get("state", "")
-    with _cf_lock:
-        entry = _cf_pending.get(state)
+    entry = store_snapshot.get("_cf_pending", {}).get(state)
     if not entry:
         return jsonify({"error": "unknown_state"}), 400
     if not entry["done"]:
         return jsonify({"done": False})
-    with _cf_lock:
-        _cf_pending.pop(state, None)
-    return jsonify({"done": True})# ── Flowith OAuth (extension-driven flow, similar to OAuth) ───────────────────────────────
+
+    def fn(d):
+        d.get("_cf_pending", {}).pop(state, None)
+
+    store.mutate(fn)
+    return jsonify({"done": True})
+# ── Flowith OAuth (extension-driven flow, similar to OAuth) ───────────────────────────────
 
 @app.route("/api/models", methods=["GET"])
 @require_account
@@ -3209,7 +3319,7 @@ async def get_preferences(acct):
     data = store.read()
     for a in data["accounts"]:
         if a["name"] == acct["name"]:
-            return jsonify(a.get("preferences", {}))
+            return jsonify(a.setdefault("preferences", {}))
     return jsonify({})
 
 
@@ -3521,19 +3631,75 @@ async def update_conversation(acct, conv_id):
     return jsonify({"success": True})
 
 
+async def _stop_response_flowith(acct, conv_id):
+    # Flowith doesn't have a streaming stop endpoint, but we can mark the conversation as stopped locally
+    def fn(store_data):
+        for a in store_data["accounts"]:
+            if a["name"] == acct["name"]:
+                for c in a.get("pinned_conversations", []):
+                    if c.get("conv_uuid") == conv_id:
+                        c["is_streaming"] = False
+                        c["updated_at"] = _now()
+                        break
+                break
+    store.mutate(fn)
+    
+async def _stop_response_oneminai(acct, conv_id):
+    # 1min.AI doesn't have a streaming stop endpoint, but we can mark the conversation as stopped locally
+    def fn(store_data):
+        for a in store_data["accounts"]:
+            if a["name"] == acct["name"]:
+                for c in a.get("pinned_conversations", []):
+                    if c.get("conv_uuid") == conv_id:
+                        c["is_streaming"] = False
+                        c["updated_at"] = _now()
+                        break
+                break
+    store.mutate(fn)
+    
+async def _stop_response_claude(acct, conv_id):
+    client = await _make_claude_client(acct)
+    try:
+        await client.stop_response(conv_id)
+    except Exception as exc:
+        log.warning("Claude stop_response %s: %s", conv_id[:8], exc)
+    finally:
+        await client.close()
+        
+async def _stop_response_chatwithai(acct, conv_id):
+    # ChatWithAI doesn't have a streaming stop endpoint, but we can mark the conversation as stopped locally
+    def fn(store_data):
+        for a in store_data["accounts"]:
+            if a["name"] == acct["name"]:
+                for c in a.get("pinned_conversations", []):
+                    if c.get("conv_uuid") == conv_id:
+                        c["is_streaming"] = False
+                        c["updated_at"] = _now()
+                        break
+                break
+    store.mutate(fn)
+
 @app.route("/api/conversations/<conv_id>/stop", methods=["POST"])
 @require_account
 @api_error_handler
 async def stop_response(acct, conv_id):  
     provider = _provider_name(acct)
+
+    if provider == FLOWITH_PROVIDER:
+        await _stop_response_flowith(acct, conv_id)
+        return jsonify({"success": True})
+
+    if provider == ONEMINAI_PROVIDER:
+        await _stop_response_oneminai(acct, conv_id)
+        return jsonify({"success": True})
+
     if provider == CHATWITHAI_PROVIDER:
-        return jsonify({"error": "Stop not supported for ChatWithAI"}), 400  
-    client = await _make_claude_client(acct)
-    try:
-        await client.stop_response(conv_id)
-    finally:
-        await client.close()
-    return jsonify({"success": True})
+        await _stop_response_chatwithai(acct, conv_id)
+        return jsonify({"success": True})
+
+    if provider == CLAUDE_PROVIDER:
+        await _stop_response_claude(acct, conv_id)
+        return jsonify({"success": True})
 
 
 # ── Messaging ─────────────────────────────────────────────────────────────────
@@ -4099,10 +4265,12 @@ async def oneminai_upload_asset(acct):
     mime       = f.content_type or "application/octet-stream"
     fname      = f.filename or "upload"
 
+    from oneminai_webapi import AssetType as _AT2
+    _at2 = _AT2.IMAGE if mime.startswith("image/") else            _AT2.AUDIO if mime.startswith("audio/") else            _AT2.VIDEO if mime.startswith("video/") else _AT2.DOCUMENT
     client = await _make_oneminai_client(acct)
     try:
         asset = await client.upload_asset(
-            data=file_bytes, filename=fname, mime_type=mime
+            data=file_bytes, filename=fname, mime_type=mime, asset_type=_at2
         )
         await client.close()
     except Exception as exc:
@@ -4536,17 +4704,20 @@ async def flowith_refresh_token_route(acct):
     SUPABASE_ANON_KEY = "sb_publishable_qPCinc8LE8ChpdT7Pf79tQ_eryz5udr"
 
     try:
-        resp = http_client.post(
-            f"{SUPABASE_URL}/auth/v1/token?grant_type=refresh_token",
-            json={"refresh_token": refresh_token},
-            headers={
-                "apikey":        SUPABASE_ANON_KEY,
-                "Content-Type":  "application/json",
-            },
-            timeout=36,
-        )
-        resp.raise_for_status()
-        body = resp.json()
+        async with __import__("aiohttp").ClientSession() as _sess:
+            async with _sess.post(
+                f"{SUPABASE_URL}/auth/v1/token?grant_type=refresh_token",
+                json={"refresh_token": refresh_token},
+                headers={
+                    "apikey":       SUPABASE_ANON_KEY,
+                    "Content-Type": "application/json",
+                },
+                timeout=__import__("aiohttp").ClientTimeout(total=36),
+            ) as _resp:
+                if not _resp.ok:
+                    _err = await _resp.text()
+                    raise RuntimeError(f"HTTP {_resp.status}: {_err[:200]}")
+                body = await _resp.json(content_type=None)
     except Exception as exc:
         log.warning("Flowith token refresh failed: %s", exc)
         return jsonify({"error": str(exc)}), 502
@@ -4587,21 +4758,106 @@ async def flowith_refresh_token_route(acct):
         "refresh_token": new_refresh,
         "user_id":       new_user_id,
     })
+    
 
-async def main():
+@app.route("/api/oneminai/refresh", methods=["POST"])
+@require_account
+@api_error_handler
+async def oneminai_refresh_token_route(acct):
+    """
+    Refresh a 1min.AI JWT using the client's built-in refresh_token() method.
+    Called automatically by the frontend when auth fails.
+    """
+    if _provider_name(acct) != ONEMINAI_PROVIDER:
+        return jsonify({"error": "Not a 1min.AI account"}), 400
+
+    old_key = acct.get("api_key", "").strip()
+    if not old_key:
+        return jsonify({"error": "No API key stored for this account"}), 400
+
+    client = await _make_oneminai_client(acct)
+    try:
+        # refresh_token() exchanges the expired token and updates the
+        # client's internal _api_key automatically, then returns UserRecord.
+        user = await client.refresh_token()
+        new_key = client._api_key          # updated by refresh_token()
+        team_id = user.team_id or acct.get("team_id", "")
+    except Exception as exc:
+        log.warning("1min.AI token refresh failed: %s", exc)
+        return jsonify({"error": str(exc)}), 502
+    finally:
+        await client.close()
+
+    if not new_key:
+        return jsonify({"error": "No new API key returned from refresh"}), 502
+
+    acct_name = acct["name"]
+    def fn(data):
+        for a in data["accounts"]:
+            if a["name"] == acct_name:
+                a["api_key"] = new_key
+                if team_id:
+                    a["team_id"] = team_id
+                break
+    store.mutate(fn)
+    _cache_invalidate("/api/accounts")
+    log.info("1min.AI token refreshed for account %s", acct_name)
+    return jsonify({"access_token": new_key, "team_id": team_id})
+    
+
+async def _main(args):
+    config = Config()
+    config.bind = [f"{args.host}:{args.port}"]
+    config.certfile = "cert.pem"
+    config.keyfile  = "key.pem"
+    config.alpn_protocols = ["h2", "http/1.1"]
+    config.graceful_timeout = 0.1
+    config.keep_alive_timeout = 5
+
+    shutdown_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    def _handle_signal():
+        log.info("Received shutdown signal.")
+        shutdown_event.set()
+        
+        # --- FIX: Force cancel everything hanging in the loop ---
+        # This prevents the SSL unhandled exceptions from locking the loop
+        for task in asyncio.all_tasks(loop):
+            if task is not asyncio.current_task(loop):
+                task.cancel()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _handle_signal)
+        except NotImplementedError:
+            pass
+
+    log.info("Starting on https://%s:%d (HTTP/2)", args.host, args.port)
+    
+    try:
+        await serve(app, config, shutdown_trigger=shutdown_event.wait)
+    except (asyncio.CancelledError, Exception) as exc:
+        # Catch the CancelledError forced by our signal handler
+        log.info("Server engine stopped.")
+    finally:
+        log.info("Saving store...")
+        try:
+            # Synchronous save safely wrapped in an executor thread
+            await loop.run_in_executor(None, store.save)
+        except Exception as exc:
+            log.warning("Store save error: %s", exc)
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", type=str, default="0.0.0.0")
+    parser.add_argument("--host", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5000)
     args = parser.parse_args()
-    host = args.host
-    port = args.port
-    log.info("Starting ChatAI Console on %s:%d…", host, port)
-    config = Config()
-    config.bind = [f"{host}:{port}"]
-    await serve(app, config)
-    
-if __name__ == "__main__":
+
     try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        log.info("Shutting down ChatAI Console…")
+        asyncio.run(_main(args))
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    finally:
+        log.info("Bye.")
+        os._exit(0)
