@@ -8503,6 +8503,8 @@ function renderBashTool(block, streaming) {
   if (tuDisp && tuDisp.type === 'json_block' && tuDisp.json_block) {
     try { command = JSON.parse(tuDisp.json_block).code || command; } catch {}
   }
+  const replaceNewlines = command.replace(/\\n/g, '\n');
+  if (replaceNewlines.length < command.length) command = replaceNewlines;
   const shortCmd = command.replace(/\s+/g, ' ').trim().slice(0, 360);
 
   if (streaming && !block._result_parsed && !block._result_display) {
