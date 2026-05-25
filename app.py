@@ -3391,17 +3391,24 @@ async def set_preferences(acct):
 @api_error_handler
 async def list_conversations(acct):
     provider = _provider_name(acct)
+    
+    metadata_only = request.args.get("metadata_only", "0") == "1"
 
     if provider == FLOWITH_PROVIDER:
         search = request.args.get("search") or None
         limit  = int(request.args.get("limit", 50))
         convs  = await _list_convs_flowith(acct, search=search, limit=limit)
+        if metadata_only:
+            convs = [{"conv_uuid": c["conv_uuid"], "display_name": c["display_name"], "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
         return jsonify(convs), 200
 
     if provider == ONEMINAI_PROVIDER:
         search = request.args.get("search") or None
         limit  = int(request.args.get("limit", 50))
-        return jsonify(await _list_convs_oneminai(acct, search=search, limit=limit)), 200
+        convs = await _list_convs_oneminai(acct, search=search, limit=limit)
+        if metadata_only:
+            convs = [{"conv_uuid": c["conv_uuid"], "display_name": c["display_name"], "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
+        return jsonify(convs), 200
 
     if provider == CHATWITHAI_PROVIDER:
         data = store.read()
@@ -3412,15 +3419,9 @@ async def list_conversations(acct):
                     key=lambda c: c.get("updated_at", c.get("created_at", "")),
                     reverse=True,
                 )
-                return jsonify([
-                    {
-                        "uuid": c.get("conv_uuid"),
-                        "name": c.get("display_name", ""),
-                        "created_at": c.get("created_at", ""),
-                        "updated_at": c.get("updated_at", ""),
-                    }
-                    for c in convs if c.get("conv_uuid")
-                ]), 200
+                if metadata_only:
+                    convs = [{"conv_uuid": c["conv_uuid"], "display_name": c["display_name"], "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
+                return jsonify(convs), 200
         return jsonify([]), 200
 
     # Claude — use local pinned_conversations cache first,
@@ -3432,15 +3433,14 @@ async def list_conversations(acct):
             cached = a.get("pinned_conversations", [])
             if cached and not force:
                 # Return local cache immediately — no Claude API call
-                return jsonify([
-                    {
-                        "uuid":       c.get("conv_uuid", ""),
-                        "name":       c.get("display_name", ""),
-                        "created_at": c.get("pinned_at", ""),
-                        "updated_at": c.get("pinned_at", ""),
-                    }
-                    for c in cached if c.get("conv_uuid")
-                ]), 200
+                convs = sorted(
+                    cached,
+                    key=lambda c: c.get("updated_at", c.get("created_at", "")),
+                    reverse=True,
+                )
+                if metadata_only:
+                    convs = [{"conv_uuid": c["conv_uuid"], "display_name": c["display_name"], "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
+                return jsonify(convs), 200
             break
 
     # No local cache — fetch from Claude (slow path, only on first load)
@@ -3462,6 +3462,8 @@ async def list_conversations(acct):
                             })
                     break
         store.mutate(fn)
+        if metadata_only:
+            convs = [{"conv_uuid": c["conv_uuid"], "display_name": c["display_name"], "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
         return jsonify(convs), 200
     finally:
         await client.close()
@@ -4516,6 +4518,9 @@ async def usage_messages(acct):
 @require_account
 async def local_conv_list(acct):
     """Returns pinned/local conversations for the resolved account."""
+    
+    metadata_only = request.args.get("metadata_only", "0") == "1"
+    
     data = store.read()
     for a in data["accounts"]:
         if a["name"] == acct["name"]:
@@ -4524,6 +4529,8 @@ async def local_conv_list(acct):
                 key=lambda c: c.get("pinned_at", c.get("updated_at", "")),
                 reverse=True,
             )
+            if metadata_only:
+                convs = [{"conv_uuid": c["conv_uuid"], "display_name": c["display_name"], "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
             return jsonify(convs)
     return jsonify([])
 
