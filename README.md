@@ -20,7 +20,7 @@ branching, usage tracking, and a Galaxy-themed UI — all in a single Quart app.
 - **In-Chat Search** — Search messages with match navigation.
 - **Usage & Quota** — Per-account usage snapshots and visual quota bars.
 - **Image & Video Generation** — Flowith and 1min.AI generation in-chat.
-- **HTTP/2** — Self-signed TLS cert eliminates browser connection-limit stalls.
+- **HTTP/2, HTTP/3** — Self-signed TLS cert eliminates browser connection-limit stalls.
 - **Galaxy UI** — Dark-mode SPA with Space Grotesk and Tokyo Night highlighting.
 
 ---
@@ -46,7 +46,7 @@ python app.py
 
 Open **https://localhost:5000**, add an account, and start chatting.
 
-> **TLS / HTTP/2** — the self-signed cert is generated locally and never
+> **TLS / HTTP/2, HTTP/3** — the self-signed cert is generated locally and never
 > leaves your machine. It is valid for 825 days. Run `python setup.py --cert`
 > to regenerate it.
 
@@ -299,7 +299,7 @@ frontend is provider-agnostic.
 | Package | Purpose |
 |---|---|
 | [Quart](https://quart.palletsprojects.com/) | Async web framework |
-| [Hypercorn](https://hypercorn.readthedocs.io/) | HTTP/2 ASGI server |
+| [Hypercorn](https://hypercorn.readthedocs.io/) | HTTP/2, HTTP/3 ASGI server |
 | [Claude-API](https://github.com/cyber-wojtek/Claude-API/) | Claude.ai client |
 | [1MinAI-API](https://github.com/cyber-wojtek/1MinAI-API/) | 1min.AI client |
 | [Flowith-API](https://github.com/cyber-wojtek/Flowith-API/) | Flowith.io client |

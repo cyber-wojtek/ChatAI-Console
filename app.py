@@ -4848,7 +4848,7 @@ async def _main(args):
     config.bind = [f"{args.host}:{args.port}"]
     config.certfile = "cert.pem"
     config.keyfile  = "key.pem"
-    config.alpn_protocols = ["h2", "http/1.1"]
+    config.alpn_protocols = ["h3", "h2", "http/1.1"]
     config.graceful_timeout = 0.1
     config.keep_alive_timeout = 5
 
