@@ -4846,6 +4846,7 @@ async def oneminai_refresh_token_route(acct):
 async def _main(args):
     config = Config()
     config.bind = [f"{args.host}:{args.port}"]
+    config.quic_bind = [f"{args.host}:{args.port}"]
     config.certfile = "cert.pem"
     config.keyfile  = "key.pem"
     config.alpn_protocols = ["h3", "h2", "http/1.1"]
@@ -4871,7 +4872,7 @@ async def _main(args):
         except NotImplementedError:
             pass
 
-    log.info("Starting on https://%s:%d (HTTP/2)", args.host, args.port)
+    log.info("Starting on https://%s:%d (HTTP/2, HTTP/3)", args.host, args.port)
     
     try:
         await serve(app, config, shutdown_trigger=shutdown_event.wait)
