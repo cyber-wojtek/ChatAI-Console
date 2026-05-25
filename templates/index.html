@@ -298,6 +298,14 @@ a:hover { text-decoration:underline; }
     var(--bg);
 }
 
+@media (max-width: 768px) {
+  .sb-open-btn-global { display: flex !important; }
+  .sidebar.m-open ~ * .sb-open-btn-global,
+  .sidebar.m-open + * .sb-open-btn-global { display: none !important; }
+}
+@media (min-width: 769px) {
+  .sb-open-btn-global { display: none !important; }
+}
 .sb-open-btn {
   /* Flex child inside .toolbar — no absolute positioning */
   position: static;
@@ -317,12 +325,27 @@ a:hover { text-decoration:underline; }
   transition: all .2s var(--ease);
   z-index: auto;
 }
+.sb-open-btn-global {                                 
+  /* Absolute inside .main which is position:fixed on mobile */ 
+  display: none;                                                     position: absolute;                                                top: 10px;                                                         left: 10px;                                                        z-index: 150;                                                      width: 38px;
+  height: 38px;                                                      background: var(--bg-2);                                           border: 1px solid var(--border);                                   border-radius: var(--r);                                           color: var(--text-2);                                              font-size: 18px;                                                   align-items: center;                                               justify-content: center;                                           cursor: pointer;                                                   transition: all .2s var(--ease);                                   box-shadow: var(--shadow-sm);
+  /* Never show on desktop */                                      }                                                                  .sb-open-btn-global:hover {                                          background: var(--bg-3);                                           color: var(--text);
+  border-color: var(--border-m);                                   }                                                                  @media (max-width: 768px) {                                          .sb-open-btn-global { display: flex; }                           }                                                                  @media (min-width: 768.02px) {
+  .sb-open-btn-global { display: none !important; }
+}
+/* In-toolbar hamburger not needed on mobile — global absolute one handles it */
+@media (max-width: 768px) {
+  .toolbar .sb-open-btn:not(.sb-open-btn-global) {
+    display: none !important;
+  }
+}
 .sb-open-btn:hover { background:var(--bg-3); color:var(--text); border-color:var(--border-m); }
 /* Shown as first item in toolbar when sidebar is collapsed */
 .app.sb-collapsed .sb-open-btn { display:flex; }
+.app.sb-collapsed #splash .sb-open-btn-global,
+.app.sb-collapsed .sb-open-btn-global { display: flex; }
 /* No padding-left compensation needed — button is in-flow */
 .app.sb-collapsed .toolbar { padding-left: 10px; }
-
 /* ═══════════════════ SPLASH ═══════════════════ */
 .splash {
   flex:1; display:flex; flex-direction:column;
@@ -4185,7 +4208,7 @@ select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
   .inp-hint   { font-size: 10px; }
 
   /* ── SPLASH ── */
-  .splash { padding: 20px 16px; gap: 14px; }
+  .splash { padding: 60px 16px 20px; gap: 14px; }
   .splash-glyph  { font-size: 48px; }
   .splash-title  { font-size: 20px; text-align: center; }
   .splash-sub    { font-size: 13px; }
@@ -4495,6 +4518,9 @@ select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
 
   <!-- ── MAIN ── -->
   <main class="main" id="mainArea">
+    <!-- Hamburger — shown on mobile when sidebar is collapsed, works on ALL screens -->
+    <button class="sb-open-btn sb-open-btn-global" id="sbOpenBtnGlobal" onclick="toggleSidebar()" aria-label="Open sidebar">☰</button>
+
     <!-- Splash -->
     <div class="splash" id="splash">
       <div class="splash-glyph">✦</div>
@@ -5340,6 +5366,7 @@ function _closeMobileSidebar() {
   document.getElementById('sidebar')?.classList.remove('m-open');
   _hideMobileBackdrop();
   document.body.style.overflow = '';
+  _syncGlobalHamburger(false);
 }
 function _isMobileSidebarOpen() {
   return document.getElementById('sidebar')?.classList.contains('m-open') ?? false;
@@ -5886,6 +5913,13 @@ function toggleProviderFields() {
 /* ═══════════════════════════════════════════
    SIDEBAR TOGGLE
 ═══════════════════════════════════════════ */
+function _syncGlobalHamburger(sidebarOpen) {
+  const btn = document.getElementById('sbOpenBtnGlobal');
+  if (!btn) return;
+  // Hide the global button while sidebar drawer is open
+  btn.style.display = sidebarOpen ? 'none' : '';
+}
+
 function toggleSidebar() {
   if (_isMobile()) {
     if (_isMobileSidebarOpen()) {
@@ -5894,6 +5928,7 @@ function toggleSidebar() {
       document.getElementById('sidebar').classList.add('m-open');
       _showMobileBackdrop(_closeMobileSidebar);
       document.body.style.overflow = 'hidden';
+      _syncGlobalHamburger(true);
     }
     return;
   }
