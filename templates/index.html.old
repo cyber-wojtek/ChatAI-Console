@@ -4018,6 +4018,537 @@ select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
 
 
 
+/* ═══════════════════════════════════════════
+   MOBILE RESPONSIVENESS
+═══════════════════════════════════════════ */
+
+/* ── Touch target minimum ── */
+@media (max-width: 768px) {
+  :root {
+    --sidebar: 280px;
+    font-size: 16px; /* prevent iOS zoom on inputs */
+  }
+
+  /* ── Layout: stack panels, hide sidebar by default ── */
+  .app {
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Sidebar becomes a slide-over drawer */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100%;
+    height: 100dvh;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform .28s var(--ease), opacity .2s var(--ease);
+    opacity: 1 !important;
+    width: var(--sidebar) !important;
+    min-width: var(--sidebar) !important;
+    box-shadow: 4px 0 32px rgba(0,0,0,.6);
+  }
+
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+
+  /* Collapsed class no longer shrinks on mobile — transform handles it */
+  .sidebar.collapsed {
+    width: var(--sidebar) !important;
+    min-width: var(--sidebar) !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+
+  /* Sidebar backdrop */
+  .sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.55);
+    z-index: 199;
+    backdrop-filter: blur(2px);
+  }
+  .sidebar-backdrop.active { display: block; }
+
+  /* sb-toggle: hide the edge handle on mobile (open btn replaces it) */
+  #sidebarWrap { position: static; }
+  .sb-toggle { display: none !important; }
+
+  /* Open button always visible on mobile */
+  .sb-open-btn {
+    display: flex !important;
+    left: 10px;
+    top: 12px;
+    width: 38px;
+    height: 38px;
+    font-size: 16px;
+    z-index: 10;
+  }
+
+  /* Main takes full width */
+  .main {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Remove the padding-left shift that was for the non-mobile open btn */
+  .app.sb-collapsed .toolbar {
+    padding-left: 56px;
+  }
+
+  /* ── Toolbar: horizontal scroll for controls ── */
+  .toolbar {
+    padding: 8px 10px 8px 52px;
+    min-height: 54px;
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .toolbar::-webkit-scrollbar { display: none; }
+
+  .conv-title-wrap {
+    flex-shrink: 1;
+    min-width: 60px;
+    max-width: 140px;
+  }
+
+  .conv-title-display {
+    font-size: 13px;
+  }
+
+  .tb-group {
+    flex-shrink: 0;
+    gap: 4px;
+  }
+
+  .tb-select {
+    max-width: 120px;
+    font-size: 11px;
+    padding: 0 6px;
+    height: 32px;
+  }
+
+  .tb-toggle {
+    height: 32px;
+    padding: 0 8px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .tb-icon {
+    width: 32px;
+    height: 32px;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+
+  /* Hide less-used toolbar items on very small screens */
+  #refreshModelsBtn,
+  #chatSearchBtn,
+  #canvasToggleBtn {
+    display: none !important;
+  }
+
+  /* ── Messages: full-width, less padding ── */
+  .msgs {
+    padding: 16px 0 8px;
+  }
+
+  .msg {
+    padding: 0 12px;
+  }
+
+  .msg + .msg {
+    margin-top: 16px;
+  }
+
+  .msg.human .msg-body {
+    max-width: 88%;
+    padding: 10px 14px;
+    font-size: 15px;
+  }
+
+  .msg.assistant .msg-body {
+    font-size: 15px;
+  }
+
+  /* Thinking / tool blocks */
+  .think-body,
+  .tool-body {
+    font-size: 12px;
+  }
+
+  /* Code blocks: horizontal scroll, don't overflow */
+  .md pre {
+    border-radius: var(--r);
+    margin: 8px 0;
+  }
+
+  .md pre code {
+    font-size: 11px;
+    padding: 12px;
+  }
+
+  .code-header {
+    padding: 6px 10px;
+  }
+
+  /* Tables: scroll horizontally */
+  .md table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    font-size: 12px;
+  }
+
+  /* ── Input area ── */
+  .input-area {
+    padding: 8px 10px 12px;
+  }
+
+  .input-box {
+    border-radius: 18px;
+    padding: 6px 6px 6px 4px;
+  }
+
+  .msg-ta {
+    font-size: 16px; /* prevent iOS zoom */
+    padding: 4px 0;
+    min-height: 32px;
+  }
+
+  .send-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 14px;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .inp-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .input-footer {
+    padding: 4px 4px 0;
+  }
+
+  .inp-hint {
+    font-size: 10px;
+    /* shorten hint on mobile */
+  }
+
+  /* ── Splash ── */
+  .splash {
+    padding: 24px 20px;
+    gap: 14px;
+  }
+
+  .splash-glyph {
+    font-size: 52px;
+  }
+
+  .splash-title {
+    font-size: 20px;
+    text-align: center;
+  }
+
+  .splash-sub {
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .splash-actions {
+    flex-direction: column;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .btn-splash-new,
+  .btn-sec-small {
+    width: 100%;
+    text-align: center;
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+
+  /* ── Side panels: full-screen drawers on mobile ── */
+  .canvas-panel,
+  .omai-panel,
+  .flowith-panel,
+  .bex-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100%;
+    height: 100dvh;
+    z-index: 190;
+    width: min(360px, 96vw) !important;
+    min-width: unset !important;
+    transform: translateX(100%);
+    transition: transform .28s var(--ease), opacity .2s var(--ease) !important;
+    opacity: 1 !important;
+    box-shadow: -4px 0 32px rgba(0,0,0,.6);
+  }
+
+  .canvas-panel:not(.collapsed),
+  .omai-panel:not(.collapsed),
+  .flowith-panel:not(.collapsed),
+  .bex-panel:not(.collapsed) {
+    transform: translateX(0);
+  }
+
+  /* collapsed state: slide off screen */
+  .canvas-panel.collapsed,
+  .omai-panel.collapsed,
+  .flowith-panel.collapsed,
+  .bex-panel.collapsed {
+    transform: translateX(100%) !important;
+    width: min(360px, 96vw) !important;
+    min-width: unset !important;
+    opacity: 1 !important;
+    pointer-events: none;
+  }
+
+  /* Panels backdrop */
+  .panel-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.5);
+    z-index: 189;
+    backdrop-filter: blur(2px);
+  }
+  .panel-backdrop.active { display: block; }
+
+  /* ── Modals: full-width on mobile ── */
+  .modal {
+    width: 96vw !important;
+    max-width: 96vw !important;
+    padding: 20px 16px;
+    border-radius: var(--r-xl);
+    max-height: 92dvh;
+  }
+
+  /* ── Polling panel ── */
+  .polling-panel {
+    width: calc(100vw - 20px);
+    bottom: 10px;
+    right: 10px;
+  }
+
+  /* ── CF overlay ── */
+  #cfOverlay {
+    bottom: 10px;
+    right: 10px;
+    width: calc(100vw - 20px);
+  }
+
+  /* ── Account switcher menu ── */
+  .acct-menu {
+    position: fixed;
+    bottom: unset;
+    top: auto;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: 60dvh;
+  }
+
+  /* ── Branch explorer wider on mobile ── */
+  .bex-panel {
+    width: min(380px, 98vw) !important;
+  }
+
+  /* ── EFP popup ── */
+  .efp {
+    position: fixed;
+    bottom: 80px;
+    left: 10px;
+    right: 10px;
+    width: auto;
+    max-height: 50dvh;
+  }
+
+  /* ── Attachment chips ── */
+  .att-chip {
+    max-width: 160px;
+  }
+
+  /* ── Conv items in sidebar: bigger tap targets ── */
+  .conv-item {
+    padding: 11px 10px 11px 12px;
+    min-height: 48px;
+  }
+
+  /* ── Quota wrap in sidebar ── */
+  .quota-wrap {
+    margin-bottom: 10px;
+    padding: 10px 12px;
+  }
+
+  /* ── Message action buttons: always visible on mobile (no hover) ── */
+  .msg-actions {
+    opacity: 1 !important;
+  }
+
+  .conv-btns {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+
+  /* ── File rows in present_files ── */
+  .file-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .file-row-thumb,
+  .file-row-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* ── Artifact block: smaller preview ── */
+  .artifact-preview {
+    height: 300px;
+  }
+
+  /* ── 1min.AI / Flowith tools panel body ── */
+  .omai-body,
+  .flowith-body {
+    padding-bottom: 24px;
+  }
+
+  /* ── Chat search bar ── */
+  .chat-search-bar {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+
+  .chat-search-inp {
+    font-size: 14px;
+  }
+
+  /* ── Ask widget ── */
+  .ask-option {
+    padding: 11px 12px;
+    min-height: 44px;
+  }
+
+  .ask-submit-btn {
+    width: 100%;
+    padding: 12px;
+    font-size: 14px;
+  }
+}
+
+/* ── Very small phones (< 375px) ── */
+@media (max-width: 374px) {
+  .toolbar {
+    padding-left: 48px;
+  }
+
+  .conv-title-wrap {
+    max-width: 100px;
+  }
+
+  .tb-select {
+    max-width: 100px;
+    font-size: 10px;
+  }
+
+  .tb-toggle {
+    font-size: 10px;
+    padding: 0 6px;
+  }
+
+  .msg.human .msg-body {
+    max-width: 95%;
+  }
+}
+
+/* ── Landscape mobile ── */
+@media (max-width: 896px) and (orientation: landscape) and (max-height: 430px) {
+  .sidebar {
+    width: 240px !important;
+    min-width: 240px !important;
+  }
+
+  .msgs {
+    padding: 10px 0 4px;
+  }
+
+  .input-area {
+    padding: 6px 10px 8px;
+  }
+
+  .splash {
+    padding: 16px;
+    gap: 10px;
+  }
+
+  .splash-glyph {
+    font-size: 36px;
+  }
+
+  .splash-title {
+    font-size: 16px;
+  }
+}
+
+/* ── Tablet (769–1024px): keep sidebar but make panels overlay ── */
+@media (min-width: 769px) and (max-width: 1024px) {
+  :root {
+    --sidebar: 220px;
+    --canvas-width: 320px;
+    --omai-width: 300px;
+    --flowith-panel-width: 300px;
+    --bex-width: 280px;
+  }
+
+  .toolbar {
+    padding: 8px 14px;
+    gap: 6px;
+  }
+
+  .tb-select {
+    max-width: 140px;
+    font-size: 11px;
+  }
+
+  .tb-toggle {
+    font-size: 11px;
+    padding: 0 8px;
+  }
+
+  .msg {
+    padding: 0 16px;
+  }
+
+  .canvas-panel,
+  .omai-panel,
+  .flowith-panel,
+  .bex-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100%;
+    height: 100dvh;
+    z-index: 190;
+    box-shadow: -4px 0 24px rgba(0,0,0,.5);
+  }
+}
+
+
+
 /* ── shared: backdrop overlay ── */
 .m-backdrop {
   display: none;
@@ -4058,11 +4589,7 @@ select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
     top: 0; left: 0;
     height: 100dvh;
     z-index: 200;
-    /* Don't block touches on main content when sidebar is off-screen */
-    pointer-events: none;
-  }
-  #sidebarWrap:has(.sidebar.m-open) {
-    pointer-events: auto;
+    /* width driven by child .sidebar */
   }
 
   .sidebar {
@@ -4382,33 +4909,6 @@ select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
   .splash-title { font-size: 15px; }
   .acct-menu { max-height: 92dvh; }
 }
-
-
-/* ── Very small phones (< 375px) ── */
-@media (max-width: 374px) {
-  .toolbar {
-    padding-left: 48px;
-  }
-
-  .conv-title-wrap {
-    max-width: 100px;
-  }
-
-  .tb-select {
-    max-width: 100px;
-    font-size: 10px;
-  }
-
-  .tb-toggle {
-    font-size: 10px;
-    padding: 0 6px;
-  }
-
-  .msg.human .msg-body {
-    max-width: 95%;
-  }
-}
-
 
 </style>
 </head>
@@ -5300,67 +5800,6 @@ select.flowith-select option[data-tier="2"]::before { content:"🆓 "; }
 <div id="toasts"></div>
 
 <script>
-
-/* ═══════════════════════════════════════════
-   MOBILE HELPERS — part of main codebase
-═══════════════════════════════════════════ */
-const _isMobile        = () => window.innerWidth <= 768;
-const _isTabletOrMobile = () => window.innerWidth <= 1024;
-
-function _mobileBackdrop() {
-  let bd = document.getElementById('mBackdrop');
-  if (!bd) {
-    bd = document.createElement('div');
-    bd.id = 'mBackdrop';
-    bd.className = 'm-backdrop';
-    document.body.appendChild(bd);
-  }
-  return bd;
-}
-function _showMobileBackdrop(onTap) {
-  const bd = _mobileBackdrop();
-  bd.onclick = onTap;
-  bd.classList.add('on');
-}
-function _hideMobileBackdrop() {
-  document.getElementById('mBackdrop')?.classList.remove('on');
-}
-
-function _closeMobileSidebar() {
-  document.getElementById('sidebar')?.classList.remove('m-open');
-  _hideMobileBackdrop();
-  document.body.style.overflow = '';
-}
-function _isMobileSidebarOpen() {
-  return document.getElementById('sidebar')?.classList.contains('m-open') ?? false;
-}
-
-function _closeAllPanels() {
-  ['canvasPanel','oneminaiPanel','flowithPanel','bexPanel'].forEach(id =>
-    document.getElementById(id)?.classList.add('collapsed')
-  );
-  ['canvasToggleBtn','oneminaiPanelBtn','flowithPanelBtn','branchExplorerBtn'].forEach(id =>
-    document.getElementById(id)?.classList.remove('active')
-  );
-  if (typeof S !== 'undefined') S.canvasOpen = false;
-  if (typeof BEX !== 'undefined') BEX.open = false;
-  _hideMobileBackdrop();
-  document.body.style.overflow = '';
-}
-
-function _trackPanelBackdrop() {
-  if (!_isTabletOrMobile()) return;
-  const anyOpen = ['canvasPanel','oneminaiPanel','flowithPanel','bexPanel']
-    .some(id => !document.getElementById(id)?.classList.contains('collapsed'));
-  if (anyOpen) {
-    _showMobileBackdrop(_closeAllPanels);
-    document.body.style.overflow = 'hidden';
-  } else {
-    _hideMobileBackdrop();
-    document.body.style.overflow = '';
-  }
-}
-
 /* ═══════════════════════════════════════════
    STATE  — per-tab, not server-global
 ═══════════════════════════════════════════ */
@@ -5877,17 +6316,6 @@ function toggleProviderFields() {
    SIDEBAR TOGGLE
 ═══════════════════════════════════════════ */
 function toggleSidebar() {
-  if (_isMobile()) {
-    if (_isMobileSidebarOpen()) {
-      _closeMobileSidebar();
-    } else {
-      document.getElementById('sidebar').classList.add('m-open');
-      _showMobileBackdrop(_closeMobileSidebar);
-      document.body.style.overflow = 'hidden';
-    }
-    return;
-  }
-  // Desktop: collapse/expand inline
   S.sidebarOpen = !S.sidebarOpen;
   const sb  = document.getElementById('sidebar');
   const btn = document.getElementById('sbToggle');
@@ -7332,7 +7760,6 @@ async function newConv() {
   S.convs[d.id] = d;
   S.allConvs.unshift({ uuid:d.id, name:'', created_at:new Date().toISOString(), updated_at:new Date().toISOString() });
   renderSidebar();
-  if (_isMobile()) _closeMobileSidebar();
   selectConv(d.id, getAcctIdFromUrl() || getTabAccountName(), true);
 }
 
@@ -7373,7 +7800,6 @@ async function selectConv(id, acct, skipPush) {
   const c = S.convs[id];
   const name = c?.name || 'Conversation';
   document.title = name + ' — ChatAI Console';
-  if (_isMobile()) _closeMobileSidebar();
 }
 
 async function delConv(e, id) {
@@ -7508,7 +7934,13 @@ async function renameConv(e, id) {
 // 1MIN.AI TOOLS PANEL
 // ══════════════════════════════════════════════════════════════════════════
 
-/* toggleOneminaiPanel: see definitive version below */
+function toggleOneminaiPanel() {
+  const panel = document.getElementById('oneminaiPanel');
+  const btn   = document.getElementById('oneminaiPanelBtn');
+  const isCollapsed = panel.classList.contains('collapsed');
+  panel.classList.toggle('collapsed', !isCollapsed);
+  if (btn) btn.classList.toggle('active', !isCollapsed ? false : true);
+}
 
 function omaiSwitchTab(tab) {
   ['text', 'image', 'audio'].forEach(t => {
@@ -10015,7 +10447,6 @@ function toggleCanvas() {
   panel.classList.toggle('collapsed', !S.canvasOpen);
   btn?.classList.toggle('active', S.canvasOpen);
   if (S.canvasOpen && S.canvasTab === 'files') renderCanvasFiles();
-  _trackPanelBackdrop();
 }
 
 function switchCanvasTab(tab) {
@@ -11454,7 +11885,6 @@ function toggleOneminaiPanel() {
   const btn = document.getElementById('oneminaiPanelBtn');
   if (btn) btn.classList.toggle('active', wasCollapsed);
   if (wasCollapsed) _omaiPanelOnOpen();  // renders from cache only
-  _trackPanelBackdrop();
 }
 
 /* ═══════════════════════════════════════════
@@ -11598,7 +12028,6 @@ function toggleFlowithPanel() {
   panel.classList.toggle('collapsed');
   if (btn) btn.classList.toggle('active', wasCollapsed);
   if (wasCollapsed) _flowithPanelOnOpen();  // renders from cache only
-  _trackPanelBackdrop();
 }
 
 function _renderFlowithPanelFromCache() {
@@ -12198,7 +12627,6 @@ function toggleBranchExplorer() {
   panel.classList.toggle('collapsed', !BEX.open);
   if (btn) btn.classList.toggle('active', BEX.open);
   if (BEX.open) bexRebuild();
-  _trackPanelBackdrop();
 }
 
 // ── Core tree builder ─────────────────────────────────────────────────────
@@ -13295,51 +13723,551 @@ async function _askSubmit(widgetId) {
 init();
 loadPollingConfig();
 
-/* ── Mobile: initial state ── */
-(function mobileSetup() {
-  if (!_isMobile()) return;
-  // Sidebar starts closed on mobile
-  document.getElementById('sidebar')?.classList.remove('m-open');
-  document.getElementById('app')?.classList.add('sb-collapsed');
-  const ta = document.getElementById('msgTa');
-  if (ta && ta.placeholder.length > 20) ta.placeholder = 'Message…';
+
+/* ═══════════════════════════════════════════
+   MOBILE UI HELPERS
+═══════════════════════════════════════════ */
+
+(function() {
+  'use strict';
+
+  const MOBILE_BP = 768;
+  const TABLET_BP = 1024;
+
+  function isMobile() { return window.innerWidth <= MOBILE_BP; }
+  function isTablet() { return window.innerWidth <= TABLET_BP; }
+
+  // ── Backdrop elements ────────────────────────────────────────────────
+  let sidebarBackdrop = null;
+  let panelBackdrop   = null;
+
+  function _ensureBackdrops() {
+    if (!sidebarBackdrop) {
+      sidebarBackdrop = document.createElement('div');
+      sidebarBackdrop.className = 'sidebar-backdrop';
+      sidebarBackdrop.id = 'sidebarBackdrop';
+      sidebarBackdrop.addEventListener('click', () => _closeSidebar());
+      document.body.appendChild(sidebarBackdrop);
+    }
+    if (!panelBackdrop) {
+      panelBackdrop = document.createElement('div');
+      panelBackdrop.className = 'panel-backdrop';
+      panelBackdrop.id = 'panelBackdrop';
+      panelBackdrop.addEventListener('click', () => _closeAllPanels());
+      document.body.appendChild(panelBackdrop);
+    }
+  }
+
+  // ── Sidebar ──────────────────────────────────────────────────────────
+  function _openSidebar() {
+    _ensureBackdrops();
+    document.getElementById('sidebar').classList.add('mobile-open');
+    sidebarBackdrop.classList.add('active');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function _closeSidebar() {
+    _ensureBackdrops();
+    document.getElementById('sidebar').classList.remove('mobile-open');
+    sidebarBackdrop.classList.remove('active');
+    document.body.style.overflow = '';
+  }
+
+  function _isSidebarOpen() {
+    return document.getElementById('sidebar').classList.contains('mobile-open');
+  }
+
+  // ── Override toggleSidebar for mobile ───────────────────────────────
+  const _origToggleSidebar = window.toggleSidebar;
+  window.toggleSidebar = function toggleSidebar() {
+    if (!isMobile()) {
+      // Desktop: use original behaviour
+      if (_origToggleSidebar) _origToggleSidebar();
+      return;
+    }
+    if (_isSidebarOpen()) _closeSidebar();
+    else                  _openSidebar();
+  };
+
+  // ── Side panels backdrop ─────────────────────────────────────────────
+  const PANEL_IDS = ['canvasPanel', 'oneminaiPanel', 'flowithPanel', 'bexPanel'];
+
+  function _anyPanelOpen() {
+    return PANEL_IDS.some(id => {
+      const el = document.getElementById(id);
+      return el && !el.classList.contains('collapsed');
+    });
+  }
+
+  function _closeAllPanels() {
+    _ensureBackdrops();
+    PANEL_IDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && !el.classList.contains('collapsed')) {
+        el.classList.add('collapsed');
+      }
+    });
+    panelBackdrop.classList.remove('active');
+    // Sync toolbar button states
+    ['canvasToggleBtn', 'oneminaiPanelBtn', 'flowithPanelBtn', 'branchExplorerBtn'].forEach(btnId => {
+      document.getElementById(btnId)?.classList.remove('active');
+    });
+    if (typeof S !== 'undefined') S.canvasOpen = false;
+    document.body.style.overflow = '';
+  }
+
+  function _trackPanelToggle() {
+    if (!isMobile() && !isTablet()) return;
+    _ensureBackdrops();
+    if (_anyPanelOpen()) {
+      panelBackdrop.classList.add('active');
+      document.body.style.overflow = 'hidden';
+    } else {
+      panelBackdrop.classList.remove('active');
+      document.body.style.overflow = '';
+    }
+  }
+
+  // ── Intercept panel toggle functions to add backdrop ─────────────────
+  const _origToggleCanvas    = window.toggleCanvas;
+  const _origToggleOneminai  = window.toggleOneminaiPanel;
+  const _origToggleFlowith   = window.toggleFlowithPanel;
+  const _origToggleBEX       = window.toggleBranchExplorer;
+
+  window.toggleCanvas = function() {
+    if (_origToggleCanvas) _origToggleCanvas();
+    setTimeout(_trackPanelToggle, 20);
+  };
+
+  window.toggleOneminaiPanel = function() {
+    if (_origToggleOneminai) _origToggleOneminai();
+    setTimeout(_trackPanelToggle, 20);
+  };
+
+  window.toggleFlowithPanel = function() {
+    if (_origToggleFlowith) _origToggleFlowith();
+    setTimeout(_trackPanelToggle, 20);
+  };
+
+  window.toggleBranchExplorer = function() {
+    if (_origToggleBEX) _origToggleBEX();
+    setTimeout(_trackPanelToggle, 20);
+  };
+
+  // ── Swipe to open/close sidebar ─────────────────────────────────────
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let swipeTarget = null;
+
+  document.addEventListener('touchstart', function(e) {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    swipeTarget = e.target;
+  }, { passive: true });
+
+  document.addEventListener('touchend', function(e) {
+    if (!isMobile()) return;
+
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    const dy = e.changedTouches[0].clientY - touchStartY;
+
+    // Require mostly horizontal swipe
+    if (Math.abs(dy) > Math.abs(dx) * 0.7) return;
+    if (Math.abs(dx) < 50) return;
+
+    const sidebar = document.getElementById('sidebar');
+
+    // Swipe right from left edge → open sidebar
+    if (dx > 0 && touchStartX < 30 && !_isSidebarOpen()) {
+      _openSidebar();
+      return;
+    }
+
+    // Swipe left inside open sidebar → close
+    if (dx < 0 && _isSidebarOpen() && sidebar.contains(swipeTarget)) {
+      _closeSidebar();
+      return;
+    }
+
+    // Swipe left from right side → close open panels
+    if (dx < -60 && _anyPanelOpen()) {
+      _closeAllPanels();
+    }
+  }, { passive: true });
+
+  // ── Auto-close sidebar when selecting a conv on mobile ───────────────
+  const _origSelectConvMobile = window.selectConv;
+  window.selectConv = async function(...args) {
+    const result = await _origSelectConvMobile.apply(this, args);
+    if (isMobile() && _isSidebarOpen()) {
+      setTimeout(_closeSidebar, 150);
+    }
+    return result;
+  };
+
+  // ── Auto-close sidebar on newConv on mobile ──────────────────────────
+  const _origNewConvMobile = window.newConv;
+  window.newConv = async function() {
+    const result = await _origNewConvMobile.apply(this);
+    if (isMobile() && _isSidebarOpen()) {
+      setTimeout(_closeSidebar, 150);
+    }
+    return result;
+  };
+
+  // ── Prevent body scroll when input is focused (iOS) ─────────────────
+  const msgTa = document.getElementById('msgTa');
+  if (msgTa) {
+    msgTa.addEventListener('focus', () => {
+      if (isMobile()) {
+        // Small delay to let keyboard appear
+        setTimeout(() => {
+          msgTa.scrollIntoView({ block: 'end', behavior: 'smooth' });
+        }, 300);
+      }
+    });
+  }
+
+  // ── Visual viewport resize handler (keyboard appearance) ─────────────
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+      if (!isMobile()) return;
+      const msgs = document.getElementById('msgs');
+      if (msgs) {
+        // Keep messages scrolled to bottom when keyboard shows/hides
+        msgs.scrollTop = msgs.scrollHeight;
+      }
+    });
+  }
+
+  // ── Handle orientation change ────────────────────────────────────────
+  window.addEventListener('orientationchange', () => {
+    setTimeout(() => {
+      if (isMobile()) {
+        _closeSidebar();
+        _closeAllPanels();
+      }
+    }, 300);
+  });
+
+  // ── Initial setup ────────────────────────────────────────────────────
+  function _mobileInit() {
+    _ensureBackdrops();
+
+    if (isMobile()) {
+      // Start with sidebar closed on mobile
+      const sidebar = document.getElementById('sidebar');
+      if (sidebar) {
+        sidebar.classList.add('collapsed');
+        sidebar.classList.remove('mobile-open');
+      }
+      // Ensure open button is shown
+      const appEl = document.getElementById('app');
+      if (appEl) appEl.classList.add('sb-collapsed');
+
+      // Shorten input placeholder
+      const ta = document.getElementById('msgTa');
+      if (ta && ta.placeholder && ta.placeholder.length > 20) {
+        ta.placeholder = 'Message…';
+      }
+    }
+  }
+
+  // Run after DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _mobileInit);
+  } else {
+    _mobileInit();
+  }
+
+  // Re-run on resize (handles window resize between breakpoints)
+  let _resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(() => {
+      if (!isMobile()) {
+        // Clean up mobile state
+        if (sidebarBackdrop) sidebarBackdrop.classList.remove('active');
+        if (panelBackdrop)   panelBackdrop.classList.remove('active');
+        document.body.style.overflow = '';
+      }
+    }, 100);
+  });
+
+  console.log('[Mobile] Responsive UI helpers loaded');
 })();
 
-/* ── Swipe gestures ── */
-(function swipeSetup() {
-  let x0 = 0, y0 = 0, tgt0 = null;
+
+
+/* ═══════════════════════════════════════════════════════════
+   MOBILE PATCH v2 — JS helpers
+═══════════════════════════════════════════════════════════ */
+(function mobilePatch() {
+  'use strict';
+
+  const BP_MOBILE = 768;
+  const BP_TABLET = 1024;
+  const isMobile = () => window.innerWidth <= BP_MOBILE;
+  const isTabletOrMobile = () => window.innerWidth <= BP_TABLET;
+
+  /* ── backdrop singleton ─────────────────────────────────────── */
+  let _bd = null;
+  function backdrop(onTap) {
+    if (!_bd) {
+      _bd = document.createElement('div');
+      _bd.className = 'm-backdrop';
+      document.body.appendChild(_bd);
+    }
+    _bd._cb = onTap;
+    _bd.onclick = () => { _bd._cb && _bd._cb(); };
+    return _bd;
+  }
+  function showBackdrop(cb) { backdrop(cb).classList.add('on'); }
+  function hideBackdrop()   { if (_bd) _bd.classList.remove('on'); }
+
+  /* ══════════════════════════════════════════════════════════════
+     SIDEBAR DRAWER
+  ══════════════════════════════════════════════════════════════ */
+  function sidebarIsOpen() {
+    return document.getElementById('sidebar')?.classList.contains('m-open');
+  }
+  function openSidebar() {
+    const sb = document.getElementById('sidebar');
+    if (!sb) return;
+    sb.classList.add('m-open');
+    showBackdrop(closeSidebar);
+    document.body.style.overflow = 'hidden';
+  }
+  function closeSidebar() {
+    const sb = document.getElementById('sidebar');
+    if (!sb) return;
+    sb.classList.remove('m-open');
+    hideBackdrop();
+    document.body.style.overflow = '';
+  }
+
+  /* override global toggleSidebar */
+  const _origToggleSidebar = window.toggleSidebar;
+  window.toggleSidebar = function () {
+    if (!isMobile()) { if (_origToggleSidebar) _origToggleSidebar(); return; }
+    sidebarIsOpen() ? closeSidebar() : openSidebar();
+  };
+
+  /* auto-close sidebar when a conv is selected */
+  const _origSelectConv = window.selectConv;
+  window.selectConv = async function (...a) {
+    const r = await _origSelectConv.apply(this, a);
+    if (isMobile() && sidebarIsOpen()) setTimeout(closeSidebar, 120);
+    return r;
+  };
+
+  /* auto-close sidebar on newConv */
+  const _origNewConv = window.newConv;
+  window.newConv = async function () {
+    const r = await _origNewConv.apply(this);
+    if (isMobile() && sidebarIsOpen()) setTimeout(closeSidebar, 120);
+    return r;
+  };
+
+  /* ══════════════════════════════════════════════════════════════
+     ACCOUNT SWITCHER — bottom-sheet on mobile
+  ══════════════════════════════════════════════════════════════ */
+
+  /* We wrap the original toggleAcctMenu so on mobile we get a proper
+     bottom-sheet with its own backdrop instead of the dropdown. */
+  const _origToggleAcctMenu = window.toggleAcctMenu;
+  const _origCloseAcctMenu  = window.closeAcctMenu;
+
+  window.toggleAcctMenu = function () {
+    if (!isMobile()) { if (_origToggleAcctMenu) _origToggleAcctMenu(); return; }
+    const menu = document.getElementById('acctMenu');
+    if (!menu) return;
+    const isHidden = menu.classList.contains('hidden');
+    if (isHidden) {
+      /* open */
+      menu.classList.remove('hidden');
+      document.getElementById('acctChev')?.classList.add('open');
+      /* search field */
+      const inp = document.getElementById('acctMenuSearchInp');
+      if (inp) { inp.value = ''; if (typeof renderAccountMenu === 'function') renderAccountMenu(); }
+      /* backdrop closes menu */
+      showBackdrop(() => window.closeAcctMenu());
+      document.body.style.overflow = 'hidden';
+      /* scroll account list to active item */
+      setTimeout(() => {
+        const active = menu.querySelector('.acct-menu-item.active');
+        if (active) active.scrollIntoView({ block: 'nearest' });
+        if (inp) inp.focus();
+      }, 80);
+    } else {
+      window.closeAcctMenu();
+    }
+  };
+
+  window.closeAcctMenu = function () {
+    const menu = document.getElementById('acctMenu');
+    if (!menu) return;
+    menu.classList.add('hidden');
+    document.getElementById('acctChev')?.classList.remove('open');
+    if (isMobile()) {
+      hideBackdrop();
+      document.body.style.overflow = '';
+    }
+    /* call original to handle any extra logic */
+    /* (don't recurse — just update UI state) */
+  };
+
+  /* patch the outside-click listener that was added by the original code
+     — on mobile we use the backdrop instead, so kill it cleanly */
+  const _origCloseOnOutside = window._closeAcctOnOutside;
+  window._closeAcctOnOutside = function (e) {
+    if (isMobile()) return; /* backdrop handles this */
+    if (_origCloseOnOutside) _origCloseOnOutside(e);
+  };
+
+  /* ══════════════════════════════════════════════════════════════
+     SIDE PANELS — backdrop when open on mobile/tablet
+  ══════════════════════════════════════════════════════════════ */
+  const PANEL_IDS = ['canvasPanel','oneminaiPanel','flowithPanel','bexPanel'];
+
+  function anyPanelOpen() {
+    return PANEL_IDS.some(id => {
+      const el = document.getElementById(id);
+      return el && !el.classList.contains('collapsed');
+    });
+  }
+  function closeAllPanels() {
+    PANEL_IDS.forEach(id => document.getElementById(id)?.classList.add('collapsed'));
+    hideBackdrop();
+    document.body.style.overflow = '';
+    /* sync btn states */
+    ['canvasToggleBtn','oneminaiPanelBtn','flowithPanelBtn','branchExplorerBtn']
+      .forEach(id => document.getElementById(id)?.classList.remove('active'));
+    if (typeof S !== 'undefined') S.canvasOpen = false;
+    if (typeof BEX !== 'undefined') BEX.open = false;
+  }
+
+  function afterPanelToggle() {
+    if (!isTabletOrMobile()) return;
+    if (anyPanelOpen()) {
+      showBackdrop(closeAllPanels);
+      document.body.style.overflow = 'hidden';
+    } else {
+      hideBackdrop();
+      document.body.style.overflow = '';
+    }
+  }
+
+  /* wrap each panel toggle */
+  ;[
+    ['toggleCanvas',          window.toggleCanvas],
+    ['toggleOneminaiPanel',   window.toggleOneminaiPanel],
+    ['toggleFlowithPanel',    window.toggleFlowithPanel],
+    ['toggleBranchExplorer',  window.toggleBranchExplorer],
+  ].forEach(([name, orig]) => {
+    window[name] = function (...a) {
+      if (orig) orig.apply(this, a);
+      setTimeout(afterPanelToggle, 30);
+    };
+  });
+
+  /* ══════════════════════════════════════════════════════════════
+     SWIPE GESTURES
+  ══════════════════════════════════════════════════════════════ */
+  let tx0 = 0, ty0 = 0, tgt0 = null;
+
   document.addEventListener('touchstart', e => {
-    x0 = e.touches[0].clientX;
-    y0 = e.touches[0].clientY;
+    tx0  = e.touches[0].clientX;
+    ty0  = e.touches[0].clientY;
     tgt0 = e.target;
   }, { passive: true });
+
   document.addEventListener('touchend', e => {
-    if (!_isMobile()) return;
-    const dx = e.changedTouches[0].clientX - x0;
-    const dy = e.changedTouches[0].clientY - y0;
-    if (Math.abs(dy) > Math.abs(dx) * 0.7 || Math.abs(dx) < 50) return;
-    if (dx > 0 && x0 < 30 && !_isMobileSidebarOpen()) { toggleSidebar(); return; }
-    if (dx < 0 && _isMobileSidebarOpen() && document.getElementById('sidebar')?.contains(tgt0)) { toggleSidebar(); return; }
-    if (dx < -60) _closeAllPanels();
-  }, { passive: true });
-})();
+    if (!isMobile()) return;
+    const dx = e.changedTouches[0].clientX - tx0;
+    const dy = e.changedTouches[0].clientY - ty0;
+    if (Math.abs(dy) > Math.abs(dx) * 0.75) return; /* vertical swipe */
+    if (Math.abs(dx) < 48) return;                   /* too short */
 
-/* ── iOS keyboard: keep messages in view ── */
-if (window.visualViewport) {
-  let _lastVH = window.visualViewport.height;
-  window.visualViewport.addEventListener('resize', () => {
-    if (!_isMobile()) return;
-    if (window.visualViewport.height < _lastVH - 80) {
-      const msgs = document.getElementById('msgs');
-      if (msgs) msgs.scrollTop = msgs.scrollHeight;
+    /* swipe right from left edge → open sidebar */
+    if (dx > 0 && tx0 < 28 && !sidebarIsOpen()) { openSidebar(); return; }
+
+    /* swipe left inside sidebar → close */
+    if (dx < 0 && sidebarIsOpen() &&
+        document.getElementById('sidebar')?.contains(tgt0)) {
+      closeSidebar(); return;
     }
-    _lastVH = window.visualViewport.height;
+
+    /* swipe left → close open panels */
+    if (dx < -60 && anyPanelOpen()) closeAllPanels();
+  }, { passive: true });
+
+  /* ══════════════════════════════════════════════════════════════
+     IOS KEYBOARD — keep messages visible
+  ══════════════════════════════════════════════════════════════ */
+  if (window.visualViewport) {
+    let lastHeight = window.visualViewport.height;
+    window.visualViewport.addEventListener('resize', () => {
+      if (!isMobile()) return;
+      const newH = window.visualViewport.height;
+      if (newH < lastHeight - 80) {
+        /* keyboard appeared — scroll to bottom */
+        const msgs = document.getElementById('msgs');
+        if (msgs) msgs.scrollTop = msgs.scrollHeight;
+      }
+      lastHeight = newH;
+    });
+  }
+
+  /* prevent iOS zoom on textarea focus */
+  const ta = document.getElementById('msgTa');
+  if (ta) ta.addEventListener('focus', () => {
+    if (isMobile()) setTimeout(() => {
+      ta.scrollIntoView({ block: 'end', behavior: 'smooth' });
+    }, 320);
   });
-}
 
+  /* ══════════════════════════════════════════════════════════════
+     INITIAL SETUP
+  ══════════════════════════════════════════════════════════════ */
+  function mobileInit() {
+    if (!isMobile()) return;
 
+    /* Start with sidebar closed */
+    const sb = document.getElementById('sidebar');
+    if (sb) {
+      sb.classList.add('collapsed');
+      sb.classList.remove('m-open');
+    }
+    document.getElementById('app')?.classList.add('sb-collapsed');
+
+    /* shorter placeholder */
+    if (ta && ta.placeholder.length > 20) ta.placeholder = 'Message…';
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', mobileInit);
+  } else {
+    mobileInit();
+  }
+
+  /* re-init on resize (desktop ↔ mobile) */
+  let _rt;
+  window.addEventListener('resize', () => {
+    clearTimeout(_rt);
+    _rt = setTimeout(() => {
+      if (!isMobile()) {
+        hideBackdrop();
+        document.body.style.overflow = '';
+      } else {
+        mobileInit();
+      }
+    }, 150);
+  });
+
+  console.log('[MobilePatch v2] loaded');
+})();
 
 </script>
 </body>
 </html>
-
