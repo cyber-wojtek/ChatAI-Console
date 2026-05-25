@@ -297,11 +297,11 @@ a:hover { text-decoration:underline; }
     radial-gradient(ellipse 50% 60% at 20% 90%, rgba(56,189,248,0.02) 0%, transparent 50%),
     var(--bg);
 }
-
 @media (max-width: 768px) {
-  .sb-open-btn-global { display: flex !important; }
-  .sidebar.m-open ~ * .sb-open-btn-global,
-  .sidebar.m-open + * .sb-open-btn-global { display: none !important; }
+  .sb-open-btn-global { display: flex; }
+  /* Hide global button when chat is active — toolbar button handles it there */
+  #chat:not(.hidden) ~ .sb-open-btn-global,
+  .main:has(#chat:not(.hidden)) .sb-open-btn-global { display: none; }
 }
 @media (min-width: 769px) {
   .sb-open-btn-global { display: none !important; }
@@ -333,9 +333,9 @@ a:hover { text-decoration:underline; }
   border-color: var(--border-m);                                   }                                                                  @media (max-width: 768px) {                                          .sb-open-btn-global { display: flex; }                           }                                                                  @media (min-width: 768.02px) {
   .sb-open-btn-global { display: none !important; }
 }
-/* In-toolbar hamburger not needed on mobile — global absolute one handles it */
+/* In-toolbar hamburger: hide on mobile ONLY when splash is showing */
 @media (max-width: 768px) {
-  .toolbar .sb-open-btn:not(.sb-open-btn-global) {
+  .app:not(.in-chat) .toolbar .sb-open-btn:not(.sb-open-btn-global) {
     display: none !important;
   }
 }
@@ -5642,7 +5642,6 @@ function getAcctIdFromUrl() {
   const m = window.location.pathname.match(/^\/a\/([^\/]+)(?:\/c\/[a-f0-9-]+)?/);
   return m ? decodeURIComponent(m[1]) === "undefined" ? null : decodeURIComponent(m[1]) : null;
 }
-
 function navToHome(replace) {
   S.convId = null;
   document.getElementById('chat').classList.add('hidden');
@@ -5651,6 +5650,10 @@ function navToHome(replace) {
   if (replace) history.replaceState(null, '', '/');
   else history.pushState(null, '', '/');
   renderSidebar();
+  // Collapse sidebar when returning home
+  if (_isMobile()) {
+    _closeMobileSidebar();
+  }
 }
 async function onPopState(e) {
   const urlAcct = getAcctIdFromUrl();
@@ -7394,6 +7397,7 @@ async function selectConv(id, acct, skipPush) {
   document.getElementById('chat').classList.remove('hidden');
   document.getElementById('chat').style.display = 'flex';
   document.getElementById('splash').classList.add('hidden');
+  document.getElementById('app').classList.add('in-chat');
   const _urlAcct = acct || getTabAccountName() || 'default';
   const _urlPath = `/a/${encodeURIComponent(_urlAcct)}/c/${id}`;
   if (skipPush) history.replaceState({ convId: id }, '', _urlPath);
