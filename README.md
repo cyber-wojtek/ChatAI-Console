@@ -27,7 +27,7 @@ branching, usage tracking, and a Galaxy-themed UI — all in a single Quart app.
 
 ## Quick Start
 
-**Requirements:** Python 3.10+, `redis-server` on PATH
+**Requirements:** Python 3.10+
 
 ```sh
 git clone https://github.com/cyber-wojtek/ChatAI-Console.git
