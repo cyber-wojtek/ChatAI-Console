@@ -14,7 +14,7 @@ branching, usage tracking, and a Galaxy-themed UI — all in a single Quart app.
   and Flowith accounts. Persisted in Redis (auto-started).
 - **Real-Time Streaming** — SSE delivers tokens as generated, with inline
   thinking-block rendering.
-- **File Uploads** — Attach files up to 100 MB. Upload metadata tracked locally.
+- **File Uploads** — Attach files. Upload metadata tracked locally.
 - **Conversation Management** — Create, rename, pin, search, branch, and delete.
 - **Artifacts & Canvas** — Split-pane preview for code, HTML, SVG, and Mermaid.
 - **In-Chat Search** — Search messages with match navigation.
@@ -45,9 +45,6 @@ python app.py
 ```
 
 Open **https://localhost:5000**, add an account, and start chatting.
-
-> **Redis** is started and stopped automatically by `app.py`.
-> Set `REDIS_URL` to use an external Redis instance instead.
 
 > **TLS / HTTP/2** — the self-signed cert is generated locally and never
 > leaves your machine. It is valid for 825 days. Run `python setup.py --cert`
@@ -303,7 +300,6 @@ frontend is provider-agnostic.
 |---|---|
 | [Quart](https://quart.palletsprojects.com/) | Async web framework |
 | [Hypercorn](https://hypercorn.readthedocs.io/) | HTTP/2 ASGI server |
-| [redis-py](https://github.com/redis/redis-py) | Redis client + locking |
 | [Claude-API](https://github.com/cyber-wojtek/Claude-API/) | Claude.ai client |
 | [1MinAI-API](https://github.com/cyber-wojtek/1MinAI-API/) | 1min.AI client |
 | [Flowith-API](https://github.com/cyber-wojtek/Flowith-API/) | Flowith.io client |
