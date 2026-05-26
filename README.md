@@ -11,7 +11,7 @@ branching, usage tracking, and a Galaxy-themed UI — all in a single Quart app.
 ## Features
 
 - **Multi-Account** — Add, switch, and manage Claude, ChatWithAI, 1min.AI,
-  and Flowith accounts. Persisted in Redis (auto-started).
+  and Flowith accounts. Persisted in local JSON file.
 - **Real-Time Streaming** — SSE delivers tokens as generated, with inline
   thinking-block rendering.
 - **File Uploads** — Attach files. Upload metadata tracked locally.
