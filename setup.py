@@ -27,6 +27,7 @@ DEPS = [
     "claude_webapi",
     "1minai_webapi",
     "flowith_webapi",
+    "chataibotpro-webapi",
 ]
 
 

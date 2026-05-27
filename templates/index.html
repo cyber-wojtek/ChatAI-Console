@@ -893,6 +893,7 @@
             <div class="dd-option" data-value="chatwithai" onclick="ddSelect(this.closest('.dd-wrap'),'chatwithai');toggleProviderFields()"><span>ChatWithAI (no account needed)</span></div>
             <div class="dd-option" data-value="oneminai" onclick="ddSelect(this.closest('.dd-wrap'),'oneminai');toggleProviderFields()"><span>1min.AI (API key or Google OAuth)</span></div>
             <div class="dd-option" data-value="flowith" onclick="ddSelect(this.closest('.dd-wrap'),'flowith');toggleProviderFields()"><span>Flowith.io (JWT token)</span></div>
+            <div class="dd-option" data-value="chataibotpro" onclick="ddSelect(this.closest('.dd-wrap'),'chataibotpro');toggleProviderFields()"><span>ChatAIBotPro (JWT token)</span></div>
           </div>
         </div>
       </div>
@@ -946,6 +947,25 @@
     <div class="form-row" id="flowithUserIdRow" style="display:none">
       <label class="form-lbl">Flowith User ID <span style="color:var(--text-3)">(optional — parsed from JWT)</span></label>
       <input class="form-inp" type="text" id="flowithUserIdInp" placeholder="Parsed automatically from the JWT…">
+    </div>
+    <div class="form-row" id="chataibotproKeyRow" style="display:none">
+      <label class="form-lbl">ChatAIBotPro — Sign In</label>
+      <button type="button" class="btn-google" id="chataibotproSignInBtn" onclick="chataibotproSignIn()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="#a855f7"/>
+          <path d="M2 17L12 22L22 17" stroke="#a855f7" stroke-width="2"/>
+          <path d="M2 12L12 17L22 12" stroke="#a855f7" stroke-width="2"/>
+        </svg>
+        Sign in with ChatAIBotPro
+      </button>
+      <div class="miniapps-auth-status" id="chataibotproAuthStatus" style="display:none"></div>
+      <div class="form-hint" style="margin-top:6px">
+        Click to extract token from chataibot.pro cookies automatically.<br>
+        Or paste the token manually below (from DevTools → Cookies → <code>token</code>).
+      </div>
+      <input class="form-inp" type="password" id="chataibotproKeyInp"
+        placeholder="Or paste JWT token manually (eyJ…)…"
+        style="margin-top:8px">
     </div>
     <div class="form-row" id="oneminaiOAuthRow" style="display:none">
       <label class="form-lbl">1min.AI Google Sign-In</label>

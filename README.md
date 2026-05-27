@@ -2,8 +2,9 @@
 
 A self-hosted web chat interface for [Claude](https://claude.ai),
 [ChatWithAI.app](https://chatwithai.app), [1min.AI](https://1min.ai),
-and [Flowith.io](https://flowith.io), powered by the reverse-engineered
-`claude_webapi`, `1minai_webapi`, and `flowith_webapi` libraries.
+[Flowith.io](https://flowith.io), and [ChatAIBotPro](https://chataibot.pro),
+powered by the reverse-engineered `claude_webapi`, `1minai_webapi`,
+`flowith_webapi`, and `chataibotpro_webapi` libraries.
 
 Multi-account management, real-time streaming, file uploads, conversation
 branching, usage tracking, and a Galaxy-themed UI — all in a single Quart app.
@@ -11,7 +12,7 @@ branching, usage tracking, and a Galaxy-themed UI — all in a single Quart app.
 ## Features
 
 - **Multi-Account** — Add, switch, and manage Claude, ChatWithAI, 1min.AI,
-  and Flowith accounts. Persisted in local JSON file.
+  Flowith, and ChatAIBotPro accounts. Persisted in local JSON file.
 - **Real-Time Streaming** — SSE delivers tokens as generated, with inline
   thinking-block rendering.
 - **File Uploads** — Attach files. Upload metadata tracked locally.
@@ -19,7 +20,7 @@ branching, usage tracking, and a Galaxy-themed UI — all in a single Quart app.
 - **Artifacts & Canvas** — Split-pane preview for code, HTML, SVG, and Mermaid.
 - **In-Chat Search** — Search messages with match navigation.
 - **Usage & Quota** — Per-account usage snapshots and visual quota bars.
-- **Image & Video Generation** — Flowith and 1min.AI generation in-chat.
+- **Image & Video Generation** — Flowith, 1min.AI, and ChatAIBotPro generation in-chat.
 - **HTTP/2, HTTP/3** — Self-signed TLS cert eliminates browser connection-limit stalls.
 - **Galaxy UI** — Dark-mode SPA with Space Grotesk and Tokyo Night highlighting.
 
@@ -103,6 +104,17 @@ Accounts are added via the sidebar → account switcher → **Manage Accounts**.
 1. Install the OAuth Bridge extension
 2. Click **Sign in with Google for Flowith** — token is captured automatically
 
+### ChatAIBotPro
+
+**Option A — JWT token (manual)**
+1. Sign in at [chataibot.pro](https://chataibot.pro)
+2. DevTools (`F12`) → **Application** → **Cookies** → copy `token`
+3. Paste into the API key field
+
+**Option B — Extension-based (via extension)**
+1. Install the OAuth Bridge extension
+2. Click **Sign in with ChatAIBotPro** — token is extracted automatically
+
 ### Auto-Seeding Accounts
 
 Create `keys.py` in the project root to pre-load accounts on startup:
@@ -110,10 +122,11 @@ Create `keys.py` in the project root to pre-load accounts on startup:
 ```python
 # keys.py  — never commit this file
 ACCOUNTS = [
-    ("claude",   "Personal",  "sk-ant-..."),
-    ("claude",   "Work",      "org-uuid", "sk-ant-..."),
-    ("1minai", "1min",      "eyJ..."),
-    ("flowith",  "Flowith",   "eyJ..."),
+    ("claude",        "Personal",  "sk-ant-..."),
+    ("claude",        "Work",      "org-uuid", "sk-ant-..."),
+    ("1minai",        "1min",      "eyJ..."),
+    ("flowith",       "Flowith",   "eyJ..."),
+    ("chataibotpro",  "ChatAI",    "eyJ..."),
 ]
 ```
 
@@ -171,6 +184,11 @@ curl -X POST https://localhost:5000/api/accounts \
 curl -X POST https://localhost:5000/api/accounts \
   -H 'Content-Type: application/json' \
   -d '{"name":"My Flowith","provider":"flowith","api_key":"eyJ..."}'
+
+# ChatAIBotPro
+curl -X POST https://localhost:5000/api/accounts \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"My ChatAI","provider":"chataibotpro","api_key":"eyJ..."}'
 ```
 
 ### Conversations
@@ -246,6 +264,13 @@ curl -X POST https://localhost:5000/api/accounts \
 | `POST` | `/api/flowith/session-cycle` | Refresh credits |
 | `POST` | `/api/flowith/refresh` | Refresh Flowith JWT |
 
+### ChatAIBotPro Generation
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/chataibotpro/image` | Generate image |
+| `POST` | `/api/chataibotpro/video` | Generate video |
+
 ### OAuth (browser extension)
 
 | Method | Endpoint | Description |
@@ -263,6 +288,10 @@ curl -X POST https://localhost:5000/api/accounts \
 | `GET` | `/api/oauth/flowith/ext-pending` | Extension polling |
 | `POST` | `/api/oauth/flowith/ext-callback` | Receive tokens |
 | `GET` | `/api/oauth/flowith/status` | Poll completion |
+| `GET` | `/api/oauth/chataibotpro/begin` | Start ChatAIBotPro OAuth |
+| `GET` | `/api/oauth/chataibotpro/ext-pending` | Extension polling |
+| `POST` | `/api/oauth/chataibotpro/ext-callback` | Receive token |
+| `GET` | `/api/oauth/chataibotpro/status` | Poll completion |
 
 ### Cloudflare Challenge (1min.AI)
 
@@ -303,6 +332,7 @@ frontend is provider-agnostic.
 | [Claude-API](https://github.com/cyber-wojtek/Claude-API/) | Claude.ai client |
 | [1MinAI-API](https://github.com/cyber-wojtek/1MinAI-API/) | 1min.AI client |
 | [Flowith-API](https://github.com/cyber-wojtek/Flowith-API/) | Flowith.io client |
+| [ChatAIBotPro-API](https://github.com/cyber-wojtek/ChatAIBotPro-API/) | ChatAIBotPro client |
 | [httpx](https://www.python-httpx.org/) | Outbound HTTP |
 | [marked.js](https://marked.js.org/) | Markdown rendering |
 | [highlight.js](https://highlightjs.org/) | Syntax highlighting |

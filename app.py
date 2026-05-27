@@ -46,6 +46,7 @@ import httpx as http_client
 from claude_webapi import ClaudeClient
 from flowith_webapi import FlowithClient
 from oneminai_webapi import OneMinAIClient
+from chataibotpro_webapi import ChatAIBotProClient
 
 # Alias: older call-sites used stop_conversation_response; the library
 # exposes stop_response — add a forward-compatible shim at import time.
@@ -87,8 +88,10 @@ CHATWITHAI_API_BASE = "https://api.chatwithai.app"
 CHATWITHAI_DEFAULT_MODEL = "claude-sonnet-4-6"
 ONEMINAI_PROVIDER = "oneminai"
 FLOWITH_PROVIDER = "flowith"
+CHATAIBOTPRO_PROVIDER = "chataibotpro"
 FLOWITH_DEFAULT_MODEL = "gpt-4.1-nano"
 ONEMINAI_DEFAULT_MODEL = "gpt-4.1-nano"
+CHATAIBOTPRO_DEFAULT_MODEL = "gpt-4.1-nano"
 
 # Canonical root UUID used across all providers for the parent chain root.
 ROOT_UUID = "00000000-0000-4000-8000-000000000000"
@@ -148,6 +151,11 @@ async def _get_models_for_provider(provider: str) -> list[dict]:
             return await _flowith_fetch_models()
         except Exception:
             return _FLOWITH_MODEL_CACHE.get("models", [])
+    elif provider == CHATAIBOTPRO_PROVIDER:
+        try:
+            return await _chataibotpro_fetch_models()
+        except Exception:
+            return _CHATAIBOTPRO_MODEL_CACHE.get("models", [])
     else:
         return []
 
@@ -823,7 +831,7 @@ def _provider_name(acct: dict) -> str:
 
 def _normalize_provider(provider: str | None) -> str:
     prov = (provider or CLAUDE_PROVIDER).strip().lower()
-    if prov in (CHATWITHAI_PROVIDER, ONEMINAI_PROVIDER, FLOWITH_PROVIDER):
+    if prov in (CHATWITHAI_PROVIDER, ONEMINAI_PROVIDER, FLOWITH_PROVIDER, CHATAIBOTPRO_PROVIDER):
         return prov
     return CLAUDE_PROVIDER
 
@@ -960,7 +968,7 @@ def _append_local_messages(
             msgs.append(asst_msg)
             conv["current_leaf_message_uuid"] = asst_msg.get("uuid")
             if display_name and not conv.get("display_name"):
-                conv["display_name"] = display_name
+                conv["display_name"] =  display_name
             conv["updated_at"] = _now()
             conv["pinned_at"] = conv["updated_at"]
             break
@@ -978,7 +986,7 @@ def _account_to_public(a: dict) -> dict:
         "created_at":      a.get("created_at", ""),
         "session_key":     a.get("session_key", "") if provider == CLAUDE_PROVIDER else "",
         "organization_id": a.get("organization_id", "") if provider == CLAUDE_PROVIDER else "",
-        "api_key":         a.get("api_key", "")    if provider in (ONEMINAI_PROVIDER, FLOWITH_PROVIDER) else "",
+        "api_key":         a.get("api_key", "")    if provider in (ONEMINAI_PROVIDER, FLOWITH_PROVIDER, CHATAIBOTPRO_PROVIDER) else "",
         "team_id":         a.get("team_id", "")    if provider == ONEMINAI_PROVIDER else "",
         "user_id":         a.get("user_id", "")      if provider == FLOWITH_PROVIDER else "",
         "refresh_token":   a.get("refresh_token", "") if provider == FLOWITH_PROVIDER else "",
@@ -1226,6 +1234,42 @@ async def _make_flowith_client(acct: dict):
     return client
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# ChatAIBotPro model catalog
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_CHATAIBOTPRO_MODEL_CACHE: dict = {"fetched_at": 0.0, "models": []}
+
+
+async def _chataibotpro_fetch_models() -> list[dict]:
+    """Fetch ChatAIBotPro model catalog."""
+    from datetime import datetime, timezone
+    now_ts = datetime.now(timezone.utc).timestamp()
+    if _CHATAIBOTPRO_MODEL_CACHE["models"] and now_ts - _CHATAIBOTPRO_MODEL_CACHE["fetched_at"] < 900:
+        return _CHATAIBOTPRO_MODEL_CACHE["models"]
+    
+    # ChatAIBotPro uses standard models - return a static list
+    models = [
+        {"id": "gpt-4.1-nano", "display_name": "GPT-4.1 Nano", "category": "text"},
+        {"id": "gpt-4o", "display_name": "GPT-4o", "category": "text"},
+        {"id": "gpt-4o-mini", "display_name": "GPT-4o Mini", "category": "text"},
+        {"id": "claude-3-5-sonnet-20241022", "display_name": "Claude 3.5 Sonnet", "category": "text"},
+        {"id": "claude-3-5-haiku-20241022", "display_name": "Claude 3.5 Haiku", "category": "text"},
+    ]
+    _CHATAIBOTPRO_MODEL_CACHE["models"] = models
+    _CHATAIBOTPRO_MODEL_CACHE["fetched_at"] = now_ts
+    return models
+
+
+async def _make_chataibotpro_client(acct: dict):
+    """Return an authenticated ChatAIBotProClient from a stored account dict."""
+    token = acct.get("api_key") or acct.get("session_key", "")
+    if not token:
+        raise ValueError(f"ChatAIBotPro account '{acct.get('name','?')}' is missing api_key/token")
+    client = ChatAIBotProClient(token)
+    return client
+
+
 async def _list_convs_flowith(acct: dict, search: str | None = None, limit: int = 50):
     """List Flowith conversations from the server, merged with local name cache."""
     client = await _make_flowith_client(acct)
@@ -1416,7 +1460,7 @@ async def _get_conv_flowith(acct: dict, conv_id: str) -> dict:
                     for c in a.get("pinned_conversations", []):
                         if c.get("conv_uuid") == conv_id:
                             if not c.get("display_name"):
-                                c["display_name"] = conv_title
+                                c["display_name"] =  conv_title
                             break
                     break
         store.mutate(fn)
@@ -2426,7 +2470,7 @@ async def rename_conversation_route(acct, conv_id):
                 if a["name"] == acct["name"]:
                     for c in a.get("pinned_conversations", []):
                         if c.get("conv_uuid") == conv_id:
-                            c["display_name"] = title
+                            c["display_name"] =  title
                             break
                     break
         store.mutate(fn)
@@ -2438,7 +2482,7 @@ async def rename_conversation_route(acct, conv_id):
                 if a["name"] == acct["name"]:
                     for c in a.get("pinned_conversations", []):
                         if c.get("conv_uuid") == conv_id:
-                            c["display_name"] = title
+                            c["display_name"] =  title
                             break
                     break
         store.mutate(fn)
@@ -2455,7 +2499,7 @@ async def rename_conversation_route(acct, conv_id):
             if a["name"] == acct["name"]:
                 for c in a.get("pinned_conversations", []):
                     if c.get("conv_uuid") == conv_id:
-                        c["display_name"] = title
+                        c["display_name"] =  title
                         break
                 break
     store.mutate(fn)
@@ -2970,6 +3014,82 @@ async def oauth_flowith_owns_state():
     entry = _oauth_read(state) if state else None
     return jsonify({"owned": bool(entry and entry.get("provider") == "flowith")})
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ChatAIBotPro OAuth — extension-based token extraction
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/oauth/chataibotpro/begin")
+async def oauth_chataibotpro_begin():
+    state = _oauth_new_state("chataibotpro")
+    resp = jsonify({"state": state})
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
+@app.route("/api/oauth/chataibotpro/ext-pending")
+async def oauth_chataibotpro_ext_pending():
+    state = _oauth_claim_pending("chataibotpro")
+    resp = jsonify({"state": state})
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
+@app.route("/api/oauth/chataibotpro/ext-callback", methods=["POST"])
+async def oauth_chataibotpro_ext_callback():
+    data = await _get_json()
+    token = (data.get("token") or data.get("api_key") or "").strip()
+    state = (data.get("state") or "").strip()
+    error = data.get("error")
+
+    if not state:
+        return jsonify({"ok": False, "error": "missing_state"}), 400
+
+    entry = _oauth_read(state)
+    if not entry:
+        return jsonify({"ok": False, "error": "unknown_state"}), 400
+    if entry.get("provider") != "chataibotpro":
+        return jsonify({"ok": False, "error": "wrong_provider"}), 400
+    if entry.get("done"):
+        return jsonify({"ok": True})
+
+    if error:
+        _oauth_complete(state, {"error": error})
+        return jsonify({"ok": False, "error": error})
+
+    if not token:
+        log.warning("chataibotpro ext-callback: no token. keys=%s", list(data.keys()))
+        _oauth_complete(state, {"error": "no_token"})
+        return jsonify({"ok": False, "error": "no_token"}), 400
+
+    _oauth_complete(state, {"token": token})
+    log.info("ChatAIBotPro OAuth success")
+    return jsonify({"ok": True})
+
+
+@app.route("/api/oauth/chataibotpro/status")
+async def oauth_chataibotpro_status():
+    state = (request.args.get("state") or "").strip()
+    if not state:
+        return jsonify({"error": "missing_state"}), 400
+
+    entry = _oauth_read(state)
+    if entry is None:
+        return jsonify({"error": "invalid_state"}), 400
+    if not entry.get("done"):
+        return jsonify({"done": False})
+
+    resp: dict = {"done": True}
+    if "token" in entry:
+        resp["token"] = entry["token"]
+    if "error" in entry:
+        resp["error"] = entry["error"]
+
+    return jsonify(resp)
+
+
 # ── 1min.AI Cloudflare clearance — extension-driven cookie relay ──────────────
 
 @app.route("/api/oneminai/cf-begin", methods=["POST"])
@@ -3181,6 +3301,7 @@ async def add_account():
     flowith_api_key      = (req.get("api_key")      or "").strip()
     flowith_user_id      = (req.get("user_id")      or "").strip()
     flowith_refresh_token = (req.get("refresh_token") or "").strip()
+    chataibotpro_api_key = (req.get("api_key") or "").strip()
 
     if provider == CLAUDE_PROVIDER and not boot_session_key and not existing_account:
         if claude_code:
@@ -3225,6 +3346,11 @@ async def add_account():
                     existing["refresh_token"] = flowith_refresh_token
                 existing.pop("session_key", None)
                 existing.pop("organization_id", None)
+            elif provider == CHATAIBOTPRO_PROVIDER:
+                if chataibotpro_api_key:
+                    existing["api_key"] = chataibotpro_api_key
+                existing.pop("session_key", None)
+                existing.pop("organization_id", None)
             else:
                 existing.pop("session_key", None)
                 existing.pop("organization_id", None)
@@ -3245,6 +3371,8 @@ async def add_account():
                     creds["user_id"] = flowith_user_id
                 if flowith_refresh_token:
                     creds["refresh_token"] = flowith_refresh_token
+            elif provider == CHATAIBOTPRO_PROVIDER:
+                creds["api_key"] = chataibotpro_api_key
             data["accounts"].append(_new_account(name, provider, **creds))
         if req.get("activate") or len(data["accounts"]) == 1:
             _set_active_in_data(data, name)
@@ -3399,7 +3527,7 @@ async def list_conversations(acct):
         limit  = int(request.args.get("limit", 50))
         convs  = await _list_convs_flowith(acct, search=search, limit=limit)
         if metadata_only:
-            convs = [{"conv_uuid": c["conv_uuid"], "display_name": c["display_name"], "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
+            convs = [{"conv_uuid": c.get("conv_uuid"), "display_name": c.get("display_name"), "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at"), "created_by": c.get("created_at")} for c in convs]
         return jsonify(convs), 200
 
     if provider == ONEMINAI_PROVIDER:
@@ -3407,7 +3535,7 @@ async def list_conversations(acct):
         limit  = int(request.args.get("limit", 50))
         convs = await _list_convs_oneminai(acct, search=search, limit=limit)
         if metadata_only:
-            convs = [{"conv_uuid": c["conv_uuid"], "display_name": c["display_name"], "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
+            convs = [{"conv_uuid": c.get("conv_uuid"), "display_name": c.get("display_name"), "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
         return jsonify(convs), 200
 
     if provider == CHATWITHAI_PROVIDER:
@@ -3420,7 +3548,7 @@ async def list_conversations(acct):
                     reverse=True,
                 )
                 if metadata_only:
-                    convs = [{"conv_uuid": c["conv_uuid"], "display_name": c["display_name"], "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
+                    convs = [{"conv_uuid": c.get("conv_uuid"), "display_name": c.get("display_name"), "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
                 return jsonify(convs), 200
         return jsonify([]), 200
 
@@ -3439,7 +3567,7 @@ async def list_conversations(acct):
                     reverse=True,
                 )
                 if metadata_only:
-                    convs = [{"conv_uuid": c["conv_uuid"], "display_name": c["display_name"], "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
+                    convs = [{"conv_uuid": c.get("conv_uuid"), "display_name": c.get("display_name"), "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
                 return jsonify(convs), 200
             break
 
@@ -3451,7 +3579,7 @@ async def list_conversations(acct):
         def fn(store_data):
             for a in store_data["accounts"]:
                 if a["name"] == acct["name"]:
-                    existing = {c["conv_uuid"] for c in a.get("pinned_conversations", [])}
+                    existing = {c.get("conv_uuid") for c in a.get("pinned_conversations", [])}
                     for c in (convs or []):
                         cid = c.get("uuid") or c.get("id", "")
                         if cid and cid not in existing:
@@ -3463,7 +3591,7 @@ async def list_conversations(acct):
                     break
         store.mutate(fn)
         if metadata_only:
-            convs = [{"conv_uuid": c["conv_uuid"], "display_name": c["display_name"], "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
+            convs = [{"conv_uuid": c.get("conv_uuid"), "display_name": c.get("display_name"), "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
         return jsonify(convs), 200
     finally:
         await client.close()
@@ -3482,7 +3610,7 @@ async def create_conversation(acct):
             for a in data["accounts"]:
                 if a["name"] == acct["name"]:
                     convs = a.setdefault("pinned_conversations", [])
-                    if not any(c["conv_uuid"] == conv_id for c in convs):
+                    if not any(c.get("conv_uuid") == conv_id for c in convs):
                         convs.append({
                             "conv_uuid":    conv_id,
                             "display_name": "",
@@ -3523,7 +3651,7 @@ async def create_conversation(acct):
         for a in data["accounts"]:
             if a["name"] == acct["name"]:
                 convs = a.setdefault("pinned_conversations", [])
-                if not any(c["conv_uuid"] == conv_id for c in convs):
+                if not any(c.get("conv_uuid") == conv_id for c in convs):
                     convs.append({"conv_uuid": conv_id, "display_name": "",
                                   "pinned_at": _now()})
                 break
@@ -3645,7 +3773,7 @@ async def update_conversation(acct, conv_id):
                     if a["name"] == acct["name"]:
                         for c in a.get("pinned_conversations", []):
                             if c.get("conv_uuid") == conv_id:
-                                c["display_name"] = new_name
+                                c["display_name"] =  new_name
                                 break
                         break
             store.mutate(fn)
@@ -3671,8 +3799,8 @@ async def update_conversation(acct, conv_id):
             for a in store_data["accounts"]:
                 if a["name"] == acct["name"]:
                     for c in a.get("pinned_conversations", []):
-                        if c["conv_uuid"] == conv_id:
-                            c["display_name"] = new_name
+                        if c.get("conv_uuid") == conv_id:
+                            c["display_name"] =  new_name
                             break
                     break
         store.mutate(fn)
@@ -3862,7 +3990,7 @@ async def send_message(acct, conv_id):
                         convs = a.setdefault("pinned_conversations", [])
                         convs[:] = [c for c in convs
                                     if c.get("conv_uuid") != conv_id]
-                        if not any(c["conv_uuid"] == real_conv_id for c in convs):
+                        if not any(c.get("conv_uuid") == real_conv_id for c in convs):
                             convs.append({
                                 "conv_uuid":    real_conv_id,
                                 "display_name": prompt[:40],
@@ -3882,7 +4010,7 @@ async def send_message(acct, conv_id):
                             if c.get("conv_uuid") == real_conv_id:
                                 c["updated_at"] = _now()
                                 if not c.get("display_name"):
-                                    c["display_name"] = prompt[:40]
+                                    c["display_name"] =  prompt[:40]
                                 break
                         break
                 store.mutate(touch)
@@ -4153,6 +4281,165 @@ async def send_message(acct, conv_id):
 
         return Response(
             generate_chatwithai(),
+            content_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    if provider == CHATAIBOTPRO_PROVIDER:
+        prompt = (data.get("prompt") or "").strip()
+        model = (data.get("model") or CHATAIBOTPRO_DEFAULT_MODEL).strip()
+        parent_uuid = data.get("parent_message_uuid", ROOT_UUID)
+        human_uuid = str(uuid_lib.uuid4())
+        asst_uuid = str(uuid_lib.uuid4())
+
+        conv_entry = _get_local_conv_entry(acct["name"], conv_id)
+        history_messages: list[dict] = []
+        
+        if conv_entry:
+            all_msgs = conv_entry.get("chat_messages", [])
+            if all_msgs:
+                msg_map = {m["uuid"]: m for m in all_msgs if m.get("uuid")}
+                if parent_uuid == ROOT_UUID:
+                    _active_leaf = (conv_entry or {}).get("current_leaf_message_uuid", "")
+                    has_child = {m.get("parent_message_uuid") for m in all_msgs}
+                    leaves = [m for m in all_msgs if m.get("uuid") not in has_child]
+                    _start_uuid = ""
+                    if _active_leaf and _active_leaf != ROOT_UUID and _active_leaf in msg_map:
+                        _start_uuid = _active_leaf
+                    elif leaves:
+                        _best, _best_len = "", 0
+                        for _lf in leaves:
+                            _ln = 0
+                            _cur = _lf["uuid"]
+                            _vis = set()
+                            while _cur and _cur != ROOT_UUID and _cur in msg_map and _cur not in _vis:
+                                _vis.add(_cur)
+                                _ln += 1
+                                _cur = msg_map[_cur].get("parent_message_uuid", "")
+                            if _ln > _best_len:
+                                _best_len = _ln
+                                _best = _lf["uuid"]
+                        _start_uuid = _best
+                    if _start_uuid:
+                        chain = []
+                        visited = set()
+                        current = _start_uuid
+                        while current and current != ROOT_UUID and current not in visited:
+                            visited.add(current)
+                            node = msg_map.get(current)
+                            if not node:
+                                break
+                            chain.append(node)
+                            current = node.get("parent_message_uuid", "")
+                        history_messages = list(reversed(chain))
+                    else:
+                        history_messages = list(all_msgs)
+                else:
+                    chain = []
+                    visited = set()
+                    current = parent_uuid
+                    while current and current != ROOT_UUID and current not in visited:
+                        visited.add(current)
+                        node = msg_map.get(current)
+                        if not node:
+                            break
+                        chain.append(node)
+                        current = node.get("parent_message_uuid", "")
+                    history_messages = list(reversed(chain))
+
+        display_name = data.get("display_name") or (prompt[:30] if prompt else "")
+        _log_message_send(acct["name"], conv_id, model, len(prompt))
+        text_parts: list[str] = []
+
+        @stream_with_context
+        async def generate_chataibotpro():
+            loop = asyncio.get_event_loop()
+            q = asyncio.Queue()
+
+            def run_sync():
+                try:
+                    client = _loop.run_until_complete(_make_chataibotpro_client(acct))
+                    session = client.start_chat(model=model)
+                    for msg in history_messages:
+                        role = "user" if msg.get("sender") == "human" else "assistant"
+                        text = (msg.get("text") or "").strip()
+                        if text:
+                            _loop.run_until_complete(session.send(text))
+                    
+                    stream = _loop.run_until_complete(session.stream(prompt).__aenter__())
+                    while True:
+                        try:
+                            chunk = _loop.run_until_complete(stream.__anext__())
+                            delta = chunk.delta or ""
+                            text_parts.append(delta)
+                            evt = json.dumps({
+                                "type": "content_block_delta",
+                                "delta": {"type": "text_delta", "text": delta},
+                                "message_uuid": asst_uuid,
+                            })
+                            asyncio.run_coroutine_threadsafe(
+                                q.put(f"data: {evt}\n".encode()), loop
+                            )
+                        except StopAsyncIteration:
+                            break
+                    _loop.run_until_complete(stream.__aexit__(None, None, None))
+                    _loop.run_until_complete(client.close())
+                    
+                    done_evt = json.dumps({
+                        "type": "message_stop",
+                        "message_uuid": asst_uuid,
+                    })
+                    asyncio.run_coroutine_threadsafe(
+                        q.put(f"data: {done_evt}\n".encode()), loop
+                    )
+                except Exception as exc:
+                    err = json.dumps({"type": "error", "error": {"message": str(exc)}})
+                    asyncio.run_coroutine_threadsafe(
+                        q.put(f"data: {err}\n".encode()), loop
+                    )
+                finally:
+                    asyncio.run_coroutine_threadsafe(q.put(None), loop)
+
+            threading.Thread(target=run_sync, daemon=True).start()
+
+            while True:
+                chunk = await q.get()
+                if chunk is None:
+                    break
+                yield chunk
+
+            full_response = "".join(text_parts)
+            actual_parent = parent_uuid
+            if parent_uuid == ROOT_UUID:
+                local_entry = _get_local_conv_entry(acct["name"], conv_id)
+                local_msgs = (local_entry or {}).get("chat_messages", [])
+                if local_msgs:
+                    actual_parent = local_msgs[-1].get("uuid", ROOT_UUID)
+
+            human_msg = {
+                "uuid": human_uuid,
+                "sender": "human",
+                "text": prompt,
+                "content": [{"type": "text", "text": prompt}],
+                "parent_message_uuid": actual_parent,
+                "created_at": _now(),
+            }
+            asst_msg = {
+                "uuid": asst_uuid,
+                "sender": "assistant",
+                "text": full_response,
+                "content": [{"type": "text", "text": full_response}],
+                "parent_message_uuid": human_uuid,
+                "created_at": _now(),
+                "model": model,
+            }
+            _append_local_messages(
+                acct["name"], conv_id, human_msg, asst_msg,
+                display_name=display_name,
+            )
+
+        return Response(
+            generate_chataibotpro(),
             content_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
@@ -4530,7 +4817,7 @@ async def local_conv_list(acct):
                 reverse=True,
             )
             if metadata_only:
-                convs = [{"conv_uuid": c["conv_uuid"], "display_name": c["display_name"], "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
+                convs = [{"conv_uuid": c.get("conv_uuid"), "display_name": c.get("display_name"), "provider": c.get("provider", "claude"), "created_at": c.get("created_at"), "updated_at": c.get("updated_at")} for c in convs]
             return jsonify(convs)
     return jsonify([])
 
@@ -4548,7 +4835,7 @@ async def local_conv_pin(acct):
         for a in data["accounts"]:
             if a["name"] == acct["name"]:
                 convs    = a.setdefault("pinned_conversations", [])
-                existing = next((c for c in convs if c["conv_uuid"] == conv_uuid), None)
+                existing = next((c for c in convs if c.get("conv_uuid") == conv_uuid), None)
                 if existing:
                     if display_name:
                         existing["display_name"] = display_name
@@ -4571,7 +4858,7 @@ async def local_conv_unpin(acct, conv_uuid):
             if a["name"] == acct["name"]:
                 a["pinned_conversations"] = [
                     c for c in a.get("pinned_conversations", [])
-                    if c["conv_uuid"] != conv_uuid
+                    if c.get("conv_uuid") != conv_uuid
                 ]
                 break
     store.mutate(fn)
@@ -4587,8 +4874,8 @@ async def local_conv_rename(acct, conv_uuid):
         for a in data["accounts"]:
             if a["name"] == acct["name"]:
                 for c in a.get("pinned_conversations", []):
-                    if c["conv_uuid"] == conv_uuid:
-                        c["display_name"] = display_name
+                    if c.get("conv_uuid") == conv_uuid:
+                        c["display_name"] =  display_name
                         break
                 break
     store.mutate(fn)
@@ -4604,7 +4891,7 @@ async def list_uploads(acct, conv_uuid):
     for a in data["accounts"]:
         if a["name"] == acct["name"]:
             uploads = sorted(
-                [u for u in a.get("file_uploads", []) if u["conv_uuid"] == conv_uuid],
+                [u for u in a.get("file_uploads", []) if u.get("conv_uuid") == conv_uuid],
                 key=lambda u: u.get("uploaded_at", ""),
             )
             return jsonify(uploads)
@@ -4796,6 +5083,70 @@ async def flowith_refresh_token_route(acct):
         "refresh_token": new_refresh,
         "user_id":       new_user_id,
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ChatAIBotPro image & video generation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/chataibotpro/image", methods=["POST"])
+@require_account
+@api_error_handler
+async def chataibotpro_generate_image(acct):
+    """Generate an image via ChatAIBotPro."""
+    if _provider_name(acct) != CHATAIBOTPRO_PROVIDER:
+        return jsonify({"error": "Not a ChatAIBotPro account"}), 400
+    data = await _get_json()
+    prompt = (data.get("prompt") or "").strip()
+    model = (data.get("model") or "flux-pro").strip()
+    if not prompt:
+        return jsonify({"error": "prompt is required"}), 400
+    
+    client = await _make_chataibotpro_client(acct)
+    try:
+        from chataibotpro_webapi import ImageModel
+        model_enum = getattr(ImageModel, model.upper().replace("-", "_"), ImageModel.FLUX_PRO)
+        img = await client.generate_image(prompt, model=model_enum)
+        await client.close()
+        return jsonify({
+            "url": img.url,
+            "prompt": prompt,
+            "model": model,
+        })
+    except Exception as exc:
+        await client.close()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/chataibotpro/video", methods=["POST"])
+@require_account
+@api_error_handler
+async def chataibotpro_generate_video(acct):
+    """Generate a video via ChatAIBotPro."""
+    if _provider_name(acct) != CHATAIBOTPRO_PROVIDER:
+        return jsonify({"error": "Not a ChatAIBotPro account"}), 400
+    data = await _get_json()
+    prompt = (data.get("prompt") or "").strip()
+    model = (data.get("model") or "kling-2-6-pro").strip()
+    duration = (data.get("duration") or "5").strip()
+    if not prompt:
+        return jsonify({"error": "prompt is required"}), 400
+    
+    client = await _make_chataibotpro_client(acct)
+    try:
+        from chataibotpro_webapi import VideoModel
+        model_enum = getattr(VideoModel, model.upper().replace("-", "_"), VideoModel.KLING_2_6_PRO)
+        video = await client.generate_video(prompt, model=model_enum, duration=duration)
+        await client.close()
+        return jsonify({
+            "url": video.url,
+            "prompt": prompt,
+            "model": model,
+            "duration": duration,
+        })
+    except Exception as exc:
+        await client.close()
+        return jsonify({"error": str(exc)}), 500
     
 
 @app.route("/api/oneminai/refresh", methods=["POST"])
@@ -4852,6 +5203,7 @@ async def _main(args):
     config.alpn_protocols = ["h3", "h2", "http/1.1"]
     config.graceful_timeout = 0.1
     config.keep_alive_timeout = 5
+    config.use_reloader = True
 
     shutdown_event = asyncio.Event()
     loop = asyncio.get_running_loop()

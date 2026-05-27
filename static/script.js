@@ -1106,24 +1106,38 @@ const quotaCache = {};
 async function fetchQuota() {
   const acct = getTabAccount();
   if (!acct) return;
-  const provider = (acct.provider || 'claude').toLowerCase();
+  const provider = (acct.provider || '').toLowerCase();
   if (provider === 'chatwithai') {
     document.getElementById('quotaWrap').style.display = 'none';
     return;
   }
+
   try {
     const d = await apiFetch('/api/usage');
+    // ✅ Only proceed if response matches current account's provider
+    if (d.provider !== provider) {
+      console.warn(`Provider mismatch: expected ${provider}, got ${d.provider}`);
+      delete quotaCache[acct.name]; // prevent stale data
+      _renderSidebarBar();
+      return;
+    }
+
     if (d.provider === 'oneminai') {
       _cacheOneminai(acct.name, d.credits);
-      _renderSidebarBar();
-    } else if (d.provider === 'flowith' && d.credits) {
-      _cacheFlowith(acct.name, d.credits);
-      _renderSidebarBar();
-    } else if (d.provider === 'claude' && d.windows) {
-      _cacheClaude(acct.name, d);
-      _renderSidebarBar();
+    } else if (d.provider === 'flowith') {
+      const cr = d.credits?.total ?? d.credits_total ?? null;
+      if (cr !== null) _cacheFlowith(acct.name, cr);
+    } else if (d.provider === 'claude') {
+      _cacheClaude(acct.name, d.quota);
     }
-  } catch {}
+
+    _renderSidebarBar(); // ✅ Now safe to render
+
+  } catch (err) {
+    console.error('fetchQuota failed:', err);
+    delete quotaCache[acct.name];
+    _renderSidebarBar(); // hide on error
+  }
 }
 
 /* ── Poll EVERY account in the background ── */
@@ -1220,114 +1234,168 @@ function _cacheClaude(name, payload) {
 }
 
 /* ── Render the sidebar quota/credits bar for the ACTIVE tab account ── */
-// REPLACE _renderSidebarBar — fix the resetsAt * 1000 bug in Claude section
 function _renderSidebarBar() {
-  const wrap   = document.getElementById('quotaWrap');
-  const acct   = getTabAccount();
-  const provider = (acct?.provider || 'claude').toLowerCase();
+  const wrap = document.getElementById('quotaWrap');
+  const acct = getTabAccount();
+  if (!acct) {
+    wrap.style.display = 'none';
+    return;
+  }
 
-  if (provider === 'chatwithai') { wrap.style.display = 'none'; return; }
+  const name = acct.name;
+  const provider = (acct.provider || '').toLowerCase();
+  const cached = quotaCache[name];
 
-  const name   = getTabAccountName();
-  const cached = name ? quotaCache[name] : null;
-  if (!cached)  { wrap.style.display = 'none'; return; }
+  // If no data or provider mismatch, hide
+  if (!cached || cached.provider !== provider) {
+    wrap.style.display = 'none';
+    return;
+  }
+
+  // Show wrap
+  wrap.style.display = 'block';
+
+  // Reset provider styling class
+  wrap.classList.remove('claude-mode');
+
+  // Restore base quota elements when leaving Claude
+  if (provider !== 'claude') {
+    const claudeWrap = document.getElementById('claudeQuotaWrap');
+    if (claudeWrap) claudeWrap.remove();
+    const baseLabel  = document.getElementById('quotaLabel');
+    const basePct    = document.getElementById('quotaPct');
+    const baseFill   = document.getElementById('quotaBarFill');
+    const baseDetail = document.getElementById('quotaDetail');
+    if (baseLabel)  baseLabel.style.display = '';
+    if (basePct)    basePct.style.display = '';
+    if (baseFill)   baseFill.style.display = '';
+    if (baseDetail) baseDetail.style.display = '';
+  }
 
   // ── 1min.AI ──────────────────────────────────────────────────────────
-  if (cached.provider === 'oneminai') {
+  if (provider === 'oneminai') {
     const cr = cached.credits;
     if (cr == null) { wrap.style.display = 'none'; return; }
-    wrap.style.display = 'block';
+
     const label  = document.getElementById('quotaLabel');
     const pctEl  = document.getElementById('quotaPct');
     const fill   = document.getElementById('quotaBarFill');
     const detail = document.getElementById('quotaDetail');
+
+    if (!label || !pctEl || !fill || !detail) {
+      console.error('Missing quota bar elements');
+      return;
+    }
+
     label.textContent  = 'Credits · 1min.AI';
     pctEl.textContent  = typeof cr === 'number' ? cr.toLocaleString() : String(cr);
     fill.style.width   = '100%';
     fill.className     = 'quota-bar-fill';
     detail.textContent = `${typeof cr === 'number' ? cr.toLocaleString() : cr} credits remaining`;
+
     const omaiCr = document.getElementById('omaiCreditsDisplay');
     if (omaiCr) omaiCr.textContent = `✦ ${typeof cr === 'number' ? cr.toLocaleString() : cr} credits`;
+
+    // Ensure no innerHTML overwrite
     return;
   }
 
   // ── Flowith ───────────────────────────────────────────────────────────
-  if (cached.provider === 'flowith') {
+  if (provider === 'flowith') {
     const cr    = cached.credits;
     if (cr == null) { wrap.style.display = 'none'; return; }
     const crNum = typeof cr === 'number' ? cr : parseFloat(cr);
-    wrap.style.display = 'block';
+
     const label  = document.getElementById('quotaLabel');
     const pctEl  = document.getElementById('quotaPct');
     const fill   = document.getElementById('quotaBarFill');
     const detail = document.getElementById('quotaDetail');
+
+    if (!label || !pctEl || !fill || !detail) {
+      console.error('Missing quota bar elements');
+      return;
+    }
+
     label.textContent  = 'Credits · Flowith';
     pctEl.textContent  = isNaN(crNum) ? String(cr) : crNum.toFixed(1);
     fill.style.width   = crNum > 0 ? '100%' : '0%';
     fill.className     = 'quota-bar-fill' + (crNum < 1 ? ' crit' : crNum < 5 ? ' warn' : '');
     detail.textContent = `${isNaN(crNum) ? String(cr) : crNum.toFixed(2)} credits remaining`;
+
     const fwCr = document.getElementById('flowithCreditsDisplay');
     if (fwCr) fwCr.textContent = `⋆ ${isNaN(crNum) ? String(cr) : crNum.toFixed(1)} credits`;
-    renderAccountMenu();
+
     return;
   }
 
-  // ── Claude — one bar per window ───────────────────────────────────────
-  if (cached.provider !== 'claude') { wrap.style.display = 'none'; return; }
+  // ── Claude —
+  if (provider === 'claude') {
+    const wins = cached.windows;
+    if (!wins?.length) { wrap.style.display = 'none'; return; }
 
-  const wins = cached.windows || [];
-  if (!wins.length) { wrap.style.display = 'none'; return; }
+    wrap.classList.add('claude-mode');
 
-  const WIN_LABELS = {
-    '5h': '5-hour', '1h': '1-hour', '7d': '7-day',
-    '1d': '1-day',  '30d': '30-day',
-  };
+    const quotaWrap = document.getElementById('quotaWrap');
 
-  wrap.style.display = 'block';
+    if (!quotaWrap) { wrap.style.display = 'none'; return; }
 
-  const barsHtml = wins.map((w, i) => {
-    const pctNum   = Math.round((w.util ?? 0) * 100);  // already clamped to 100
-    const overPct  = w.rawUtil != null ? Math.round(w.rawUtil * 100) : pctNum;
-    // Show overage if applicable
-    const pctDisplay = overPct > 100 ? `${overPct}%` : `${pctNum}%`;
+    // Hide single-bar elements
+    const baseLabel  = document.getElementById('quotaLabel');
+    const basePct    = document.getElementById('quotaPct');
+    const baseFill   = document.getElementById('quotaBarFill');
+    const baseDetail = document.getElementById('quotaDetail');
+    if (baseLabel)  baseLabel.style.display = 'none';
+    if (basePct)    basePct.style.display = 'none';
+    if (baseFill)   baseFill.style.display = 'none';
+    if (baseDetail) baseDetail.style.display = 'none';
 
-    const winLabel = WIN_LABELS[w.key] || w.key;
-    const fillCls  = 'quota-bar-fill' +
-      (pctNum >= 90 || w.status === 'exceeded_limit'    ? ' crit' :
-       pctNum >= 70 || w.status === 'approaching_limit' ? ' warn' : '');
+    const WIN_LABELS = { '1h':'1h', '5h':'5h', '7d':'7d', '1d':'1d', '30d':'30d' };
+    const items = wins.slice(0, 2).map(w => {
+      const pctNum = Math.round((w.util ?? 0) * 100);
+      const fillClass = pctNum >= 90 || w.status === 'exceeded_limit' ? ' crit'
+                      : pctNum >= 70 || w.status === 'approaching_limit' ? ' warn' : '';
 
-    let statusTxt = '';
-    if      (w.status === 'exceeded_limit')    statusTxt = ' exceeded';
-    else if (w.status === 'approaching_limit') statusTxt = ' nearing';
-
-    let resetTxt = '';
-    if (w.resetsAt) {
-      // resetsAt is Unix SECONDS — multiply by 1000 for ms comparison
-      const diff = w.resetsAt * 1000 - Date.now();
-      if (diff > 0) {
-        const hrs  = Math.floor(diff / 3_600_000);
-        const mins = Math.floor((diff % 3_600_000) / 60_000);
-        resetTxt = ` · ↺ ${hrs > 0 ? hrs + 'h ' : ''}${mins}m`;
+      let resetStr = '';
+      if (w.resetsAt) {
+        const diff = w.resetsAt * 1000 - Date.now();
+        if (diff > 0) {
+          const hrs  = Math.floor(diff / 3_600_000);
+          const mins = Math.floor((diff % 3_600_000) / 60_000);
+          resetStr   = hrs > 0 ? `${hrs}h` : `${mins}m`;
+        }
       }
-    }
 
-    const marginTop = i > 0
-      ? 'margin-top:8px;padding-top:8px;border-top:1px solid var(--border-s);'
-      : '';
+      const winLbl = WIN_LABELS[w.key] || w.key;
+      const statusTxt = (w.status || 'within_limit').replace(/_/g, ' ');
+      const detailTxt = `${statusTxt}${resetStr ? ` · ↺ ${resetStr}` : ''}`;
 
-    return `
-      <div style="${marginTop}">
+      return `
         <div class="quota-row">
-          <span class="quota-label">${winLabel}${statusTxt}</span>
-          <span class="quota-pct">${pctDisplay}${resetTxt}</span>
-        </div>
-        <div class="quota-bar-bg">
-          <div class="${fillCls}" style="width:${pctNum}%"></div>
-        </div>
-      </div>`;
-  }).join('');
+          <div class="quota-row-head">
+            <span class="quota-label">Claude · ${winLbl}</span>
+            <span class="quota-pct">${pctNum}%</span>
+          </div>
+          <div class="quota-bar-bg">
+            <div class="quota-bar-fill${fillClass}" style="width:${pctNum}%"></div>
+          </div>
+          <div class="quota-detail">${detailTxt}</div>
+        </div>`;
+    }).join('');
 
-  wrap.innerHTML = barsHtml;
+    let claudeWrap = document.getElementById('claudeQuotaWrap');
+    if (!claudeWrap) {
+      claudeWrap = document.createElement('div');
+      claudeWrap.id = 'claudeQuotaWrap';
+      claudeWrap.className = 'claude-quota-wrap';
+      quotaWrap.appendChild(claudeWrap);
+    }
+    claudeWrap.innerHTML = items;
+
+    return;
+  }
+
+  // Default: hide
+  wrap.style.display = 'none';
 }
 
 /* ── Called from the SSE stream handler when Claude sends message_limit ── */
@@ -1366,7 +1434,7 @@ function buildMiniQuotaHtml(acctName) {
         ⋆ ${typeof cr === 'number' ? cr.toFixed(2) : cr} credits
       </span>
     </div>`;
-  }
+  } 
 
   if (provider !== 'claude') return '';
 
@@ -1374,33 +1442,35 @@ function buildMiniQuotaHtml(acctName) {
   const wins = cached.windows;
   if (!wins?.length) return '';
 
-  // Show worst window (first, already sorted worst-first)
-  const w      = wins[0];
-  const pctNum = Math.round((w.util ?? 0) * 100);
-  const fillClass = pctNum >= 90 || w.status === 'exceeded_limit' ? ' crit'
-                  : pctNum >= 70 || w.status === 'approaching_limit' ? ' warn' : '';
+  const WIN_LABELS = { '1h':'1h', '5h':'5h', '7d':'7d', '1d':'1d', '30d':'30d' };
+  const parts = wins.map(w => {
+    const pctNum = Math.round((w.util ?? 0) * 100);
+    const fillClass = pctNum >= 90 || w.status === 'exceeded_limit' ? ' crit'
+                    : pctNum >= 70 || w.status === 'approaching_limit' ? ' warn' : '';
 
-  let resetStr = '';
-  if (w.resetsAt) {
-    // resetsAt is Unix seconds
-    const diff = w.resetsAt * 1000 - Date.now();
-    if (diff > 0) {
-      const hrs  = Math.floor(diff / 3_600_000);
-      const mins = Math.floor((diff % 3_600_000) / 60_000);
-      resetStr   = hrs > 0 ? `${hrs}h` : `${mins}m`;
+    let resetStr = '';
+    if (w.resetsAt) {
+      // resetsAt is Unix seconds
+      const diff = w.resetsAt * 1000 - Date.now();
+      if (diff > 0) {
+        const hrs  = Math.floor(diff / 3_600_000);
+        const mins = Math.floor((diff % 3_600_000) / 60_000);
+        resetStr   = hrs > 0 ? `${hrs}h` : `${mins}m`;
+      }
     }
-  }
 
-  const WIN_LABELS = { '5h':'5h', '1h':'1h', '7d':'7d', '1d':'1d', '30d':'30d' };
-  const winLbl = WIN_LABELS[w.key] || w.key;
+    const winLbl = WIN_LABELS[w.key] || w.key;
 
-  return `<div class="mini-quota">
-    <div class="mini-quota-bar-bg">
-      <div class="mini-quota-bar-fill${fillClass}" style="width:${pctNum}%"></div>
-    </div>
-    <span class="mini-quota-pct">${pctNum}% ${winLbl}</span>
-    ${resetStr ? `<span class="mini-quota-reset">↺ ${resetStr}</span>` : ''}
-  </div>`;
+    return `<div class="mini-quota">
+      <div class="mini-quota-bar-bg">
+        <div class="mini-quota-bar-fill${fillClass}" style="width:${pctNum}%"></div>
+      </div>
+      <span class="mini-quota-pct">${pctNum}% ${winLbl}</span>
+      ${resetStr ? `<span class="mini-quota-reset">↺ ${resetStr}</span>` : ''}
+    </div>`;
+  });
+
+  return parts.join('');
 }
 
 
@@ -1569,7 +1639,6 @@ function filterAccounts(val) {
 
 /* Switch the account for THIS TAB only — no server state change */
 async function switchTabAccount(name) {
-  // Cancel anything in flight from previous account
   _cancelPending();
   _activeNavCtl = new AbortController();
   const signal = _activeNavCtl.signal;
@@ -1579,6 +1648,11 @@ async function switchTabAccount(name) {
   if (!acct) { toast(`Account "${name}" not found`, 'err'); return; }
 
   S.tabAccount = acct;
+
+  if (acct.name in quotaCache) {
+    delete quotaCache[acct.name];
+  }
+
   S.convId = null; S.convs = {}; S.allConvs = []; S.pinnedIds = [];
 
   document.getElementById('chat').classList.add('hidden');
@@ -1588,19 +1662,19 @@ async function switchTabAccount(name) {
 
   setStatus(true, acct.organization_id);
   renderAccountMenu();
-  applyProviderUI(acct);
+  applyProviderUI(acct); // This hides/shows buttons but doesn't wait for quota
 
   const prov = (acct.provider || 'claude').toLowerCase();
-  if (['claude', 'oneminai'].includes(prov)) fetchQuota();
-  if (prov === 'flowith') {
-    apiFetch('/api/flowith/credits', { signal }).then(d => {
-      const raw = d.credits?.total ?? d.credits_total ?? null;
-      if (raw != null) { _cacheFlowith(acct.name, raw); _renderSidebarBar(); renderAccountMenu(); }
-    }).catch(() => {});
+
+  // 👉 Clear existing quota cache for this account to force refresh
+  if (name in quotaCache) {
+    delete quotaCache[name];
   }
 
+  // Render sidebar bar immediately (will hide if no cached data)
+  _renderSidebarBar();
+
   try {
-    // Sequential, not parallel — avoids hammering the server
     await loadPinnedIds(signal);
     if (signal.aborted) return;
     await loadAllConvs(signal);
@@ -1610,9 +1684,33 @@ async function switchTabAccount(name) {
   }
 
   renderSidebar();
+
+  if (['claude', 'oneminai', 'flowith'].includes(prov)) {
+    try {
+      const usage = await apiFetch('/api/usage', { signal });
+      if (usage.provider === 'oneminai') {
+        _cacheOneminai(name, usage.credits);
+      } else if (usage.provider === 'flowith') {
+        const cr = usage.credits?.total ?? usage.credits_total ?? null;
+        if (cr !== null) _cacheFlowith(name, cr);
+      } else if (usage.provider === 'claude') {
+        _cacheClaude(name, usage.quota);
+      }
+      // ✅ Re-render after fresh data
+      _renderSidebarBar();
+    } catch (err) {
+      console.warn('Failed to fetch quota on account switch:', err);
+      // Still render to clear any stale UI
+      _renderSidebarBar();
+    }
+  } else {
+    // Non-quota providers
+    _renderSidebarBar();
+  }
+
   toast(`Switched to ${name}`, 'ok');
 
-  // Models fetch in background — don't block the UI
+  // Background model fetch
   if (prov === 'chatwithai') {
     _fetchAndCacheChatwithaiModels().catch(() => {});
   } else if (prov === 'flowith') {
@@ -3699,18 +3797,21 @@ function renderCreateFileTool(block, streaming) {
     catch { highlighted = esc(content.slice(0,600)); }
   }
 
-  return `<div class="widget-block file-tool-widget">
-    ${_toolHead('', '📝 CREATE', fname, resText ? '✓ created' : '✓ done')}
-    <div class="widget-body">
+  return _toolWidget(
+    'file-tool-widget',
+    `<span class="widget-badge" style="background:var(--green-dim);color:var(--green);border:1px solid rgba(74,222,128,.2)">📝 CREATE</span>`,
+    desc, resText ? '✓ created' : '✓ done',
+    `<div class="widget-body">
       <div class="file-tool-path">${esc(path)}</div>
       ${highlighted
         ? `<div class="file-tool-content">
              <code class="hljs language-${esc(lang || 'plaintext')}">${highlighted}</code>
              ${content.length > 600 ? `<div style="font-size:var(--fs-xs);color:var(--text-3);font-family:var(--font-mono);padding-top:4px">… ${content.length - 600} more chars</div>` : ''}
-           </div>`
+            </div>`
         : resText ? `<div style="font-size:var(--fs-sm);color:var(--green);font-family:var(--font-mono)">${esc(resText)}</div>` : ''}
-    </div>
-  </div>`;
+    </div>`,
+    { path, description: desc, content }
+  );
 }
 
 function renderViewTool(block, streaming) {
@@ -3760,17 +3861,20 @@ function renderViewTool(block, streaming) {
   const { text } = _extractToolResult(block);
   const rawText   = typeof text === 'string' ? text : '';
 
-  return `<div class="widget-block file-tool-widget">
-    ${_toolHead('', '👁 VIEW', fname, '✓ done')}
-    <div class="widget-body">
+  return _toolWidget(
+    'file-tool-widget',
+    `<span class="widget-badge" style="background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(252,211,77,.2)">👁 VIEW</span>`,
+    fname, '✓ done',
+    `<div class="widget-body">
       <div class="file-tool-path">${esc(path)}</div>
       ${highlighted
         ? `<div class="file-tool-content"><code class="hljs language-${esc(lang || 'plaintext')}">${highlighted}</code></div>`
         : rawText
           ? `<div class="file-tool-content">${esc(rawText.slice(0, 800))}${rawText.length > 800 ? '\n…' : ''}</div>`
           : '<div style="font-size:var(--fs-sm);color:var(--text-3);font-family:var(--font-mono)">File viewed</div>'}
-    </div>
-  </div>`;
+    </div>`,
+    { path, content: content || rawText }
+  );
 }
 
 function renderStrReplaceTool(block, streaming) {
