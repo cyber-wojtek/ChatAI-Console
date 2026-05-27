@@ -2,7 +2,7 @@
 ChatAI Console — setup / install helper
 
 Usage:
-    python setup.py          # full setup (deps + cert + redis check)
+    python setup.py          # full setup (deps + cert)
     python setup.py --deps   # only install Python dependencies
     python setup.py --cert   # only generate TLS cert
     python setup.py --check  # only check system requirements
@@ -22,7 +22,6 @@ DEPS = [
     "quart",
     "hypercorn",
     "httpx",
-    "redis",
     "bs4",
     "claude_webapi",
     "1minai_webapi",
@@ -59,16 +58,6 @@ def check_requirements():
     else:
         _fail(f"Python 3.10+ required (you have {sys.version.split()[0]})")
         ok = False
-
-    # redis-server
-    if _has("redis-server"):
-        _ok("redis-server found")
-    else:
-        _warn("redis-server not found — install it or set REDIS_URL to an external instance")
-        _warn("  Ubuntu/Debian:  apt install redis-server")
-        _warn("  macOS:          brew install redis")
-        _warn("  Arch:           pacman -Sy redis")
-        _warn("  Windows:        https://github.com/tporadowski/redis/releases")
 
     # openssl (needed for cert generation)
     if _has("openssl"):
